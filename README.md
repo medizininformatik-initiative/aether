@@ -8,9 +8,9 @@ A command-line interface for orchestrating Data Use Process (DUP) pipelines for 
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)](https://go.dev/)
-[![Documentation](https://img.shields.io/badge/Documentation-GitHub%20Pages-success?logo=github)](https://trobanga.github.io/aether/)
-[![codecov](https://codecov.io/gh/trobanga/aether/branch/main/graph/badge.svg)](https://codecov.io/gh/trobanga/aether)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/trobanga/aether/badge)](https://scorecard.dev/viewer/?uri=github.com/trobanga/aether)
+[![Documentation](https://img.shields.io/badge/Documentation-GitHub%20Pages-success?logo=github)](https://medizininformatik-initiative.github.io/aether/)
+[![codecov](https://codecov.io/gh/medizininformatik-initiative/aether/branch/main/graph/badge.svg)](https://codecov.io/gh/medizin-informatik-initiative/aether)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/medizininformatik-initiative/aether/badge)](https://scorecard.dev/viewer/?uri=github.com/medizininformatik-initiative/aether)
 
 
 
@@ -67,7 +67,7 @@ Aether is a CLI tool designed for medical researchers and data engineers to proc
 
 From source:
 ```bash
-git clone https://github.com/trobanga/aether.git
+git clone https://github.com/medizininformatik-initiative/aether.git
 cd aether
 make build
 sudo make install  # installs to /usr/local/bin
@@ -171,7 +171,7 @@ aether pipeline start query.crtdl
 **1. Clone and setup:**
 
 ```bash
-git clone https://github.com/trobanga/aether.git
+git clone https://github.com/medizininformatik-initiative/aether.git
 cd aether
 
 # Install dependencies and build

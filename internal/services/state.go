@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/google/uuid"
-	"github.com/trobanga/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 const (

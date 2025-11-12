@@ -185,7 +185,7 @@ go test ./tests/unit/ui/... -v
 === RUN   TestETACalculator_Accuracy           ✓ PASS
 
 PASS
-ok  	github.com/trobanga/aether/tests/unit/ui	1.324s
+ok  	github.com/medizininformatik-initiative/aether/tests/unit/ui	1.324s
 ```
 
 **Coverage**: All FR-029 requirements tested and validated

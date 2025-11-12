@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/trobanga/aether/internal/pipeline"
+	"github.com/medizininformatik-initiative/aether/internal/pipeline"
 )
 
 func TestSetupFileProcessing(t *testing.T) {

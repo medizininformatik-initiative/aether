@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/trobanga/aether/internal/models"
-	"github.com/trobanga/aether/internal/pipeline"
+	"github.com/medizininformatik-initiative/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/pipeline"
 )
 
 // Helper to create a test job with given steps

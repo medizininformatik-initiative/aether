@@ -14,7 +14,7 @@ Contributions follow a standard GitHub workflow:
 
 ## Full Contribution Guide
 
-For detailed instructions on development setup, workflow, code style, testing requirements, and more, please see our complete [Contributing Guide](https://trobanga.github.io/aether/development/contributing.html).
+For detailed instructions on development setup, workflow, code style, testing requirements, and more, please see our complete [Contributing Guide](https://medizininformatik-initiative.github.io/aether/development/contributing.html).
 
 ## Prerequisites
 
@@ -48,8 +48,8 @@ By participating in this project, you agree to abide by our community standards 
 
 ## Questions?
 
-- **Documentation**: Check out our [documentation site](https://trobanga.github.io/aether/)
-- **Issues**: Search existing [GitHub issues](https://github.com/trobanga/aether/issues)
-- **Discussions**: Start a [GitHub discussion](https://github.com/trobanga/aether/discussions)
+- **Documentation**: Check out our [documentation site](https://medizininformatik-initiative.github.io/aether/)
+- **Issues**: Search existing [GitHub issues](https://github.com/medizininformatik-initiative/aether/issues)
+- **Discussions**: Start a [GitHub discussion](https://github.com/medizininformatik-initiative/aether/discussions)
 
 Thank you for helping make Aether better! 🚀

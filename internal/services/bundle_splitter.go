@@ -48,7 +48,7 @@ package services
 import (
 	"fmt"
 
-	"github.com/trobanga/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // ShouldSplit determines if a Bundle exceeds the threshold and requires splitting

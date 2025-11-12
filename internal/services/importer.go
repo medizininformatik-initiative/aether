@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/trobanga/aether/internal/lib"
-	"github.com/trobanga/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // ImportFromLocalDirectory copies FHIR NDJSON files from a local directory to the job's import directory

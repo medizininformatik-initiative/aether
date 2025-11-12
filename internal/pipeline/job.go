@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/trobanga/aether/internal/lib"
-	"github.com/trobanga/aether/internal/models"
-	"github.com/trobanga/aether/internal/services"
+	"github.com/medizininformatik-initiative/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
 // CreateJob initializes a new pipeline job

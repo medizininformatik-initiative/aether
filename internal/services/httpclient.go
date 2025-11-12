@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/trobanga/aether/internal/lib"
-	"github.com/trobanga/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // HTTPClient wraps the standard http.Client with retry logic and configuration

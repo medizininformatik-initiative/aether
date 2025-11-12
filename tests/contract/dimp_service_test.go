@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/trobanga/aether/internal/lib"
-	"github.com/trobanga/aether/internal/models"
-	"github.com/trobanga/aether/internal/services"
+	"github.com/medizininformatik-initiative/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
 // Contract test for DIMP service interaction per contracts/dimp-service.md

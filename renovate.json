@@ -16,7 +16,7 @@
       "security"
     ],
     "assignees": [
-      "@trobanga"
+      "@medizininformatik-initiative"
     ]
   },
   "packageRules": [
@@ -37,7 +37,7 @@
       ],
       "automerge": false,
       "reviewers": [
-        "@trobanga"
+        "@medizininformatik-initiative"
       ]
     },
     {

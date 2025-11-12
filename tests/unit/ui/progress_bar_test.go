@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/trobanga/aether/internal/ui"
+	"github.com/medizininformatik-initiative/aether/internal/ui"
 )
 
 func TestProgressBar_Creation(t *testing.T) {

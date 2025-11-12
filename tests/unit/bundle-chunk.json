@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/trobanga/aether/schemas/bundle-chunk.json",
+  "$id": "https://github.com/medizininformatik-initiative/aether/schemas/bundle-chunk.json",
   "title": "FHIR Bundle Chunk",
   "description": "Schema for validating FHIR Bundle chunks created during splitting. Each chunk is a valid FHIR R4 Bundle containing a subset of the original Bundle's entries.",
   "type": "object",

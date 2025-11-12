@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/trobanga/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/lib"
 )
 
 // AcquireJobLock attempts to acquire an exclusive lock for a job (Unix implementation)

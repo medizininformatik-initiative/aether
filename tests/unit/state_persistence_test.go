@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/trobanga/aether/internal/models"
-	"github.com/trobanga/aether/internal/services"
+	"github.com/medizininformatik-initiative/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
 // TestStatePersistence_SaveAndLoad tests the complete save/load cycle

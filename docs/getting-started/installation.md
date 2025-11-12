@@ -14,7 +14,7 @@ The easiest way to install Aether is to download a precompiled release binary fo
 
 ### 1. Download the Release
 
-Visit the [Aether releases page](https://github.com/trobanga/aether/releases) and download the appropriate binary for your platform:
+Visit the [Aether releases page](https://github.com/medizininformatik-initiative/aether/releases) and download the appropriate binary for your platform:
 
 - **macOS (Intel)**: `aether-0.1.0-darwin-amd64.tar.gz`
 - **macOS (ARM/Apple Silicon)**: `aether-0.1.0-darwin-arm64.tar.gz`
@@ -81,7 +81,7 @@ Ensure you have:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/trobanga/aether.git
+git clone https://github.com/medizininformatik-initiative/aether.git
 cd aether
 ```
 

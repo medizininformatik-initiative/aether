@@ -1,4 +1,4 @@
-module github.com/trobanga/aether
+module github.com/medizininformatik-initiative/aether
 
 go 1.25
 

@@ -10,10 +10,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/trobanga/aether/internal/lib"
-	"github.com/trobanga/aether/internal/models"
-	"github.com/trobanga/aether/internal/pipeline"
-	"github.com/trobanga/aether/internal/services"
+	"github.com/medizininformatik-initiative/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/pipeline"
+	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
 // TestJobList_MultipleJobs tests listing all jobs in the jobs directory

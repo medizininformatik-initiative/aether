@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/trobanga/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/lib"
 )
 
 // PollConfig holds configuration for extraction polling

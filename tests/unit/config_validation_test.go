@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/trobanga/aether/internal/lib"
-	"github.com/trobanga/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // TestValidateSplitConfig verifies configuration validation for Bundle splitting threshold

@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/trobanga/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/lib"
 )
 
 // JobLock represents a file lock for a specific job

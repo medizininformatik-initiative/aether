@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/trobanga/aether/internal/lib"
-	"github.com/trobanga/aether/internal/models"
-	"github.com/trobanga/aether/internal/pipeline"
+	"github.com/medizininformatik-initiative/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/pipeline"
 )
 
 // TestDIMPResumeAfterInterrupt tests that DIMP can resume after being interrupted mid-processing

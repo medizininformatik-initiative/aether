@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/trobanga/aether/internal/ui"
+	"github.com/medizininformatik-initiative/aether/internal/ui"
 )
 
 // progress indicator requirements Compliance Verification Tests

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/trobanga/aether/internal/lib"
-	"github.com/trobanga/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // DIMPClient handles communication with the DIMP pseudonymization service

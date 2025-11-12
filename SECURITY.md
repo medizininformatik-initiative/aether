@@ -29,4 +29,4 @@ to upgrade to the latest version to ensure issues are addressed.
 **Upon discovery of severe security or usability bugs of a released version, we will mark affected
 releases as pre-release and add notes to indicate why the version should not be used.**
 
-[advisory]: https://github.com/trobanga/aether/security/advisories
+[advisory]: https://github.com/medizininformatik-initiative/aether/security/advisories

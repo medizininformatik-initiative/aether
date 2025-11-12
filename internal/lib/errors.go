@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/trobanga/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // AetherError represents a user-friendly error with context and guidance

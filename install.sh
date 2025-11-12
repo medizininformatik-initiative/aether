@@ -4,7 +4,7 @@
 
 set -e
 
-repo="trobanga/aether"
+repo="medizininformatik-initiative/aether"
 
 fetch_latest_version() {
   tag=$(curl -sD - "https://github.com/$repo/releases/latest" | grep location | tr -d '\r' | cut -d/ -f8)

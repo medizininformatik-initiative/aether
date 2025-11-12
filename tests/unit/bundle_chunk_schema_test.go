@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/xeipuuv/gojsonschema"
 
-	"github.com/trobanga/aether/internal/models"
-	"github.com/trobanga/aether/internal/services"
+	"github.com/medizininformatik-initiative/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
 // TestBundleChunkSchema validates that Bundle chunks created by splitting

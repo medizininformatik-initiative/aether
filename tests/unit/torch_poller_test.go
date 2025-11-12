@@ -10,9 +10,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/trobanga/aether/internal/lib"
-	"github.com/trobanga/aether/internal/models"
-	"github.com/trobanga/aether/internal/services"
+	"github.com/medizininformatik-initiative/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
 func TestNewPollConfig(t *testing.T) {

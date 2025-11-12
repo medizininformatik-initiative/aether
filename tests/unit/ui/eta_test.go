@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/trobanga/aether/internal/ui"
+	"github.com/medizininformatik-initiative/aether/internal/ui"
 )
 
 func TestETACalculator_Creation(t *testing.T) {

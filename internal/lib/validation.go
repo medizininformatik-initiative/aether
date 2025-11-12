@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/trobanga/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // StepPrerequisites defines which steps must complete before a given step can run

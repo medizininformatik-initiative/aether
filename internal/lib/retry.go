@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/trobanga/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // CalculateBackoff computes exponential backoff duration

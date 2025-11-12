@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
-	"github.com/trobanga/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // ExpandEnvVars expands environment variables in the format ${VAR} or $VAR

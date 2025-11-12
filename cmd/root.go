@@ -58,8 +58,8 @@ Configuration:
     3. ~/.config/aether/aether.yaml (user config directory)
 
 For more information:
-  Documentation: https://github.com/trobanga/aether
-  Report issues: https://github.com/trobanga/aether/issues`,
+  Documentation: https://github.com/medizininformatik-initiative/aether
+  Report issues: https://github.com/medizininformatik-initiative/aether/issues`,
 	Version: "1.0.0",
 }
 

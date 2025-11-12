@@ -23,7 +23,7 @@ cd aether
 2. **Add upstream remote:**
 
 ```bash
-git remote add upstream https://github.com/trobanga/aether.git
+git remote add upstream https://github.com/medizininformatik-initiative/aether.git
 git fetch upstream
 ```
 

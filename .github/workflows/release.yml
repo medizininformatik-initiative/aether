@@ -31,7 +31,7 @@ jobs:
         uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: trobanga/aether
+          slug: medizininformatik-initiative/aether
 
   e2e-test:
     name: E2E Tests

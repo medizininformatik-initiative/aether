@@ -67,7 +67,7 @@ export default defineConfig({
 
     // Social links
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/trobanga/aether' }
+      { icon: 'github', link: 'https://github.com/medizininformatik-initiative/aether' }
     ]
   },
 

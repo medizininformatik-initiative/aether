@@ -65,6 +65,7 @@ jobs:
     permissions:
       attestations: write
       contents: read
+      id-token: write
     strategy:
       matrix:
         include:

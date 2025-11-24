@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    name: Build Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        with:
+          go-version: '1.25.2'
+          cache: true
+
+      - name: Build release binaries
+        run: make release
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-artifacts
+          path: bin/release/
+          retention-days: 1
+
+  publish:
+    name: Publish Release
+    runs-on: ubuntu-24.04
+    needs: [build]
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-artifacts
+          path: release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
+        with:
+          files: release/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  attestation:
+    name: Generate Attestations
+    runs-on: ubuntu-24.04
+    needs: [build]
+    timeout-minutes: 30
+    permissions:
+      attestations: write
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - arch: linux-amd64
+            path: bin/release/aether-*-linux-amd64.tar.gz
+          - arch: darwin-amd64
+            path: bin/release/aether-*-darwin-amd64.tar.gz
+          - arch: darwin-arm64
+            path: bin/release/aether-*-darwin-arm64.tar.gz
+          - arch: windows-amd64
+            path: bin/release/aether-*-windows-amd64.zip
+          - arch: windows-arm64
+            path: bin/release/aether-*-windows-arm64.zip
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-artifacts
+          path: bin/release/
+
+      - name: Generate provenance attestation for ${{ matrix.arch }}
+        uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1
+        with:
+          subject-path: ${{ matrix.path }}
+
+      - name: Generate SBOM attestation for ${{ matrix.arch }}
+        uses: anchore/sbom-action@8e94d75ddd33f69f691467e42275782e4bfefe84 # v0
+        with:
+          path: bin/release/
+          format: spdx-json
+          output-file: sbom-${{ matrix.arch }}.spdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom-${{ matrix.arch }}
+          path: sbom-${{ matrix.arch }}.spdx.json
+          retention-days: 90

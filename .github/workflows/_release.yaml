@@ -101,6 +101,13 @@ jobs:
           format: spdx-json
           output-file: sbom-${{ matrix.arch }}.spdx.json
 
+      - name: Rename SBOM for upload
+        if: always()
+        run: |
+          if [ -f "aether-attestation.spdx.json" ]; then
+            mv aether-attestation.spdx.json sbom-${{ matrix.arch }}.spdx.json
+          fi
+
       - name: Upload SBOM
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

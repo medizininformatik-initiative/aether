@@ -575,16 +575,15 @@ func (c *TORCHClient) makeAbsoluteURL(rawURL string) string {
 	}
 
 	// Check if this is an internal hostname that should be rewritten to use our configured baseURL
-	// Internal hostnames include:
+	// Internal hostnames are Docker container names only:
 	// - torch: TORCH API service (container internal)
 	// - torch-proxy: reverse proxy service (container internal)
-	// - localhost/127.0.0.1: loopback addresses used internally
+	// Note: localhost/127.0.0.1 are NOT rewritten - TORCH returns correct external URLs
+	// that may use a different port than the configured baseURL
 	hostname := torchURL.Hostname()
 	internalHosts := map[string]bool{
 		"torch":       true,
 		"torch-proxy": true,
-		"localhost":   true,
-		"127.0.0.1":   true,
 	}
 
 	if internalHosts[hostname] {

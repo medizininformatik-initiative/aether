@@ -30,10 +30,34 @@ jobs:
           path: bin/release/
           retention-days: 1
 
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-24.04
+    needs: [build]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@8e94d75ddd33f69f691467e42275782e4bfefe84 # v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: aether-sbom.spdx.json
+          upload-artifact: false
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom
+          path: aether-sbom.spdx.json
+          retention-days: 90
+
   publish:
     name: Publish Release
     runs-on: ubuntu-24.04
-    needs: [build, attestation]
+    needs: [build, attestation, sbom]
     timeout-minutes: 30
     permissions:
       contents: write
@@ -47,18 +71,16 @@ jobs:
           name: release-artifacts
           path: release/
 
-      - name: Download SBOM artifacts
+      - name: Download SBOM
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          pattern: sbom-*
-          path: release/sbom/
+          name: sbom
+          path: release/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
-          files: |
-            release/*
-            release/sbom/**/*.spdx.json
+          files: release/*
           draft: false
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
           generate_release_notes: true
@@ -101,18 +123,3 @@ jobs:
         uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1
         with:
           subject-path: ${{ matrix.path }}
-
-      - name: Generate SBOM attestation for ${{ matrix.arch }}
-        uses: anchore/sbom-action@8e94d75ddd33f69f691467e42275782e4bfefe84 # v0
-        with:
-          path: bin/release/
-          format: spdx-json
-          output-file: sbom-${{ matrix.arch }}.spdx.json
-          upload-artifact: false
-
-      - name: Upload SBOM
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: sbom-${{ matrix.arch }}
-          path: sbom-${{ matrix.arch }}.spdx.json
-          retention-days: 90

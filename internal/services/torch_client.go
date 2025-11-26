@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -554,65 +553,15 @@ func (c *TORCHClient) buildBasicAuthHeader() string {
 	return "Basic " + encoded
 }
 
-// makeAbsoluteURL ensures a URL is absolute and uses the configured baseURL
-// This handles two cases:
-// 1. Relative URLs from TORCH - prepends baseURL (scheme + host)
-// 2. Absolute URLs with internal TORCH hostnames - rewrites scheme + host to use baseURL
+// makeAbsoluteURL converts relative URLs to absolute using the configured baseURL.
+// Absolute URLs are returned as-is.
 func (c *TORCHClient) makeAbsoluteURL(rawURL string) string {
-	// Case 1: Relative URL - prepend base URL
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		absoluteURL := c.config.BaseURL + rawURL
 		c.logger.Debug("Converted relative URL", "raw", rawURL, "absolute", absoluteURL)
 		return absoluteURL
 	}
 
-	// Case 2: Absolute URL - check if it's an internal TORCH URL that needs rewriting
-	torchURL, err := url.Parse(rawURL)
-	if err != nil {
-		// If parsing fails, return as-is
-		c.logger.Warn("Failed to parse TORCH URL", "url", rawURL, "error", err)
-		return rawURL
-	}
-
-	// Check if this is an internal hostname that should be rewritten to use our configured baseURL
-	// Internal hostnames are Docker container names only:
-	// - torch: TORCH API service (container internal)
-	// - torch-proxy: reverse proxy service (container internal)
-	// Note: localhost/127.0.0.1 are NOT rewritten - TORCH returns correct external URLs
-	// that may use a different port than the configured baseURL
-	hostname := torchURL.Hostname()
-	internalHosts := map[string]bool{
-		"torch":       true,
-		"torch-proxy": true,
-	}
-
-	if internalHosts[hostname] {
-		// This is an internal TORCH URL - rewrite to use our baseURL's scheme and host
-		baseURLParsed, err := url.Parse(c.config.BaseURL)
-		if err != nil {
-			c.logger.Warn("Failed to parse baseURL", "baseURL", c.config.BaseURL, "error", err)
-			return rawURL
-		}
-
-		// Create new URL with baseURL's scheme and host, but TORCH URL's path and query
-		rewrittenURL := &url.URL{
-			Scheme:   baseURLParsed.Scheme,
-			Host:     baseURLParsed.Host, // includes port if present
-			Path:     torchURL.Path,
-			RawQuery: torchURL.RawQuery,
-		}
-
-		result := rewrittenURL.String()
-		c.logger.Debug("Rewrote internal URL",
-			"original", rawURL,
-			"hostname", hostname,
-			"baseScheme", baseURLParsed.Scheme,
-			"baseHost", baseURLParsed.Host,
-			"rewritten", result)
-		return result
-	}
-
-	// External URL - return as-is
-	c.logger.Debug("Keeping external URL as-is", "url", rawURL, "hostname", hostname)
+	c.logger.Debug("Using absolute URL from TORCH", "url", rawURL)
 	return rawURL
 }

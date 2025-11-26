@@ -6,3 +6,20 @@ networks:
 include:
   - torch/compose.yaml
   - dimp/compose.yaml
+
+services:
+  # E2E test runner - runs aether inside the Docker network
+  # This allows aether to resolve internal hostnames (torch, torch-proxy, etc.)
+  aether-runner:
+    image: debian:bookworm-slim
+    networks: [ "aether", "dimp" ]
+    working_dir: /app
+    volumes:
+      - ./aether.yaml:/app/aether.yaml:ro
+      - ./torch/queries:/app/torch/queries:ro
+      - ./jobs:/app/jobs
+    # Keep container running so we can exec into it
+    command: ["sleep", "infinity"]
+    depends_on:
+      - torch-proxy
+      - fhir-pseudonymizer

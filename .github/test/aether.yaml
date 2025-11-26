@@ -1,42 +1,36 @@
-# Aether DUP Pipeline Configuration Example
-# Copy this file to aether.yaml and customize for your environment
+# Aether E2E Test Configuration
+# Uses internal Docker hostnames since aether runs inside the Docker network
 
 services:
   torch:
-    # TORCH server base URL (points to reverse proxy that handles both API and file serving)
-    base_url: "${TORCH_URL}"
+    # TORCH server base URL (points to reverse proxy inside Docker network)
+    base_url: "http://torch-proxy:80"
 
     # TORCH authentication credentials
     username: ""
     password: ""
 
     # Maximum time to wait for extraction completion (in minutes)
-    # Default: 30 minutes (reasonable for typical cohort sizes)
     extraction_timeout_minutes: 30
 
     # Initial polling interval when checking extraction status (in seconds)
-    # Default: 5 seconds
     polling_interval_seconds: 5
 
     # Maximum polling interval (exponential backoff cap, in seconds)
-    # Default: 30 seconds
     max_polling_interval_seconds: 30
 
-  # DIMP Pseudonymization Service (optional)
-  # Leave empty to skip pseudonymization step
+  # DIMP Pseudonymization Service
   dimp:
-    url: "${DIMP_URL}"
+    url: "http://fhir-pseudonymizer:8080/fhir"
     bundle_split_threshold_mb: 10
 
-  # CSV Conversion Service (optional)
-  # Leave empty to skip CSV conversion
+  # CSV Conversion Service (not running in test environment)
   csv_conversion:
-    url: "${CSV_URL}"
+    url: ""
 
-  # Parquet Conversion Service (optional)
-  # Leave empty to skip Parquet conversion
+  # Parquet Conversion Service (not running in test environment)
   parquet_conversion:
-    url: "${PARQUET_URL}"
+    url: ""
 
 pipeline:
   # List of steps to execute in order

@@ -20,29 +20,21 @@ Aether helps you:
 
 ## Installation
 
-### Download a Release (Recommended)
+Aether is available as binary for Linux, macOS and Windows.
 
-1. Go to the [Releases page](https://github.com/medizininformatik-initiative/aether/releases)
-2. Download the file for your system:
-   - **Linux**: `aether-X.X.X-linux-amd64.tar.gz`
-   - **macOS Intel**: `aether-X.X.X-darwin-amd64.tar.gz`
-   - **macOS Apple Silicon**: `aether-X.X.X-darwin-arm64.tar.gz`
-   - **Windows**: `aether-X.X.X-windows-amd64.zip`
+For Linux and macOS, an install script is provided. It downloads the binary and verifies GitHub attestations using the GitHub CLI tool (if installed):
 
-3. Extract and install:
+```bash
+curl -sSfL https://raw.githubusercontent.com/medizininformatik-initiative/aether/main/install.sh | sh
+sudo mv aether /usr/local/bin/
+```
 
-   **Linux/macOS:**
-   ```bash
-   tar -xzf aether-*.tar.gz
-   sudo mv aether /usr/local/bin/
-   ```
+For manual installation or Windows, download the [latest release](https://github.com/medizininformatik-initiative/aether/releases).
 
-   **Windows:** Extract the zip and add the folder to your PATH.
-
-4. Verify installation:
-   ```bash
-   aether --help
-   ```
+Verify installation:
+```bash
+aether --help
+```
 
 ## Configuration
 

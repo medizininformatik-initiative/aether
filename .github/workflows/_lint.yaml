@@ -3,6 +3,8 @@ name: Lint
 on:
   workflow_call:
 
+permissions: {}
+
 jobs:
   lint:
     name: Lint

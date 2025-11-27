@@ -93,14 +93,6 @@ If something goes wrong, you can resume:
 aether pipeline continue <job-id>
 ```
 
-## Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| "TORCH server unreachable" | Check `base_url` in your config and network connection |
-| "Authentication failed" | Verify your username and password |
-| "DIMP service unavailable" | Check the DIMP URL and that the service is running |
-
 ## More Information
 
 - [Full Documentation](https://medizininformatik-initiative.github.io/aether/)

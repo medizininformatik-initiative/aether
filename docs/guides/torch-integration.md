@@ -64,20 +64,3 @@ aether pipeline start http://torch-server/fhir/result/abc123
 
 This skips the extraction and downloads directly.
 
-## Troubleshooting
-
-**"TORCH server unreachable"**
-- Check your `base_url`
-- Verify network connectivity
-
-**"Authentication failed"**
-- Verify username and password
-- Check your account has access
-
-**"Extraction timeout"**
-- Increase `extraction_timeout_minutes`
-- Large cohorts may take longer
-
-**"No patients matched"**
-- Review your CRTDL query criteria
-- Test the query on TORCH directly

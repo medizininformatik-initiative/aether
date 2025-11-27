@@ -57,16 +57,3 @@ services:
     bundle_split_threshold_mb: 10   # Split bundles larger than 10MB
 ```
 
-## Troubleshooting
-
-**"DIMP service unavailable"**
-- Check the `dimp.url` is correct
-- Verify the DIMP service is running
-
-**"Pseudonymization failed"**
-- Check DIMP service logs
-- Verify your FHIR data is valid
-
-**"Slow processing"**
-- Large datasets take time
-- Consider processing in smaller batches

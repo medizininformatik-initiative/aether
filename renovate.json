@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:base",
+    "config:best-practices",
     ":enableVulnerabilityAlerts"
   ],
   "go": {
@@ -14,9 +14,6 @@
   "vulnerabilityAlerts": {
     "labels": [
       "security"
-    ],
-    "assignees": [
-      "@medizininformatik-initiative"
     ]
   },
   "packageRules": [
@@ -35,10 +32,7 @@
       "matchUpdateTypes": [
         "major"
       ],
-      "automerge": false,
-      "reviewers": [
-        "@medizininformatik-initiative"
-      ]
+      "automerge": false
     },
     {
       "description": "Group GitHub Actions updates",

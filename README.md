@@ -7,7 +7,10 @@
 A command-line tool for processing FHIR healthcare data through TORCH extraction and DIMP pseudonymization.
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Go Version](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)](https://go.dev/)
 [![Documentation](https://img.shields.io/badge/Documentation-GitHub%20Pages-success?logo=github)](https://medizininformatik-initiative.github.io/aether/)
+[![codecov](https://codecov.io/gh/medizininformatik-initiative/aether/branch/main/graph/badge.svg)](https://codecov.io/gh/medizininformatik-initiative/aether)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/medizininformatik-initiative/aether/badge)](https://scorecard.dev/viewer/?uri=github.com/medizininformatik-initiative/aether)
 
 ## What Does Aether Do?
 

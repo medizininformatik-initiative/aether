@@ -1,53 +1,10 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:best-practices",
-    ":enableVulnerabilityAlerts"
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    "docker:pinDigests"
   ],
-  "go": {
-    "enabled": true
-  },
-  "postUpdateOptions": [
-    "gomodTidy"
-  ],
-  "semanticCommits": "enabled",
-  "vulnerabilityAlerts": {
-    "labels": [
-      "security"
-    ]
-  },
-  "packageRules": [
-    {
-      "description": "Automatically merge minor and patch updates for Go dependencies",
-      "matchUpdateTypes": [
-        "minor",
-        "patch"
-      ],
-      "automerge": true,
-      "automergeType": "pr",
-      "automergeStrategy": "squash"
-    },
-    {
-      "description": "Require manual review for major version updates",
-      "matchUpdateTypes": [
-        "major"
-      ],
-      "automerge": false
-    },
-    {
-      "description": "Group GitHub Actions updates",
-      "matchManagers": [
-        "github-actions"
-      ],
-      "groupName": "GitHub Actions",
-      "automerge": true,
-      "automergeType": "pr",
-      "automergeStrategy": "squash"
-    }
-  ],
-  "schedule": [
-    "after 10pm every weekday",
-    "before 5am every weekday",
-    "every weekend"
-  ]
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 3
 }

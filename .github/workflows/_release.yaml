@@ -3,6 +3,8 @@ name: Release
 on:
   workflow_call:
 
+permissions: {}
+
 jobs:
   build:
     name: Build Release

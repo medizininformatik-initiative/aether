@@ -60,24 +60,6 @@ pipeline:
 jobs_dir: "./jobs"  # Where to store job data and results
 ```
 
-## Troubleshooting
-
-**"TORCH server unreachable"**
-- Check `base_url` is correct
-- Verify network connection to TORCH server
-
-**"Authentication failed"**
-- Check username and password
-- Ensure your account has access
-
-**"DIMP service unavailable"**
-- Check `dimp.url` is correct
-- Verify the DIMP service is running
-
-**"Jobs directory does not exist"**
-- The directory is created automatically
-- Ensure you have write permissions
-
 ## Next Steps
 
 - [Quick Start](./quick-start.md) - Run your first pipeline

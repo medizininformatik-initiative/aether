@@ -10,7 +10,7 @@
   "postUpdateOptions": [
     "gomodTidy"
   ],
-  "semanticCommits": true,
+  "semanticCommits": "enabled",
   "vulnerabilityAlerts": {
     "labels": [
       "security"

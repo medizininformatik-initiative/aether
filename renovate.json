@@ -1,10 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended",
-    "helpers:pinGitHubActionDigests",
-    "docker:pinDigests"
+    "config:best-practices",
+    ":automergeMinor",
+    ":automergeDigest",
+    ":maintainLockFilesWeekly",
+    "customManagers:githubActionsVersions"
   ],
   "labels": ["dependencies"],
-  "prConcurrentLimit": 3
+  "prConcurrentLimit": 1
 }

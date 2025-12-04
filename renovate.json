@@ -7,9 +7,11 @@
     ":maintainLockFilesWeekly",
     "customManagers:githubActionsVersions"
   ],
-  "labels": ["dependencies"],
+  "labels": [
+    "dependencies"
+  ],
   "prConcurrentLimit": 1,
-  "packageRules": [
+  "customManagers": [
     {
       "description": [
         "Like customManagers:githubActionsVersions, but also finds the digest for github-release-attachments datasource."

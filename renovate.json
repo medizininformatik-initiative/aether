@@ -5,7 +5,7 @@
     ":automergeMinor",
     ":automergeDigest",
     ":maintainLockFilesWeekly",
-    "customManagers:githubActionsVersions"
+    ":githubActionsVersions"
   ],
   "labels": ["dependencies"],
   "prConcurrentLimit": 1,

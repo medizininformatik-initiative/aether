@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitepress'
 
+const version = process.env.VITE_LATEST_RELEASE || 'v0.1.0'
+
 export default defineConfig({
   title: 'Aether',
   description: 'Healthcare Data Integration Platform',
@@ -19,6 +21,27 @@ export default defineConfig({
     // Logo and site branding
     logo: '/assets/logo.svg',
     siteTitle: 'Aether',
+
+    // Top navigation bar
+    nav: [
+      {
+        text: version,
+        items: [
+          {
+            text: 'Issues',
+            link: 'https://github.com/medizininformatik-initiative/aether/issues'
+          },
+          {
+            text: 'Discussions',
+            link: 'https://github.com/medizininformatik-initiative/aether/discussions'
+          },
+          {
+            text: 'Releases',
+            link: 'https://github.com/medizininformatik-initiative/aether/releases'
+          }
+        ]
+      }
+    ],
 
     // Navigation sidebar
     sidebar: {

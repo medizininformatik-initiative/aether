@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/pipeline"
 	"github.com/medizininformatik-initiative/aether/internal/services"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Integration test for CRTDL → extraction → download flow
@@ -615,6 +615,233 @@ func TestPipeline_TORCHExtraction_PollingTimeout(t *testing.T) {
 	duration := time.Since(startTime)
 	t.Logf("Integration test completed in %v - timeout mechanism verified via unit tests", duration)
 	t.Logf("For full timeout testing, see TestTORCHClient_PollExtractionStatus_Timeout in unit tests")
+}
+
+// Integration test - verify TORCH + Wait + DIMP pipeline with data modification
+// Tests that DIMP step reads from wait directory when previous step was a wait step
+
+func TestPipeline_TORCHExtraction_WithWaitStep_DataModification(t *testing.T) {
+	// Setup: Create test environment
+	tempDir := t.TempDir()
+	jobsDir := filepath.Join(tempDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	// Create CRTDL file
+	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlContent := map[string]any{
+		"cohortDefinition": map[string]any{
+			"version":           "1.0.0",
+			"display":           "Test cohort",
+			"inclusionCriteria": []any{},
+		},
+		"dataExtraction": map[string]any{
+			"attributeGroups": []map[string]any{
+				{
+					"name":         "demographics",
+					"resourceType": "Patient",
+					"attributes":   []string{"birthDate", "name"},
+				},
+			},
+		},
+	}
+	crtdlJSON, _ := json.Marshal(crtdlContent)
+	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
+
+	// Original NDJSON content from TORCH - Patient with name "Doe"
+	originalNDJSON := `{"resourceType":"Patient","id":"p1","name":[{"family":"Doe"}]}`
+
+	// Modified NDJSON content - Patient with name "Modified"
+	modifiedNDJSON := `{"resourceType":"Patient","id":"p1","name":[{"family":"Modified"}]}`
+
+	// Mock TORCH server
+	torchJobPath := "/fhir/extraction/job-wait-test"
+	var torchServer *httptest.Server
+	torchServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Handle extraction submission
+		if r.Method == "POST" && r.URL.Path == "/fhir/$extract-data" {
+			w.Header().Set("Content-Location", torchServer.URL+torchJobPath)
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+
+		// Handle polling - return complete immediately
+		if r.Method == "GET" && r.URL.Path == torchJobPath {
+			result := map[string]any{
+				"resourceType": "Parameters",
+				"parameter": []map[string]any{
+					{
+						"name": "output",
+						"part": []map[string]any{
+							{
+								"name":     "url",
+								"valueUrl": torchServer.URL + "/output/Patient.ndjson",
+							},
+						},
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(result)
+			return
+		}
+
+		// Handle file download
+		if r.Method == "GET" && r.URL.Path == "/output/Patient.ndjson" {
+			w.Header().Set("Content-Type", "application/fhir+ndjson")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(originalNDJSON))
+			return
+		}
+
+		if r.Method == "GET" && r.URL.Path == "/" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer torchServer.Close()
+
+	// Mock DIMP server - simply echoes back the input (no actual pseudonymization)
+	dimpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/fhir/$de-identify" {
+			var resource map[string]any
+			err := json.NewDecoder(r.Body).Decode(&resource)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			// Echo back the resource (simulating pseudonymization)
+			w.Header().Set("Content-Type", "application/fhir+json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(resource)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer dimpServer.Close()
+
+	// Create configuration with TORCH -> Wait -> DIMP pipeline
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			TORCH: models.TORCHConfig{
+				BaseURL:                   torchServer.URL,
+				Username:                  "testuser",
+				Password:                  "testpass",
+				ExtractionTimeoutMinutes:  1,
+				PollingIntervalSeconds:    1,
+				MaxPollingIntervalSeconds: 5,
+			},
+			DIMP: models.DIMPConfig{
+				URL: dimpServer.URL + "/fhir",
+			},
+		},
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{
+				models.StepTorchImport,
+				models.StepWait,
+				models.StepDIMP,
+			},
+		},
+		Retry: models.RetryConfig{
+			MaxAttempts:      3,
+			InitialBackoffMs: 100,
+			MaxBackoffMs:     1000,
+		},
+		JobsDir: jobsDir,
+	}
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+
+	// Step 1: Create job with CRTDL input
+	job, err := pipeline.CreateJob(crtdlPath, config, logger)
+	require.NoError(t, err)
+	assert.Equal(t, models.InputTypeCRTDL, job.InputType)
+
+	// Step 2: Execute TORCH import step
+	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, logger)
+	importedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	require.NoError(t, err)
+
+	// Verify import completed
+	importStep, found := models.GetStepByName(*importedJob, models.StepTorchImport)
+	require.True(t, found)
+	assert.Equal(t, models.StepStatusCompleted, importStep.Status)
+	t.Logf("TORCH import completed with %d files", importedJob.TotalFiles)
+
+	// Verify original file has "Doe"
+	importDir := services.GetJobOutputDir(jobsDir, importedJob.JobID, models.StepTorchImport)
+	originalContent, err := os.ReadFile(filepath.Join(importDir, "Patient.ndjson"))
+	require.NoError(t, err)
+	assert.Contains(t, string(originalContent), "Doe", "Original import should contain 'Doe'")
+
+	// Step 3: Advance to wait step and execute it
+	advancedJob, err := pipeline.AdvanceToNextStep(importedJob)
+	require.NoError(t, err)
+	assert.Equal(t, string(models.StepWait), advancedJob.CurrentStep)
+
+	// Execute wait step (creates EMPTY wait directory)
+	waitStepIndex := 1 // wait is at index 1
+	err = pipeline.ExecuteWaitStep(advancedJob, jobsDir, waitStepIndex)
+	require.NoError(t, err)
+
+	// Verify wait directory is empty
+	waitDir := services.GetWaitStepDir(jobsDir, advancedJob.JobID, models.StepTorchImport)
+	entries, err := os.ReadDir(waitDir)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "Wait directory should be empty initially")
+	t.Logf("Wait directory created at: %s (empty as expected)", waitDir)
+
+	// Step 4: Simulate user modifying data - write MODIFIED data to wait directory
+	err = os.WriteFile(filepath.Join(waitDir, "Patient.ndjson"), []byte(modifiedNDJSON), 0644)
+	require.NoError(t, err)
+	t.Logf("User wrote modified data to wait directory (changed 'Doe' to 'Modified')")
+
+	// Mark wait step as completed (simulating "pipeline continue")
+	for i := range advancedJob.Steps {
+		if advancedJob.Steps[i].Name == models.StepWait {
+			now := time.Now()
+			advancedJob.Steps[i].Status = models.StepStatusCompleted
+			advancedJob.Steps[i].CompletedAt = &now
+			break
+		}
+	}
+	err = pipeline.UpdateJob(jobsDir, advancedJob)
+	require.NoError(t, err)
+
+	// Step 5: Advance to DIMP step
+	dimpReadyJob, err := pipeline.AdvanceToNextStep(advancedJob)
+	require.NoError(t, err)
+	assert.Equal(t, string(models.StepDIMP), dimpReadyJob.CurrentStep)
+
+	// Step 6: Execute DIMP step - should read from import_wait directory
+	err = pipeline.ExecuteDIMPStep(dimpReadyJob, services.GetJobDir(jobsDir, dimpReadyJob.JobID), logger)
+	require.NoError(t, err)
+
+	// Step 7: Verify DIMP output contains the MODIFIED data (not the original)
+	pseudonymizedDir := filepath.Join(jobsDir, dimpReadyJob.JobID, "pseudonymized")
+	dimpFiles, err := os.ReadDir(pseudonymizedDir)
+	require.NoError(t, err)
+	require.NotEmpty(t, dimpFiles, "Should have pseudonymized output files")
+
+	// Find and read the output file
+	var outputContent string
+	for _, file := range dimpFiles {
+		if filepath.Ext(file.Name()) == ".ndjson" {
+			content, err := os.ReadFile(filepath.Join(pseudonymizedDir, file.Name()))
+			require.NoError(t, err)
+			outputContent = string(content)
+			break
+		}
+	}
+
+	// Verify output contains "Modified" (from wait directory) NOT "Doe" (from original import)
+	assert.Contains(t, outputContent, "Modified", "DIMP output should contain 'Modified' from wait directory")
+	assert.NotContains(t, outputContent, "Doe", "DIMP output should NOT contain 'Doe' from original import")
+
+	t.Logf("SUCCESS: DIMP read from wait directory and processed the modified data")
+	t.Logf("Pipeline flow verified: TORCH -> Wait (empty) -> User writes modified data -> DIMP reads from wait")
 }
 
 // Integration test - verify job resumption after process restart during polling

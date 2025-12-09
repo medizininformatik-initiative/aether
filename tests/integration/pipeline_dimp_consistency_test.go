@@ -55,7 +55,7 @@ func TestDIMPConsistency_SplitVsUnsplit(t *testing.T) {
 					},
 				},
 				Pipeline: models.PipelineConfig{
-					EnabledSteps: []models.StepName{models.StepDIMP},
+					EnabledSteps: []models.StepName{models.StepLocalImport, models.StepDIMP},
 				},
 				Retry: models.RetryConfig{
 					MaxAttempts:      3,
@@ -118,7 +118,7 @@ func TestDIMPConsistency_SplitVsUnsplit(t *testing.T) {
 					},
 				},
 				Pipeline: models.PipelineConfig{
-					EnabledSteps: []models.StepName{models.StepDIMP},
+					EnabledSteps: []models.StepName{models.StepLocalImport, models.StepDIMP},
 				},
 				Retry: models.RetryConfig{
 					MaxAttempts:      3,

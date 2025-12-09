@@ -38,6 +38,7 @@ pipeline:
   # NOTE: 'import' must always be the first step
   enabled_steps:
     - torch
+    - wait
     - dimp
     # - csv_conversion  # Commented out - service not running
     # - parquet_conversion  # Commented out - service not running

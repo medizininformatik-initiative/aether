@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 
 var (
 	noProgress bool
+	// errPipelinePaused is returned when the pipeline pauses at a wait step
+	errPipelinePaused = errors.New("pipeline paused at wait step")
 )
 
 // pipelineCmd represents the pipeline command group
@@ -210,6 +213,50 @@ func executeStep(job *models.PipelineJob, stepName models.StepName, config *mode
 		fmt.Println("Parquet conversion step not yet implemented - job will remain at this step")
 		return nil
 
+	case models.StepWait:
+		// Execute wait step - creates empty wait directory and pauses pipeline
+		stepIndex := -1
+		for i, step := range job.Config.Pipeline.EnabledSteps {
+			if step == models.StepWait && string(step) == job.CurrentStep {
+				stepIndex = i
+				break
+			}
+		}
+		if stepIndex == -1 {
+			return fmt.Errorf("wait step not found in enabled steps")
+		}
+
+		if err := pipeline.ExecuteWaitStep(job, config.JobsDir, stepIndex); err != nil {
+			return fmt.Errorf("wait step failed: %w", err)
+		}
+
+		// Mark the wait step as waiting (job stays in_progress)
+		for i := range job.Steps {
+			if job.Steps[i].Name == models.StepWait && job.Steps[i].Status == models.StepStatusInProgress {
+				job.Steps[i].Status = models.StepStatusWaiting
+				break
+			}
+		}
+
+		if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
+			return fmt.Errorf("failed to save job state: %w", err)
+		}
+
+		// Get previous step name for wait directory path
+		var prevStepName models.StepName
+		for i := stepIndex - 1; i >= 0; i-- {
+			if job.Config.Pipeline.EnabledSteps[i] != models.StepWait {
+				prevStepName = job.Config.Pipeline.EnabledSteps[i]
+				break
+			}
+		}
+		waitDir := services.GetWaitStepDir(config.JobsDir, job.JobID, prevStepName)
+		fmt.Printf("\n⏸ Pipeline paused at wait step\n")
+		fmt.Printf("  Wait directory: %s\n", waitDir)
+		fmt.Printf("  The directory is EMPTY - place your modified data there\n")
+		fmt.Printf("\n  To continue: aether pipeline continue %s\n", job.JobID)
+		return errPipelinePaused // Signal to break out of pipeline loop
+
 	default:
 		return fmt.Errorf("unknown step: %s", stepName)
 	}
@@ -318,6 +365,11 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 		}
 
 		if err := executeStep(advancedJob, nextStepName, config, logger, noProgress); err != nil {
+			// Check if this is a "paused" signal from wait step
+			if err == errPipelinePaused {
+				return nil // Exit gracefully - pipeline is paused
+			}
+			// Mark job as failed
 			failedJob := pipeline.FailJob(advancedJob, err.Error())
 			if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
 				logger.Error("Failed to save failed job state", "error", saveErr)
@@ -433,6 +485,88 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 		}
 
 		fmt.Printf("Current step '%s' is completed, advancing to next step: %s\n", currentStepName, nextStepName)
+		advancedJob, err := pipeline.AdvanceToNextStep(job)
+		if err != nil {
+			return fmt.Errorf("failed to advance to next step: %w", err)
+		}
+
+		if err := pipeline.UpdateJob(config.JobsDir, advancedJob); err != nil {
+			return fmt.Errorf("failed to save job state: %w", err)
+		}
+
+		stepToExecute = nextStepName
+		jobToExecute = advancedJob
+	} else if currentStepName == models.StepWait && currentStep.Status == models.StepStatusWaiting {
+		// Special handling for wait step in "waiting" status
+		// Check if wait directory has files - if so, complete wait step and continue
+		fmt.Printf("Resuming incomplete step: %s (status: %s)\n", currentStepName, currentStep.Status)
+
+		// Find the wait step index to get the previous step
+		waitStepIndex := -1
+		for i, step := range job.Config.Pipeline.EnabledSteps {
+			if step == models.StepWait && string(step) == job.CurrentStep {
+				waitStepIndex = i
+				break
+			}
+		}
+		if waitStepIndex == -1 {
+			return fmt.Errorf("wait step not found in enabled steps")
+		}
+
+		// Get previous step name to determine wait directory
+		prevStepName, err := pipeline.GetPreviousStepForWait(job.Config.Pipeline.EnabledSteps, waitStepIndex)
+		if err != nil {
+			return fmt.Errorf("failed to find previous step for wait: %w", err)
+		}
+
+		waitDir := services.GetWaitStepDir(config.JobsDir, job.JobID, prevStepName)
+		fileCount, err := pipeline.CountFilesInDir(waitDir)
+		if err != nil {
+			return fmt.Errorf("failed to check wait directory: %w", err)
+		}
+
+		if fileCount == 0 {
+			// Directory is empty - stay paused
+			fmt.Printf("\n⏸ Pipeline still paused at wait step\n")
+			fmt.Printf("  Wait directory: %s\n", waitDir)
+			fmt.Printf("  The directory is EMPTY - place your modified data there\n")
+			fmt.Printf("\n  To continue: aether pipeline continue %s\n", job.JobID)
+			return errPipelinePaused
+		}
+
+		// Files present - mark wait step as completed and continue
+		fmt.Printf("  Found %d file(s) in wait directory\n", fileCount)
+		fmt.Printf("  ✓ Wait step completed\n\n")
+
+		// Mark wait step as completed
+		for i := range job.Steps {
+			if job.Steps[i].Name == models.StepWait && job.Steps[i].Status == models.StepStatusWaiting {
+				now := time.Now()
+				job.Steps[i].Status = models.StepStatusCompleted
+				job.Steps[i].CompletedAt = &now
+				break
+			}
+		}
+
+		if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
+			return fmt.Errorf("failed to save job state: %w", err)
+		}
+
+		// Get and advance to next step
+		nextStepName := job.Config.Pipeline.GetNextStep(currentStepName)
+		if nextStepName == "" {
+			// No more steps - mark job as complete
+			fmt.Println("All steps completed, marking job as complete...")
+			completedJob := pipeline.CompleteJob(job)
+			if err := pipeline.UpdateJob(config.JobsDir, completedJob); err != nil {
+				return fmt.Errorf("failed to update job: %w", err)
+			}
+			fmt.Println("✓ Job completed successfully")
+			return nil
+		}
+
+		// Advance to next step
+		fmt.Printf("Advancing to step: %s\n", nextStepName)
 		advancedJob, err := pipeline.AdvanceToNextStep(job)
 		if err != nil {
 			return fmt.Errorf("failed to advance to next step: %w", err)

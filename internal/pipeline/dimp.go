@@ -48,8 +48,11 @@ func ExecuteDIMPStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 	httpClient := services.DefaultHTTPClient()
 	dimpClient := services.NewDIMPClient(job.Config.Services.DIMP.URL, httpClient, logger)
 
-	// Setup directories
-	importDir := filepath.Join(jobDir, "import")
+	// Setup directories - use GetStepInputDir to handle wait step correctly
+	jobsBaseDir := filepath.Dir(jobDir)
+	jobID := filepath.Base(jobDir)
+	stepIndex := getStepIndexInEnabledSteps(job.Config.Pipeline.EnabledSteps, stepName)
+	importDir := services.GetStepInputDir(jobsBaseDir, jobID, job.Config.Pipeline.EnabledSteps, stepIndex)
 	outputDir := filepath.Join(jobDir, "pseudonymized")
 
 	// Ensure output directory exists
@@ -68,7 +71,7 @@ func ExecuteDIMPStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 	}
 
 	if len(files) == 0 {
-		err := fmt.Errorf("no FHIR NDJSON files found in import directory")
+		err := fmt.Errorf("no FHIR NDJSON files found in %s", importDir)
 		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
 		recordStepError(step, err, models.ErrorTypeNonTransient)
 		return err
@@ -354,4 +357,14 @@ func recordStepError(step *models.PipelineStep, err error, errorType models.Erro
 		Message:   err.Error(),
 		Timestamp: time.Now(),
 	}
+}
+
+// getStepIndexInEnabledSteps finds the index of a step in the enabled steps list
+func getStepIndexInEnabledSteps(steps []models.StepName, target models.StepName) int {
+	for i, step := range steps {
+		if step == target {
+			return i
+		}
+	}
+	return -1
 }

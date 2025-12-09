@@ -28,6 +28,7 @@ const (
 	StepValidation        StepName = "validation"
 	StepCSVConversion     StepName = "csv_conversion"
 	StepParquetConversion StepName = "parquet_conversion"
+	StepWait              StepName = "wait" // Pause pipeline for user inspection/modification
 )
 
 // StepStatus defines the execution state of a pipeline step
@@ -38,6 +39,7 @@ const (
 	StepStatusInProgress StepStatus = "in_progress"
 	StepStatusCompleted  StepStatus = "completed"
 	StepStatusFailed     StepStatus = "failed"
+	StepStatusWaiting    StepStatus = "waiting" // Paused, awaiting user to run 'pipeline continue'
 )
 
 // StepError captures error details for a failed step
@@ -67,7 +69,7 @@ const (
 // IsValidStepName checks if the step name is recognized
 func IsValidStepName(name StepName) bool {
 	switch name {
-	case StepTorchImport, StepLocalImport, StepHttpImport, StepDIMP, StepValidation, StepCSVConversion, StepParquetConversion:
+	case StepTorchImport, StepLocalImport, StepHttpImport, StepDIMP, StepValidation, StepCSVConversion, StepParquetConversion, StepWait:
 		return true
 	default:
 		return false
@@ -77,7 +79,7 @@ func IsValidStepName(name StepName) bool {
 // IsValidStepStatus checks if the step status is recognized
 func IsValidStepStatus(s StepStatus) bool {
 	switch s {
-	case StepStatusPending, StepStatusInProgress, StepStatusCompleted, StepStatusFailed:
+	case StepStatusPending, StepStatusInProgress, StepStatusCompleted, StepStatusFailed, StepStatusWaiting:
 		return true
 	default:
 		return false
@@ -88,14 +90,17 @@ func IsValidStepStatus(s StepStatus) bool {
 // Valid transitions:
 //
 //	pending -> in_progress
-//	in_progress -> completed | failed
+//	in_progress -> completed | failed | waiting (for wait step)
+//	waiting -> completed (when user runs 'pipeline continue')
 //	failed -> in_progress (retry if transient error)
 func (s StepStatus) CanTransitionTo(next StepStatus) bool {
 	switch s {
 	case StepStatusPending:
 		return next == StepStatusInProgress
 	case StepStatusInProgress:
-		return next == StepStatusCompleted || next == StepStatusFailed
+		return next == StepStatusCompleted || next == StepStatusFailed || next == StepStatusWaiting
+	case StepStatusWaiting:
+		return next == StepStatusCompleted // User continued the pipeline
 	case StepStatusFailed:
 		return next == StepStatusInProgress
 	case StepStatusCompleted:

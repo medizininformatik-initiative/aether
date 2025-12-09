@@ -41,7 +41,8 @@ func createDIMPTestJob(dimpURL string) *models.PipelineJob {
 			},
 		},
 	}
-	job.Config.Pipeline.EnabledSteps = append(job.Config.Pipeline.EnabledSteps, models.StepDIMP)
+	// Include import step before DIMP (required for GetStepInputDir to work correctly)
+	job.Config.Pipeline.EnabledSteps = []models.StepName{models.StepLocalImport, models.StepDIMP}
 	return job
 }
 
@@ -733,7 +734,6 @@ func TestExecuteDIMPStep_MixedResourceTypes(t *testing.T) {
 	outputResources := readDIMPNDJSON(t, outputFile)
 	assert.Len(t, outputResources, 4)
 }
-
 
 func TestExecuteDIMPStep_BundleWithError(t *testing.T) {
 	server := createMockDIMPServer()

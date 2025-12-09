@@ -19,6 +19,7 @@ var StepPrerequisites = map[models.StepName][]models.StepName{
 	models.StepValidation:        {"import"}, // Can validate after import (regardless of DIMP)
 	models.StepCSVConversion:     {"import"}, // Can convert original or pseudonymized data
 	models.StepParquetConversion: {"import"}, // Can convert original or pseudonymized data
+	models.StepWait:              {"import"}, // Wait requires at least one step to have run
 }
 
 // ValidateStepPrerequisites checks if all prerequisite steps have completed successfully
@@ -31,6 +32,7 @@ func ValidateStepPrerequisites(job models.PipelineJob, stepName models.StepName)
 	}
 
 	for _, prerequisite := range prerequisites {
+		// "import" means any import step type
 		if prerequisite == "import" {
 			importCompleted := false
 			for _, importStep := range []models.StepName{models.StepTorchImport, models.StepLocalImport, models.StepHttpImport} {
@@ -90,6 +92,7 @@ func DetectInputType(inputSource string) (models.InputType, error) {
 	}
 
 	if strings.HasPrefix(inputSource, "http://") || strings.HasPrefix(inputSource, "https://") {
+		// TORCH result URLs contain /fhir/extraction/ or /fhir/result/
 		if strings.Contains(inputSource, "/fhir/extraction/") || strings.Contains(inputSource, "/fhir/result/") {
 			return models.InputTypeTORCHURL, nil
 		}
@@ -131,6 +134,7 @@ func IsCRTDLFileWithHint(path string) (bool, string) {
 		return false, fmt.Sprintf("not valid JSON: %v", err)
 	}
 
+	// FHIR Parameters format is not supported
 	if resourceType, ok := crtdl["resourceType"].(string); ok && resourceType == "Parameters" {
 		return false, "file uses FHIR Parameters format - please convert to flat CRTDL structure (see example-crtdl.json)"
 	}
@@ -275,5 +279,23 @@ func DetectOversizedResource(resource map[string]any, thresholdBytes int) *model
 		}
 	}
 
+	return nil
+}
+
+// ValidateWaitStepPlacement ensures wait steps are correctly positioned in the pipeline
+// Rules:
+//   - Wait cannot be the first step (needs previous step output)
+//   - No consecutive wait steps (redundant)
+func ValidateWaitStepPlacement(steps []models.StepName) error {
+	for i, step := range steps {
+		if step == models.StepWait {
+			if i == 0 {
+				return fmt.Errorf("wait step cannot be first in pipeline: requires previous step output")
+			}
+			if i > 0 && steps[i-1] == models.StepWait {
+				return fmt.Errorf("consecutive wait steps not allowed at position %d: redundant", i)
+			}
+		}
+	}
 	return nil
 }

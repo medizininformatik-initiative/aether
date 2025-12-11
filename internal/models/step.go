@@ -97,9 +97,9 @@ func (s StepStatus) CanTransitionTo(next StepStatus) bool {
 	case StepStatusInProgress:
 		return next == StepStatusCompleted || next == StepStatusFailed
 	case StepStatusFailed:
-		return next == StepStatusInProgress // Allow retry
+		return next == StepStatusInProgress
 	case StepStatusCompleted:
-		return false // Terminal state
+		return false
 	default:
 		return false
 	}

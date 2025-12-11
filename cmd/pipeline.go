@@ -131,7 +131,6 @@ func init() {
 	pipelineCmd.AddCommand(pipelineStatusCmd)
 	pipelineCmd.AddCommand(pipelineContinueCmd)
 
-	// Flags for pipeline start
 	pipelineStartCmd.Flags().BoolVar(&noProgress, "no-progress", false, "Disable progress indicators")
 }
 
@@ -163,12 +162,10 @@ func executeStep(job *models.PipelineJob, stepName models.StepName, config *mode
 
 	switch stepName {
 	case models.StepTorchImport, models.StepLocalImport, models.StepHttpImport:
-		// Validate step name matches input type
 		if err := validateImportStepMatch(job.InputType, stepName); err != nil {
 			return fmt.Errorf("step validation failed: %w", err)
 		}
 
-		// Create HTTP client
 		httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, logger)
 		showProgress := !noProgress
 
@@ -185,19 +182,15 @@ func executeStep(job *models.PipelineJob, stepName models.StepName, config *mode
 		return nil
 
 	case models.StepDIMP:
-		// Execute DIMP pseudonymization step
 		fmt.Println("Starting DIMP pseudonymization step...")
 		if err := pipeline.ExecuteDIMPStep(job, jobDir, logger); err != nil {
-			// Mark job as failed
 			failedJob := pipeline.FailJob(job, err.Error())
-			// Save failed state
 			if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
 				logger.Error("Failed to save job state", "error", saveErr)
 			}
 			return fmt.Errorf("DIMP step failed: %w", err)
 		}
 
-		// Save successful state
 		if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
 			return fmt.Errorf("failed to save job state: %w", err)
 		}
@@ -225,27 +218,23 @@ func executeStep(job *models.PipelineJob, stepName models.StepName, config *mode
 func runPipelineStart(cmd *cobra.Command, args []string) error {
 	inputSource := args[0]
 
-	// Load configuration
 	config, err := services.LoadConfig(cfgFile)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Validate service connectivity (T062)
 	fmt.Println("Validating service connectivity...")
 	if err := config.ValidateServiceConnectivity(); err != nil {
 		return fmt.Errorf("service connectivity check failed: %w\n\nPlease ensure all required services are running and accessible", err)
 	}
 	fmt.Println("✓ All required services are reachable")
 
-	// Create logger
 	logLevel := lib.LogLevelInfo
 	if verbose {
 		logLevel = lib.LogLevelDebug
 	}
 	logger := lib.NewLogger(logLevel)
 
-	// Create job
 	logger.Info("Creating new pipeline job", "input", inputSource)
 	job, err := pipeline.CreateJob(inputSource, *config, logger)
 	if err != nil {
@@ -259,8 +248,6 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Type: %s\n", job.InputType)
 	fmt.Printf("\n")
 
-	// Acquire job lock to prevent concurrent execution
-	// Lock is automatically released when function returns (via defer)
 	lock, err := services.AcquireJobLock(config.JobsDir, job.JobID, logger)
 	if err != nil {
 		return fmt.Errorf("cannot start pipeline: %w\n\nAnother process may be working on this job", err)
@@ -271,15 +258,12 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// Start the job (with lock held)
 	startedJob := pipeline.StartJob(job)
 
-	// Save updated state
 	if err := pipeline.UpdateJob(config.JobsDir, startedJob); err != nil {
 		return fmt.Errorf("failed to update job state: %w", err)
 	}
 
-	// Execute import step
 	fmt.Printf("Starting %s step...\n", startedJob.CurrentStep)
 	httpClient := services.NewHTTPClient(
 		time.Duration(config.Retry.InitialBackoffMs)*time.Millisecond*10, // Longer timeout for downloads
@@ -291,16 +275,13 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, showProgress)
 
 	if err != nil {
-		// Mark job as failed
 		failedJob := pipeline.FailJob(importedJob, err.Error())
-		// Save failed state
 		if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
 			logger.Error("Failed to save job state", "error", saveErr)
 		}
 		return fmt.Errorf("%s step failed: %w", startedJob.CurrentStep, err)
 	}
 
-	// Save successful state after import
 	if saveErr := pipeline.UpdateJob(config.JobsDir, importedJob); saveErr != nil {
 		logger.Error("Failed to save job state", "error", saveErr)
 	}
@@ -310,15 +291,12 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Size: %s\n", formatBytes(importedJob.TotalBytes))
 	fmt.Printf("\n")
 
-	// Continue with remaining enabled steps automatically
 	currentJob := importedJob
 	for {
-		// Determine next step
 		currentStepName := models.StepName(currentJob.CurrentStep)
 		nextStepName := currentJob.Config.Pipeline.GetNextStep(currentStepName)
 
 		if nextStepName == "" {
-			// No more steps - mark job as complete
 			fmt.Println("All steps completed, marking job as complete...")
 			completedJob := pipeline.CompleteJob(currentJob)
 			if err := pipeline.UpdateJob(config.JobsDir, completedJob); err != nil {
@@ -329,7 +307,6 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
-		// Advance to next step
 		fmt.Printf("\nAdvancing to step: %s\n", nextStepName)
 		advancedJob, err := pipeline.AdvanceToNextStep(currentJob)
 		if err != nil {
@@ -340,9 +317,7 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to save job state: %w", err)
 		}
 
-		// Execute the next step
 		if err := executeStep(advancedJob, nextStepName, config, logger, noProgress); err != nil {
-			// Mark job as failed
 			failedJob := pipeline.FailJob(advancedJob, err.Error())
 			if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
 				logger.Error("Failed to save failed job state", "error", saveErr)
@@ -350,7 +325,6 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		// Update current job reference
 		currentJob = advancedJob
 	}
 }
@@ -358,22 +332,18 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 func runPipelineStatus(cmd *cobra.Command, args []string) error {
 	jobID := args[0]
 
-	// Load configuration
 	config, err := services.LoadConfig(cfgFile)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Load job
 	job, err := pipeline.LoadJob(config.JobsDir, jobID)
 	if err != nil {
 		return fmt.Errorf("failed to load job: %w", err)
 	}
 
-	// Display job status
 	fmt.Println(pipeline.GetJobSummary(job))
 
-	// Display step details
 	fmt.Println("Steps:")
 	for _, step := range job.Steps {
 		status := getStatusSymbol(step.Status)
@@ -404,27 +374,23 @@ func runPipelineStatus(cmd *cobra.Command, args []string) error {
 func runPipelineContinue(cmd *cobra.Command, args []string) error {
 	jobID := args[0]
 
-	// Load configuration
 	config, err := services.LoadConfig(cfgFile)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Create logger
 	logLevel := lib.LogLevelInfo
 	if verbose {
 		logLevel = lib.LogLevelDebug
 	}
 	logger := lib.NewLogger(logLevel)
 
-	// Load existing job
 	fmt.Printf("Loading job %s...\n", jobID)
 	job, err := pipeline.LoadJob(config.JobsDir, jobID)
 	if err != nil {
 		return fmt.Errorf("failed to load job: %w", err)
 	}
 
-	// Check job status
 	if job.Status == models.JobStatusCompleted {
 		fmt.Println("✓ Job already completed")
 		return nil
@@ -433,7 +399,6 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Current status: %s\n", job.Status)
 	fmt.Printf("Current step: %s\n", job.CurrentStep)
 
-	// Acquire job lock to prevent concurrent execution
 	lock, err := services.AcquireJobLock(config.JobsDir, jobID, logger)
 	if err != nil {
 		return fmt.Errorf("cannot continue pipeline: %w\n\nAnother process may be working on this job. Wait for it to complete or check job status", err)
@@ -444,7 +409,6 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// Get current step and check if it's completed
 	currentStepName := models.StepName(job.CurrentStep)
 	currentStep, found := models.GetStepByName(*job, currentStepName)
 
@@ -455,13 +419,10 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("current step %s not found in job", currentStepName)
 	}
 
-	// Check if current step is completed
 	if currentStep.Status == models.StepStatusCompleted {
-		// Current step is done, move to next step
 		nextStepName := job.Config.Pipeline.GetNextStep(currentStepName)
 
 		if nextStepName == "" {
-			// No more steps - mark job as complete
 			fmt.Println("All steps completed, marking job as complete...")
 			completedJob := pipeline.CompleteJob(job)
 			if err := pipeline.UpdateJob(config.JobsDir, completedJob); err != nil {
@@ -471,7 +432,6 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
-		// Advance to next step
 		fmt.Printf("Current step '%s' is completed, advancing to next step: %s\n", currentStepName, nextStepName)
 		advancedJob, err := pipeline.AdvanceToNextStep(job)
 		if err != nil {
@@ -485,7 +445,6 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 		stepToExecute = nextStepName
 		jobToExecute = advancedJob
 	} else {
-		// Current step is NOT completed (in_progress, failed, or pending) - resume it
 		fmt.Printf("Resuming incomplete step: %s (status: %s)\n", currentStepName, currentStep.Status)
 		stepToExecute = currentStepName
 		jobToExecute = job
@@ -494,7 +453,6 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\nResuming pipeline execution...\n")
 	fmt.Printf("Executing step: %s\n\n", stepToExecute)
 
-	// Execute the step
 	if err := executeStep(jobToExecute, stepToExecute, config, logger, noProgress); err != nil {
 		return err
 	}

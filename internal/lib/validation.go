@@ -30,11 +30,8 @@ func ValidateStepPrerequisites(job models.PipelineJob, stepName models.StepName)
 		return "", true
 	}
 
-	// Check each prerequisite
 	for _, prerequisite := range prerequisites {
-		// Special case: "import" means any import step type
 		if prerequisite == "import" {
-			// Check if any import step is completed
 			importCompleted := false
 			for _, importStep := range []models.StepName{models.StepTorchImport, models.StepLocalImport, models.StepHttpImport} {
 				step, found := models.GetStepByName(job, importStep)
@@ -56,13 +53,11 @@ func ValidateStepPrerequisites(job models.PipelineJob, stepName models.StepName)
 			continue
 		}
 
-		// Prerequisite exists but hasn't completed
 		if step.Status != models.StepStatusCompleted {
 			return prerequisite, false
 		}
 	}
 
-	// All prerequisites met
 	return "", true
 }
 
@@ -90,21 +85,17 @@ func DetectInputType(inputSource string) (models.InputType, error) {
 		return "", fmt.Errorf("input source cannot be empty")
 	}
 
-	// Check if directory
 	if stat, err := os.Stat(inputSource); err == nil && stat.IsDir() {
 		return models.InputTypeLocal, nil
 	}
 
-	// Check if HTTP URL
 	if strings.HasPrefix(inputSource, "http://") || strings.HasPrefix(inputSource, "https://") {
-		// Check if TORCH result URL pattern (contains /fhir/extraction/ or /fhir/result/)
 		if strings.Contains(inputSource, "/fhir/extraction/") || strings.Contains(inputSource, "/fhir/result/") {
 			return models.InputTypeTORCHURL, nil
 		}
 		return models.InputTypeHTTP, nil
 	}
 
-	// Check if CRTDL file
 	if strings.HasSuffix(inputSource, ".crtdl") || strings.HasSuffix(inputSource, ".json") {
 		isCRTDL, _ := IsCRTDLFileWithHint(inputSource)
 		if isCRTDL {
@@ -140,12 +131,10 @@ func IsCRTDLFileWithHint(path string) (bool, string) {
 		return false, fmt.Sprintf("not valid JSON: %v", err)
 	}
 
-	// Check for FHIR Parameters format (newer format)
 	if resourceType, ok := crtdl["resourceType"].(string); ok && resourceType == "Parameters" {
 		return false, "file uses FHIR Parameters format - please convert to flat CRTDL structure (see example-crtdl.json)"
 	}
 
-	// Verify required CRTDL structure
 	_, hasCohort := crtdl["cohortDefinition"]
 	_, hasExtraction := crtdl["dataExtraction"]
 
@@ -179,12 +168,10 @@ func ValidateCRTDLSyntax(crtdlPath string) error {
 		return fmt.Errorf("CRTDL file '%s' contains invalid JSON: %w\n\nPlease ensure the file is valid JSON format", crtdlPath, err)
 	}
 
-	// Check for FHIR Parameters format (common mistake)
 	if resourceType, ok := crtdl["resourceType"].(string); ok && resourceType == "Parameters" {
 		return fmt.Errorf("CRTDL file '%s' uses FHIR Parameters format\n\nThis format is not supported. Please convert to flat CRTDL structure:\n{\n  \"cohortDefinition\": { \"inclusionCriteria\": [...] },\n  \"dataExtraction\": { \"attributeGroups\": [...] }\n}\n\nSee .github/test/torch/queries/example-crtdl.json for reference", crtdlPath)
 	}
 
-	// Check required keys
 	cohort, hasCohort := crtdl["cohortDefinition"]
 	if !hasCohort {
 		availableKeys := make([]string, 0, len(crtdl))
@@ -203,7 +190,6 @@ func ValidateCRTDLSyntax(crtdlPath string) error {
 		return fmt.Errorf("CRTDL file '%s' missing required key: 'dataExtraction'\n\nFound keys: %v\n\nExpected structure:\n{\n  \"cohortDefinition\": { \"inclusionCriteria\": [...] },\n  \"dataExtraction\": { \"attributeGroups\": [...] }\n}", crtdlPath, availableKeys)
 	}
 
-	// Validate cohortDefinition structure
 	cohortMap, ok := cohort.(map[string]any)
 	if !ok {
 		return fmt.Errorf("CRTDL file '%s': 'cohortDefinition' must be an object, got %T", crtdlPath, cohort)
@@ -216,7 +202,6 @@ func ValidateCRTDLSyntax(crtdlPath string) error {
 		return fmt.Errorf("CRTDL file '%s': cohortDefinition missing 'inclusionCriteria'\n\nFound keys in cohortDefinition: %v\n\nExpected: { \"inclusionCriteria\": [[...]] }", crtdlPath, cohortKeys)
 	}
 
-	// Validate dataExtraction structure
 	extractionMap, ok := extraction.(map[string]any)
 	if !ok {
 		return fmt.Errorf("CRTDL file '%s': 'dataExtraction' must be an object, got %T", crtdlPath, extraction)
@@ -257,7 +242,6 @@ func DetectOversizedResource(resource map[string]any, thresholdBytes int) *model
 		return nil // Bundles are handled separately
 	}
 
-	// Calculate resource size
 	jsonData, err := json.Marshal(resource)
 	if err != nil {
 		// If we can't marshal, assume it's okay (error will be caught elsewhere)

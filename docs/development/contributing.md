@@ -1,15 +1,38 @@
 # Contributing
 
-Contributions welcome! Please follow this workflow to contribute to Aether.
+Contributions welcome! Please follow this guide to contribute to Aether.
 
-## Getting Started
+## How to Obtain the Software
 
-### Prerequisites
+Clone the repository using Git:
 
-- Go 1.25+ ([download](https://go.dev/dl/))
-- Make
-- Git
-- Docker & Docker Compose (for integration tests)
+```bash
+git clone https://github.com/medizininformatik-initiative/aether.git
+cd aether
+```
+
+For specific versions, see [Releases](https://github.com/medizininformatik-initiative/aether/releases).
+
+## Providing Feedback
+
+### Bug Reports and Enhancement Suggestions
+
+- **Issues**: [GitHub Issues](https://github.com/medizininformatik-initiative/aether/issues)
+- **Security**: See our [Security Policy](https://github.com/medizininformatik-initiative/aether/security/policy)
+
+### Discussions
+
+For questions, ideas, and community engagement:
+- [GitHub Discussions](https://github.com/medizininformatik-initiative/aether/discussions)
+
+## Contributing to the Software
+
+### Requirements
+
+- Fork the repository
+- Create feature branches
+- Follow [coding standards](./coding-guidelines.md)
+- Open pull requests linked to existing issues
 
 ### Setting Up Your Development Environment
 
@@ -39,6 +62,24 @@ make build
 make test
 ```
 
+## Requirements for Acceptable Contributions
+
+All contributions must meet these standards:
+
+1. **Code Formatting**: All Go code must be formatted using `gofmt`
+2. **Static Analysis**: Code must pass all CI checks including linting
+3. **Test Coverage**: Maintain or improve test coverage on changed code
+4. **Code Quality**: Write readable code with comments explaining "why", not "what"
+
+See [Coding Guidelines](./coding-guidelines.md) for detailed standards.
+
+## Build Tools
+
+- Go 1.21+ ([download](https://go.dev/dl/))
+- Make
+- Git
+- Docker & Docker Compose (for integration tests)
+
 ## Development Workflow
 
 ### Before Starting
@@ -64,33 +105,6 @@ git checkout -b feature/your-feature-name
 # Examples: feature/add-validation-step, fix/retry-logic, docs/architecture
 ```
 
-### TDD Development Cycle
-
-Follow strict Test-Driven Development:
-
-1. **Write failing test** (RED phase):
-   ```bash
-   vim internal/pipeline/your_feature_test.go
-   # Write test that describes desired behavior
-   go test -v ./internal/pipeline/ -run TestYourFeature
-   # Should fail
-   ```
-
-2. **Implement minimum code** (GREEN phase):
-   ```bash
-   vim internal/pipeline/your_feature.go
-   # Implement minimum logic to pass test
-   go test -v ./internal/pipeline/ -run TestYourFeature
-   # Should pass
-   ```
-
-3. **Refactor** (REFACTOR phase):
-   ```bash
-   # Improve code quality while keeping tests green
-   make test
-   # All tests should still pass
-   ```
-
 ### Code Quality Checks
 
 Before committing, ensure code quality:
@@ -106,22 +120,51 @@ make test
 make coverage
 ```
 
-### Commit Message Format
+## Commit Messages
 
-Write clear, descriptive commit messages:
+We use [Conventional Commits](https://www.conventionalcommits.org/) with these rules:
 
-```bash
-# Good commit messages
-git commit -m "feat: add validation step to pipeline"
-git commit -m "fix: correct retry backoff calculation"
-git commit -m "docs: update TORCH integration guide"
-git commit -m "refactor: simplify state persistence logic"
-git commit -m "test: add table-driven tests for TORCH import step"
+### Format
 
-# Avoid vague messages
-# ❌ git commit -m "fix stuff"
-# ❌ git commit -m "update code"
-# ✅ git commit -m "fix: handle empty FHIR bundles gracefully"
+```
+<type>: <subject>
+
+[optional body]
+```
+
+### Types
+
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation changes
+- `refactor`: Code refactoring
+- `test`: Adding or updating tests
+- `chore`: Maintenance tasks
+
+### Subject Line Rules
+
+- Maximum 72 characters
+- Use imperative mood ("Add feature" not "Added feature")
+- No period at the end
+
+### Examples
+
+**Good:**
+
+```
+feat: Add validation step to pipeline
+fix: Correct retry backoff calculation
+docs: Update TORCH integration guide
+refactor: Simplify state persistence logic
+test: Add table-driven tests for TORCH import step
+```
+
+**Avoid:**
+
+```
+fix stuff
+update code
+Fixed the bug
 ```
 
 ## Pull Request Process
@@ -190,12 +233,12 @@ How was this tested?
 
 Your PR will be reviewed for:
 
-- ✅ **All tests pass** - Including unit, integration, and contract tests
-- ✅ **Code coverage maintained** - No decrease in coverage
-- ✅ **Functional programming** - Immutability, pure functions, explicit side effects
-- ✅ **KISS principle** - Simple, understandable code
-- ✅ **Documentation** - Comments explaining "why", not "what"
-- ✅ **No unnecessary dependencies** - Use standard library first
+- **All tests pass** - Including unit, integration, and contract tests
+- **Code coverage maintained** - No decrease in coverage
+- **Functional programming** - Immutability, pure functions, explicit side effects
+- **KISS principle** - Simple, understandable code
+- **Documentation** - Comments explaining "why", not "what"
+- **No unnecessary dependencies** - Use standard library first
 
 ### Review Cycle
 
@@ -281,7 +324,7 @@ go test -v ./tests/unit/ -run TestValidation
 make test
 
 # 6. Commit with descriptive message
-git commit -m "feat: add validation step to pipeline"
+git commit -m "feat: Add validation step to pipeline"
 ```
 
 ### Fixing a Bug
@@ -302,7 +345,7 @@ vim docs/guides/torch-integration.md
 npm run docs:dev
 
 # Commit documentation changes
-git commit -m "docs: update TORCH integration guide"
+git commit -m "docs: Update TORCH integration guide"
 ```
 
 ## Code Standards
@@ -317,11 +360,11 @@ git commit -m "docs: update TORCH integration guide"
 
 ### What We Avoid
 
-- ❌ Unnecessary complexity
-- ❌ Global state or side effects outside services
-- ❌ Comments that just repeat the code
-- ❌ External dependencies without discussion
-- ❌ Inconsistent error handling
+- Unnecessary complexity
+- Global state or side effects outside services
+- Comments that just repeat the code
+- External dependencies without discussion
+- Inconsistent error handling
 
 See [Coding Guidelines](./coding-guidelines.md) for detailed standards.
 
@@ -337,6 +380,12 @@ Contributors are recognized in:
 - Commit history (your name in git)
 - Project README (for significant contributions)
 - Release notes (for features/fixes included in releases)
+
+## License
+
+Aether is released under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).
+
+By contributing to this project, you agree that your contributions will be licensed under the same license.
 
 ## Next Steps
 

@@ -42,9 +42,16 @@ make lint
 cd docs && npm install && npm run docs:build
 ```
 
-## Code of Conduct
+## Requirements for Acceptable Contributions
 
-By participating in this project, you agree to abide by our community standards and treat all contributors with respect.
+- All code must be formatted with `gofmt`
+- All CI checks must pass
+- Maintain or improve test coverage
+- Follow [Coding Guidelines](https://medizininformatik-initiative.github.io/aether/development/coding-guidelines.html)
+
+## License
+
+Aether is released under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). By contributing to this project, you agree that your contributions will be licensed under the same license.
 
 ## Questions?
 
@@ -52,4 +59,4 @@ By participating in this project, you agree to abide by our community standards 
 - **Issues**: Search existing [GitHub issues](https://github.com/medizininformatik-initiative/aether/issues)
 - **Discussions**: Start a [GitHub discussion](https://github.com/medizininformatik-initiative/aether/discussions)
 
-Thank you for helping make Aether better! 🚀
+Thank you for helping make Aether better!

@@ -136,7 +136,7 @@ jobs:
 
       - name: Upload E2E job outputs
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: e2e-job-outputs-${{ github.run_id }}
           path: .github/test/jobs/
@@ -150,7 +150,7 @@ jobs:
 
       - name: Upload service logs
         if: failure()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: docker-logs-e2e-${{ github.run_id }}
           path: docker-logs-e2e.txt

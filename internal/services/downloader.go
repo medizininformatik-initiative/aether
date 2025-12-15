@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -11,86 +12,96 @@ import (
 )
 
 // DownloadFromURL downloads FHIR NDJSON files from an HTTP URL to the job's import directory
+// If compress is true, the downloaded file will be compressed with zstd
 // Supports progress tracking via progress bar
 // Returns list of downloaded files and any error
-func DownloadFromURL(url string, destinationDir string, httpClient *HTTPClient, logger *lib.Logger, showProgress bool) ([]models.FHIRDataFile, error) {
-	// Ensure destination directory exists
+func DownloadFromURL(url string, destinationDir string, httpClient *HTTPClient, logger *lib.Logger, showProgress bool, compress bool, compressionLevel string) ([]models.FHIRDataFile, error) {
 	if err := os.MkdirAll(destinationDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create destination directory: %w", err)
 	}
 
 	logger.Info("Downloading from URL", "url", url, "destination", destinationDir)
 
-	// Determine the output filename from URL
 	fileName := filepath.Base(url)
-	if fileName == "." || fileName == "/" {
-		fileName = "download.ndjson"
-	}
-
-	// Ensure filename has .ndjson extension
+	// filepath.Base on HTTP URLs extracts from full URL string, so it always
+	// returns a valid filename (e.g., "server.com" for "http://server.com/")
 	if !models.IsValidFHIRFile(fileName) {
 		fileName = fileName + ".ndjson"
 	}
 
-	destPath := filepath.Join(destinationDir, fileName)
+	outputFileName := lib.GetCompressedFilename(fileName, compress)
+	destPath := filepath.Join(destinationDir, outputFileName)
 
-	// Create destination file
 	destFile, err := os.Create(destPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create destination file: %w", err)
 	}
-	defer func() {
-		if err := destFile.Close(); err != nil {
-			logger.Error("Failed to close destination file", "error", err)
-		}
-	}()
 
-	// Start spinner for connection phase (duration is initially unknown)
+	var writer io.WriteCloser = destFile
+	if compress {
+		compWriter, err := lib.CreateCompressedWriter(destFile, compressionLevel)
+		if err != nil {
+			_ = destFile.Close()
+			return nil, fmt.Errorf("failed to create compressed writer: %w", err)
+		}
+		writer = compWriter
+	}
+
 	spinner := ui.NewSpinner(fmt.Sprintf("Connecting to %s", url))
 	if showProgress {
 		spinner.Start()
 	}
 
-	// Download file
 	var bytesDownloaded int64
 	if showProgress {
-		// Use progress bar for download (when size is known)
-		// Note: We won't know total size until we start download, so we'll use spinner initially
-
-		bytesDownloaded, err = httpClient.Download(url, destFile)
+		bytesDownloaded, err = httpClient.Download(url, writer)
 		spinner.Stop(err == nil)
 
 		if err == nil && bytesDownloaded > 0 {
-			logger.Info("Download completed", "bytes", bytesDownloaded, "file", fileName)
+			logger.Info("Download completed", "bytes", bytesDownloaded, "file", outputFileName)
 		}
 	} else {
-		// No progress display
-		bytesDownloaded, err = httpClient.Download(url, destFile)
+		bytesDownloaded, err = httpClient.Download(url, writer)
+	}
+
+	if closeErr := writer.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	if compress {
+		if closeErr := destFile.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
 	}
 
 	if err != nil {
-		// Clean up failed download
 		_ = os.Remove(destPath)
 		return nil, fmt.Errorf("download failed: %w", err)
 	}
 
-	// Count lines (FHIR resources)
+	fileInfo, statErr := os.Stat(destPath)
+	var fileSize int64
+	if statErr == nil {
+		fileSize = fileInfo.Size()
+	} else {
+		// Fallback to bytesDownloaded if stat fails (defensive)
+		fileSize = bytesDownloaded
+	}
+
 	lineCount, countErr := lib.CountResourcesInFile(destPath)
 	if countErr != nil {
-		logger.Warn("Failed to count resources", "file", fileName, "error", countErr)
+		logger.Warn("Failed to count resources", "file", outputFileName, "error", countErr)
 		lineCount = 0
 	}
 
-	// Extract resource type from filename
-	resourceType := models.GetResourceTypeFromFilename(fileName)
+	resourceType := models.GetResourceTypeFromFilename(outputFileName)
 
-	logger.Info("File downloaded successfully", "file", fileName, "size", bytesDownloaded, "resources", lineCount)
+	logger.Info("File downloaded successfully", "file", outputFileName, "size", fileSize, "resources", lineCount, "compressed", compress)
 
 	downloadedFile := models.FHIRDataFile{
-		FileName:     fileName,
-		FilePath:     fileName, // Relative to job import directory
+		FileName:     outputFileName,
+		FilePath:     outputFileName, // Relative to job import directory
 		ResourceType: resourceType,
-		FileSize:     bytesDownloaded,
+		FileSize:     fileSize,
 		SourceStep:   models.StepHttpImport,
 		LineCount:    lineCount,
 		CreatedAt:    lib.GetFileModTime(destPath),
@@ -100,69 +111,83 @@ func DownloadFromURL(url string, destinationDir string, httpClient *HTTPClient, 
 }
 
 // DownloadFromURLWithProgress downloads a file with detailed progress tracking
+// If compress is true, the downloaded file will be compressed with zstd
 // Shows progress bar with percentage, ETA, and throughput for user feedback
-func DownloadFromURLWithProgress(url string, destinationDir string, httpClient *HTTPClient, logger *lib.Logger) ([]models.FHIRDataFile, error) {
-	// Ensure destination directory exists
+func DownloadFromURLWithProgress(url string, destinationDir string, httpClient *HTTPClient, logger *lib.Logger, compress bool, compressionLevel string) ([]models.FHIRDataFile, error) {
 	if err := os.MkdirAll(destinationDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create destination directory: %w", err)
 	}
 
 	logger.Info("Downloading from URL", "url", url)
 
-	// Determine filename
 	fileName := filepath.Base(url)
-	if fileName == "." || fileName == "/" {
-		fileName = "download.ndjson"
-	}
+	// filepath.Base on HTTP URLs extracts from full URL string, so it always
+	// returns a valid filename (e.g., "server.com" for "http://server.com/")
 	if !models.IsValidFHIRFile(fileName) {
 		fileName = fileName + ".ndjson"
 	}
 
-	destPath := filepath.Join(destinationDir, fileName)
+	outputFileName := lib.GetCompressedFilename(fileName, compress)
+	destPath := filepath.Join(destinationDir, outputFileName)
 
-	// Create destination file
 	destFile, err := os.Create(destPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create destination file: %w", err)
 	}
-	defer func() {
-		if err := destFile.Close(); err != nil {
-			logger.Error("Failed to close destination file", "error", err)
-		}
-	}()
 
-	// Start with spinner for connection phase
+	var writer io.WriteCloser = destFile
+	if compress {
+		compWriter, err := lib.CreateCompressedWriter(destFile, compressionLevel)
+		if err != nil {
+			_ = destFile.Close()
+			return nil, fmt.Errorf("failed to create compressed writer: %w", err)
+		}
+		writer = compWriter
+	}
+
 	spinner := ui.NewSpinner(fmt.Sprintf("Connecting to %s", url))
 	spinner.Start()
 
-	// First, try to get file size with HEAD request
-	// (We'll skip this for simplicity and just use spinner + download)
-
-	// Download with progress callback
 	progressCallback := func(bytes int64) {
-		// Progress callback for future use
 		_ = bytes
 	}
 
-	bytesDownloaded, err := httpClient.DownloadWithProgress(url, destFile, progressCallback)
+	bytesDownloaded, err := httpClient.DownloadWithProgress(url, writer, progressCallback)
 	spinner.Stop(err == nil)
+
+	if closeErr := writer.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	if compress {
+		if closeErr := destFile.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}
 
 	if err != nil {
 		_ = os.Remove(destPath)
 		return nil, fmt.Errorf("download failed: %w", err)
 	}
 
-	// Count resources
-	lineCount, _ := lib.CountResourcesInFile(destPath)
-	resourceType := models.GetResourceTypeFromFilename(fileName)
+	fileInfo, statErr := os.Stat(destPath)
+	var fileSize int64
+	if statErr == nil {
+		fileSize = fileInfo.Size()
+	} else {
+		// Fallback to bytesDownloaded if stat fails (defensive)
+		fileSize = bytesDownloaded
+	}
 
-	logger.Info("Download completed", "file", fileName, "size", bytesDownloaded, "resources", lineCount)
+	lineCount, _ := lib.CountResourcesInFile(destPath)
+	resourceType := models.GetResourceTypeFromFilename(outputFileName)
+
+	logger.Info("Download completed", "file", outputFileName, "size", fileSize, "resources", lineCount, "compressed", compress)
 
 	downloadedFile := models.FHIRDataFile{
-		FileName:     fileName,
-		FilePath:     fileName,
+		FileName:     outputFileName,
+		FilePath:     outputFileName,
 		ResourceType: resourceType,
-		FileSize:     bytesDownloaded,
+		FileSize:     fileSize,
 		SourceStep:   models.StepHttpImport,
 		LineCount:    lineCount,
 		CreatedAt:    lib.GetFileModTime(destPath),

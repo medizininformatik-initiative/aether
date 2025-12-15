@@ -1268,3 +1268,138 @@ jobs_dir: "` + jobsDir + `"
 	// Verify bundle split threshold defaults to 10MB in DIMP config
 	assert.Equal(t, 10, config.Services.DIMP.BundleSplitThresholdMB, "bundle_split_threshold_mb should default to 10")
 }
+
+// TestConfigLoading_CompressionDefault verifies compression defaults to enabled=true
+func TestConfigLoading_CompressionDefault(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	// Config without compression section - should default to enabled
+	configContent := `
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	// Verify compression defaults: enabled=true, level="default"
+	assert.True(t, config.Compression.Enabled, "Compression should default to enabled")
+	assert.Equal(t, "default", config.Compression.Level, "Compression level should default to 'default'")
+}
+
+// TestConfigLoading_CompressionExplicitlyEnabled verifies compression settings are loaded
+func TestConfigLoading_CompressionExplicitlyEnabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+pipeline:
+  enabled_steps:
+    - local_import
+
+compression:
+  enabled: true
+  level: "better"
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.True(t, config.Compression.Enabled, "Compression should be enabled")
+	assert.Equal(t, "better", config.Compression.Level, "Compression level should be 'better'")
+}
+
+// TestConfigLoading_CompressionDisabled verifies compression can be explicitly disabled
+func TestConfigLoading_CompressionDisabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+pipeline:
+  enabled_steps:
+    - local_import
+
+compression:
+  enabled: false
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.False(t, config.Compression.Enabled, "Compression should be disabled when explicitly set to false")
+	assert.Equal(t, "default", config.Compression.Level, "Compression level should default to 'default'")
+}
+
+// TestConfigLoading_CompressionAllLevels verifies all compression levels can be loaded
+func TestConfigLoading_CompressionAllLevels(t *testing.T) {
+	levels := []string{"fastest", "default", "better", "best"}
+
+	for _, level := range levels {
+		t.Run(level, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configFile := filepath.Join(tmpDir, "config.yaml")
+			jobsDir := filepath.Join(tmpDir, "jobs")
+			_ = os.MkdirAll(jobsDir, 0755)
+
+			configContent := `
+pipeline:
+  enabled_steps:
+    - local_import
+
+compression:
+  enabled: true
+  level: "` + level + `"
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+			err := os.WriteFile(configFile, []byte(configContent), 0644)
+			require.NoError(t, err)
+
+			config, err := services.LoadConfig(configFile)
+			require.NoError(t, err, "Config should load without error")
+
+			assert.True(t, config.Compression.Enabled)
+			assert.Equal(t, level, config.Compression.Level)
+		})
+	}
+}

@@ -82,6 +82,22 @@ retry:
   # Maximum backoff delay in milliseconds (exponential backoff cap)
   max_backoff_ms: 30000
 
+# Compression settings for pipeline output files
+# Zstd compression reduces disk usage and speeds up file transfers
+compression:
+  # Enable/disable compression (default: true)
+  # When enabled, output files use .ndjson.zst extension
+  # When disabled, output files use plain .ndjson extension
+  enabled: true
+
+  # Compression level (default: "default")
+  # Options: "fastest", "default", "better", "best"
+  # - fastest: Minimal CPU usage, lower compression ratio (~3-4x)
+  # - default: Balanced speed and compression (~4-5x)
+  # - better: Higher compression, slower (~5-6x)
+  # - best: Maximum compression, slowest (~6-7x)
+  level: "default"
+
 # Directory to store job state and data
 # Can be absolute or relative path
 jobs_dir: "./jobs"

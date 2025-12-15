@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,22 +19,21 @@ type FHIRDataFile struct {
 }
 
 // IsValidFHIRFile checks if the file has valid FHIR NDJSON format
+// Accepts both uncompressed (.ndjson) and compressed (.ndjson.zst) files
 func IsValidFHIRFile(filename string) bool {
-	return strings.HasSuffix(strings.ToLower(filename), ".ndjson")
+	lower := strings.ToLower(filename)
+	return strings.HasSuffix(lower, ".ndjson") || strings.HasSuffix(lower, ".ndjson.zst")
 }
 
 // IsSafePath checks if a file path is within job directory boundaries
 // Prevents path traversal attacks (e.g., ../../etc/passwd)
 func IsSafePath(path string) bool {
-	// Clean the path to resolve any .. or . components
 	clean := filepath.Clean(path)
 
-	// Reject absolute paths
 	if filepath.IsAbs(clean) {
 		return false
 	}
 
-	// Reject paths that start with .. (parent directory)
 	if strings.HasPrefix(clean, "..") {
 		return false
 	}
@@ -43,19 +43,51 @@ func IsSafePath(path string) bool {
 
 // GetResourceTypeFromFilename attempts to extract resource type from filename
 // Example: "Patient_001.ndjson" -> "Patient"
+// Example: "Patient_001.ndjson.zst" -> "Patient"
 func GetResourceTypeFromFilename(filename string) string {
-	// Remove .ndjson extension
-	base := strings.TrimSuffix(filename, ".ndjson")
+	base := strings.TrimSuffix(filename, ".zst")
+	base = strings.TrimSuffix(base, ".ndjson")
 
-	// Split on common delimiters (underscore, dash, dot)
 	parts := strings.FieldsFunc(base, func(r rune) bool {
 		return r == '_' || r == '-' || r == '.'
 	})
 
 	if len(parts) > 0 {
-		// First part is typically the resource type
 		return parts[0]
 	}
 
 	return "Unknown"
+}
+
+// GetNormalizedBaseName returns the base filename without compression extension.
+// Example: "Patient.ndjson.zst" -> "Patient.ndjson"
+// Example: "Patient.ndjson" -> "Patient.ndjson"
+func GetNormalizedBaseName(filename string) string {
+	base := filepath.Base(filename)
+	return strings.TrimSuffix(base, ".zst")
+}
+
+// DetectDuplicateFHIRFiles checks if there are files with both compressed and
+// uncompressed versions (e.g., Patient.ndjson and Patient.ndjson.zst).
+// Returns an error listing all duplicates found, or nil if no duplicates exist.
+func DetectDuplicateFHIRFiles(files []string) error {
+	seen := make(map[string][]string)
+
+	for _, file := range files {
+		normalized := GetNormalizedBaseName(file)
+		seen[normalized] = append(seen[normalized], filepath.Base(file))
+	}
+
+	var duplicates []string
+	for baseName, fileList := range seen {
+		if len(fileList) > 1 {
+			duplicates = append(duplicates, fmt.Sprintf("%s: [%s]", baseName, strings.Join(fileList, ", ")))
+		}
+	}
+
+	if len(duplicates) > 0 {
+		return fmt.Errorf("found duplicate FHIR files (both compressed and uncompressed versions exist): %s", strings.Join(duplicates, "; "))
+	}
+
+	return nil
 }

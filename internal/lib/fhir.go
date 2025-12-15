@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 )
 
 // FHIRResource represents a generic FHIR resource as a map
@@ -59,14 +58,15 @@ func ParseNDJSONLine(line []byte) (FHIRResource, error) {
 // ReadNDJSONFile reads a FHIR NDJSON file line-by-line
 // Calls the callback function for each valid resource
 // Returns total lines processed and any fatal error
+// Automatically handles both compressed (.ndjson.zst) and uncompressed (.ndjson) files
 func ReadNDJSONFile(filePath string, callback func(FHIRResource) error) (int, error) {
-	file, err := os.Open(filePath)
+	reader, err := OpenFileForReading(filePath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to open file: %w", err)
 	}
-	defer func() { _ = file.Close() }()
+	defer func() { _ = reader.Close() }()
 
-	return ReadNDJSON(file, callback)
+	return ReadNDJSON(reader, callback)
 }
 
 // ReadNDJSON reads FHIR NDJSON from an io.Reader
@@ -160,6 +160,7 @@ func ValidateFHIRResource(resource FHIRResource) error {
 }
 
 // CountResourcesInFile counts the number of resources in an NDJSON file
+// Automatically handles both compressed (.ndjson.zst) and uncompressed (.ndjson) files
 func CountResourcesInFile(filePath string) (int, error) {
 	count := 0
 	_, err := ReadNDJSONFile(filePath, func(r FHIRResource) error {

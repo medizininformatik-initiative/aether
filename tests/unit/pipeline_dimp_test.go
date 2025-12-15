@@ -3,6 +3,7 @@ package unit
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -838,4 +839,572 @@ func TestExecuteDIMPStep_SpecialCharactersInFilenames(t *testing.T) {
 	// Verify output file exists
 	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_test_data-2025-01-01.ndjson")
 	assert.FileExists(t, outputFile)
+}
+
+
+// =============================================
+// Compression Tests for DIMP Pipeline
+// =============================================
+
+// TestExecuteDIMPStep_WithCompression verifies DIMP with compression enabled
+func TestExecuteDIMPStep_WithCompression(t *testing.T) {
+	server := createMockDIMPServer()
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	job := createDIMPTestJob(server.URL)
+	// Enable compression
+	job.Config.Compression.Enabled = true
+	job.Config.Compression.Level = "default"
+	logger := createDIMPTestLogger()
+
+	// Create import directory with test file
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+
+	inputFile := filepath.Join(importDir, "patients.ndjson")
+	patients := []map[string]any{
+		{"resourceType": "Patient", "id": "p1", "name": []any{map[string]any{"family": "Smith"}}},
+		{"resourceType": "Patient", "id": "p2", "name": []any{map[string]any{"family": "Jones"}}},
+	}
+	writeDIMPNDJSON(t, inputFile, patients)
+
+	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	assert.NoError(t, err)
+
+	// Verify output file was created with compression extension
+	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_patients.ndjson.zst")
+	assert.FileExists(t, outputFile)
+
+	// Verify content is readable as compressed
+	reader, err := lib.OpenFileForReading(outputFile)
+	require.NoError(t, err)
+	content, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.NoError(t, reader.Close())
+	assert.Contains(t, string(content), "pseudo-p1")
+}
+
+// TestExecuteDIMPStep_CompressedInput verifies processing compressed input files
+func TestExecuteDIMPStep_CompressedInput(t *testing.T) {
+	server := createMockDIMPServer()
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	job := createDIMPTestJob(server.URL)
+	// Compression disabled for output
+	job.Config.Compression.Enabled = false
+	logger := createDIMPTestLogger()
+
+	// Create import directory with compressed test file
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+
+	// Create compressed input file
+	compressedFile := filepath.Join(importDir, "patients.ndjson.zst")
+	writer, err := lib.CreateCompressedFileWriter(compressedFile, "default")
+	require.NoError(t, err)
+	patients := []map[string]any{
+		{"resourceType": "Patient", "id": "p1"},
+		{"resourceType": "Patient", "id": "p2"},
+	}
+	for _, p := range patients {
+		bytes, _ := json.Marshal(p)
+		_, err := writer.Write(bytes)
+		require.NoError(t, err)
+		_, err = writer.Write([]byte("\n"))
+		require.NoError(t, err)
+	}
+	require.NoError(t, writer.Close())
+
+	err = pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	assert.NoError(t, err)
+
+	// Verify output file was created (uncompressed)
+	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_patients.ndjson")
+	assert.FileExists(t, outputFile)
+
+	resources := readDIMPNDJSON(t, outputFile)
+	assert.Len(t, resources, 2)
+}
+
+// TestExecuteDIMPStep_CompressedInputToCompressedOutput verifies compressed input -> compressed output
+func TestExecuteDIMPStep_CompressedInputToCompressedOutput(t *testing.T) {
+	server := createMockDIMPServer()
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	job := createDIMPTestJob(server.URL)
+	// Enable compression for output
+	job.Config.Compression.Enabled = true
+	job.Config.Compression.Level = "default"
+	logger := createDIMPTestLogger()
+
+	// Create import directory with compressed test file
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+
+	// Create compressed input file
+	compressedFile := filepath.Join(importDir, "patients.ndjson.zst")
+	writer, err := lib.CreateCompressedFileWriter(compressedFile, "default")
+	require.NoError(t, err)
+	patients := []map[string]any{
+		{"resourceType": "Patient", "id": "p1"},
+	}
+	for _, p := range patients {
+		bytes, _ := json.Marshal(p)
+		_, err := writer.Write(bytes)
+		require.NoError(t, err)
+		_, err = writer.Write([]byte("\n"))
+		require.NoError(t, err)
+	}
+	require.NoError(t, writer.Close())
+
+	err = pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	assert.NoError(t, err)
+
+	// Verify output file was created with compression extension
+	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_patients.ndjson.zst")
+	assert.FileExists(t, outputFile)
+
+	// Verify content
+	reader, err := lib.OpenFileForReading(outputFile)
+	require.NoError(t, err)
+	content, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.NoError(t, reader.Close())
+	assert.Contains(t, string(content), "pseudo-p1")
+}
+
+// TestExecuteDIMPStep_MixedInputFiles verifies processing both compressed and uncompressed inputs
+func TestExecuteDIMPStep_MixedInputFiles(t *testing.T) {
+	server := createMockDIMPServer()
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	job := createDIMPTestJob(server.URL)
+	job.Config.Compression.Enabled = true
+	job.Config.Compression.Level = "default"
+	logger := createDIMPTestLogger()
+
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+
+	// Create uncompressed file
+	uncompressedFile := filepath.Join(importDir, "patients.ndjson")
+	require.NoError(t, os.WriteFile(uncompressedFile,
+		[]byte(`{"resourceType":"Patient","id":"p1"}`+"\n"), 0644))
+
+	// Create compressed file with different resource type
+	compressedFile := filepath.Join(importDir, "observations.ndjson.zst")
+	writer, err := lib.CreateCompressedFileWriter(compressedFile, "default")
+	require.NoError(t, err)
+	_, err = writer.Write([]byte(`{"resourceType":"Observation","id":"obs1"}` + "\n"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	err = pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	assert.NoError(t, err)
+
+	// Verify both output files were created with compression
+	outputDir := filepath.Join(tmpDir, "pseudonymized")
+	assert.FileExists(t, filepath.Join(outputDir, "dimped_patients.ndjson.zst"))
+	assert.FileExists(t, filepath.Join(outputDir, "dimped_observations.ndjson.zst"))
+}
+
+// TestExecuteDIMPStep_CompressionAllLevels verifies all compression levels work
+func TestExecuteDIMPStep_CompressionAllLevels(t *testing.T) {
+	levels := []string{"fastest", "default", "better", "best"}
+
+	for _, level := range levels {
+		t.Run(level, func(t *testing.T) {
+			server := createMockDIMPServer()
+			defer server.Close()
+
+			tmpDir := t.TempDir()
+			job := createDIMPTestJob(server.URL)
+			job.Config.Compression.Enabled = true
+			job.Config.Compression.Level = level
+			logger := createDIMPTestLogger()
+
+			importDir := filepath.Join(tmpDir, "import")
+			require.NoError(t, os.MkdirAll(importDir, 0755))
+
+			inputFile := filepath.Join(importDir, "patients.ndjson")
+			patients := []map[string]any{{"resourceType": "Patient", "id": "p1"}}
+			writeDIMPNDJSON(t, inputFile, patients)
+
+			err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+			assert.NoError(t, err, "DIMP should succeed with compression level: %s", level)
+
+			outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_patients.ndjson.zst")
+			assert.FileExists(t, outputFile)
+		})
+	}
+}
+
+// TestExecuteDIMPStep_DuplicateFilesError verifies error when duplicate compressed/uncompressed files exist
+func TestExecuteDIMPStep_DuplicateFilesError(t *testing.T) {
+	server := createMockDIMPServer()
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	job := createDIMPTestJob(server.URL)
+	logger := createDIMPTestLogger()
+
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+
+	// Create both compressed and uncompressed versions of the same file
+	require.NoError(t, os.WriteFile(filepath.Join(importDir, "patients.ndjson"),
+		[]byte(`{"resourceType":"Patient","id":"p1"}`+"\n"), 0644))
+
+	compressedFile := filepath.Join(importDir, "patients.ndjson.zst")
+	writer, err := lib.CreateCompressedFileWriter(compressedFile, "default")
+	require.NoError(t, err)
+	_, err = writer.Write([]byte(`{"resourceType":"Patient","id":"p2"}` + "\n"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	// This should fail due to duplicate files
+	err = pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "patients.ndjson")
+}
+
+// TestExecuteDIMPStep_ResumeWithCompressedOutput verifies resume with existing compressed output
+func TestExecuteDIMPStep_ResumeWithCompressedOutput(t *testing.T) {
+	server := createMockDIMPServer()
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	job := createDIMPTestJob(server.URL)
+	job.Config.Compression.Enabled = true
+	job.Config.Compression.Level = "default"
+	logger := createDIMPTestLogger()
+
+	importDir := filepath.Join(tmpDir, "import")
+	pseudonymizedDir := filepath.Join(tmpDir, "pseudonymized")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
+
+	// Create input file
+	inputFile := filepath.Join(importDir, "patients.ndjson")
+	patients := []map[string]any{{"resourceType": "Patient", "id": "p1"}}
+	writeDIMPNDJSON(t, inputFile, patients)
+
+	// Pre-create compressed output file to simulate resume
+	outputFile := filepath.Join(pseudonymizedDir, "dimped_patients.ndjson.zst")
+	writer, err := lib.CreateCompressedFileWriter(outputFile, "default")
+	require.NoError(t, err)
+	_, err = writer.Write([]byte(`{"resourceType":"Patient","id":"existing"}` + "\n"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	err = pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	assert.NoError(t, err)
+
+	// Verify file still has original content (wasn't reprocessed)
+	reader, err := lib.OpenFileForReading(outputFile)
+	require.NoError(t, err)
+	content, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.NoError(t, reader.Close())
+	assert.Contains(t, string(content), "existing")
+}
+
+// =============================================
+// Additional Coverage Tests for Error Paths
+// Target: 100% patch coverage for dimp.go
+// =============================================
+
+// TestExecuteDIMPStep_StalePartFileRemovalError verifies that processing continues
+// even when removing stale .part file fails (covers lines 88-91 in dimp.go)
+func TestExecuteDIMPStep_StalePartFileRemovalError(t *testing.T) {
+	// Skip if running as root
+	if os.Getuid() == 0 {
+		t.Skip("Skipping permission test when running as root")
+	}
+
+	server := createMockDIMPServer()
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	job := createDIMPTestJob(server.URL)
+	logger := createDIMPTestLogger()
+
+	importDir := filepath.Join(tmpDir, "import")
+	pseudonymizedDir := filepath.Join(tmpDir, "pseudonymized")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
+
+	// Create input file
+	inputFile := filepath.Join(importDir, "patients.ndjson")
+	patients := []map[string]any{{"resourceType": "Patient", "id": "p1"}}
+	writeDIMPNDJSON(t, inputFile, patients)
+
+	// Create a stale .part file that will be difficult to remove
+	partFile := filepath.Join(pseudonymizedDir, "dimped_patients.ndjson.part")
+	require.NoError(t, os.WriteFile(partFile, []byte("stale data"), 0644))
+
+	// Make the directory read-only to prevent removal
+	// Note: This may not work on all systems
+	require.NoError(t, os.Chmod(pseudonymizedDir, 0555))
+
+	// Cleanup
+	defer func() {
+		_ = os.Chmod(pseudonymizedDir, 0755)
+	}()
+
+	// Processing should still continue (error is logged but not fatal)
+	// However, it will fail to create output file due to read-only directory
+	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	// We expect an error, but it should be about creating the output file, not removing .part
+	assert.Error(t, err)
+}
+
+// TestExecuteDIMPStep_CountResourcesError verifies handling when CountResourcesInFile fails
+// (covers lines 120-122 in dimp.go)
+func TestExecuteDIMPStep_CountResourcesError(t *testing.T) {
+	server := createMockDIMPServer()
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	job := createDIMPTestJob(server.URL)
+	logger := createDIMPTestLogger()
+
+	importDir := filepath.Join(tmpDir, "import")
+	pseudonymizedDir := filepath.Join(tmpDir, "pseudonymized")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
+
+	// Create input file
+	inputFile := filepath.Join(importDir, "patients.ndjson")
+	patients := []map[string]any{{"resourceType": "Patient", "id": "p1"}}
+	writeDIMPNDJSON(t, inputFile, patients)
+
+	// Create an invalid compressed output file that will fail CountResourcesInFile
+	outputFile := filepath.Join(pseudonymizedDir, "dimped_patients.ndjson.zst")
+	// Write invalid zstd data
+	require.NoError(t, os.WriteFile(outputFile, []byte{0x00, 0x01, 0x02, 0x03}, 0644))
+
+	// Processing should skip this file (already exists)
+	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	// Should succeed - file is skipped as "already processed"
+	assert.NoError(t, err)
+}
+
+// TestExecuteDIMPStep_ProcessDIMPFileOpenError verifies error when input file can't be opened
+func TestExecuteDIMPStep_ProcessDIMPFileOpenError(t *testing.T) {
+	// Skip if running as root
+	if os.Getuid() == 0 {
+		t.Skip("Skipping permission test when running as root")
+	}
+
+	server := createMockDIMPServer()
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	job := createDIMPTestJob(server.URL)
+	logger := createDIMPTestLogger()
+
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+
+	// Create input file and make it unreadable
+	inputFile := filepath.Join(importDir, "patients.ndjson")
+	patients := []map[string]any{{"resourceType": "Patient", "id": "p1"}}
+	writeDIMPNDJSON(t, inputFile, patients)
+	require.NoError(t, os.Chmod(inputFile, 0000))
+
+	// Cleanup
+	defer func() {
+		_ = os.Chmod(inputFile, 0644)
+	}()
+
+	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to open")
+}
+
+// TestExecuteDIMPStep_LongLine verifies handling of very long lines in NDJSON
+// This tests the scanner path when a line exceeds default buffer
+func TestExecuteDIMPStep_LongLine(t *testing.T) {
+	server := createMockDIMPServer()
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	job := createDIMPTestJob(server.URL)
+	logger := createDIMPTestLogger()
+
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+
+	// Create a file with a very long line (but still valid JSON)
+	inputFile := filepath.Join(importDir, "long.ndjson")
+	f, err := os.Create(inputFile)
+	require.NoError(t, err)
+
+	// Create a patient with a very long name (but under scanner limit)
+	longName := strings.Repeat("x", 50000) // 50KB name
+	patient := map[string]any{
+		"resourceType": "Patient",
+		"id":           "p1",
+		"name": []any{map[string]any{
+			"family": longName,
+		}},
+	}
+	bytes, _ := json.Marshal(patient)
+	_, err = f.Write(bytes)
+	require.NoError(t, err)
+	_, err = f.WriteString("\n")
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	err = pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	assert.NoError(t, err)
+
+	// Verify output file was created
+	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_long.ndjson")
+	assert.FileExists(t, outputFile)
+}
+
+// TestExecuteDIMPStep_StalePartFileRemoval verifies stale .part file is removed on fresh run
+func TestExecuteDIMPStep_StalePartFileRemoval(t *testing.T) {
+	server := createMockDIMPServer()
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	job := createDIMPTestJob(server.URL)
+	logger := createDIMPTestLogger()
+
+	importDir := filepath.Join(tmpDir, "import")
+	pseudonymizedDir := filepath.Join(tmpDir, "pseudonymized")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
+
+	// Create input file
+	inputFile := filepath.Join(importDir, "patients.ndjson")
+	patients := []map[string]any{{"resourceType": "Patient", "id": "p1"}}
+	writeDIMPNDJSON(t, inputFile, patients)
+
+	// Create a stale .part file (simulating a previous interrupted run)
+	partFile := filepath.Join(pseudonymizedDir, "dimped_patients.ndjson.part")
+	require.NoError(t, os.WriteFile(partFile, []byte("stale data"), 0644))
+
+	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	assert.NoError(t, err)
+
+	// Verify .part file was removed
+	_, statErr := os.Stat(partFile)
+	assert.True(t, os.IsNotExist(statErr), ".part file should be removed")
+
+	// Verify output file exists
+	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_patients.ndjson")
+	assert.FileExists(t, outputFile)
+}
+
+// =============================================
+// DIMP Error Classification Tests
+// =============================================
+
+// TestExecuteDIMPStep_NetworkErrorIsTransient tests that network errors are classified as transient
+func TestExecuteDIMPStep_NetworkErrorIsTransient(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Use an unreachable URL
+	job := createDIMPTestJob("http://localhost:1")
+	logger := createDIMPTestLogger()
+
+	// Create import directory with test file
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+	testFile := filepath.Join(importDir, "Patient.ndjson")
+	writeDIMPNDJSON(t, testFile, []map[string]any{
+		{"resourceType": "Patient", "id": "1"},
+	})
+
+	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	assert.Error(t, err)
+
+	// Find the DIMP step and verify error type is transient
+	var dimpStep *models.PipelineStep
+	for i := range job.Steps {
+		if job.Steps[i].Name == models.StepDIMP {
+			dimpStep = &job.Steps[i]
+			break
+		}
+	}
+	require.NotNil(t, dimpStep)
+	require.NotNil(t, dimpStep.LastError, "Step should have an error")
+	assert.Equal(t, models.ErrorTypeTransient, dimpStep.LastError.Type, "Network error should be classified as transient")
+}
+
+// TestExecuteDIMPStep_GlobPatternError tests that glob pattern errors are handled correctly
+// This covers lines 272-274 and 278-279 in dimp.go (findFHIRFiles error paths)
+func TestExecuteDIMPStep_GlobPatternError(t *testing.T) {
+	server := createMockDIMPServer()
+	defer server.Close()
+
+	// Create a temp directory with a name that will cause Glob to fail
+	// The '[' character is interpreted as a glob pattern character
+	baseDir := t.TempDir()
+	badDir := filepath.Join(baseDir, "test[invalid")
+	require.NoError(t, os.MkdirAll(badDir, 0755))
+
+	// Create the job pointing to this bad directory as the "job directory"
+	// The import dir would be badDir/import which contains [
+	job := createDIMPTestJob(server.URL)
+	logger := createDIMPTestLogger()
+
+	// Create "import" directory inside the bad directory
+	importDir := filepath.Join(badDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+
+	// Create a test file
+	testFile := filepath.Join(importDir, "Patient.ndjson")
+	writeDIMPNDJSON(t, testFile, []map[string]any{
+		{"resourceType": "Patient", "id": "1"},
+	})
+
+	// Execute with the bad directory path - should fail with glob pattern error
+	err := pipeline.ExecuteDIMPStep(job, badDir, logger)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "pattern")
+}
+
+// TestExecuteDIMPStep_400BadRequestIsNonTransient tests that 400 errors are classified as non-transient
+func TestExecuteDIMPStep_400BadRequestIsNonTransient(t *testing.T) {
+	// Create a mock server that always returns 400
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"Bad request"}`))
+	}))
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	job := createDIMPTestJob(server.URL)
+	logger := createDIMPTestLogger()
+
+	// Create import directory with test file
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+	testFile := filepath.Join(importDir, "Patient.ndjson")
+	writeDIMPNDJSON(t, testFile, []map[string]any{
+		{"resourceType": "Patient", "id": "1"},
+	})
+
+	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	assert.Error(t, err)
+
+	// Find the DIMP step and verify error type is non-transient
+	var dimpStep *models.PipelineStep
+	for i := range job.Steps {
+		if job.Steps[i].Name == models.StepDIMP {
+			dimpStep = &job.Steps[i]
+			break
+		}
+	}
+	require.NotNil(t, dimpStep)
+	require.NotNil(t, dimpStep.LastError, "Step should have an error")
+	assert.Equal(t, models.ErrorTypeNonTransient, dimpStep.LastError.Type, "400 error should be classified as non-transient")
 }

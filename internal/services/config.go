@@ -86,7 +86,17 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 			InitialBackoffMs: viper.GetInt64("retry.initial_backoff_ms"),
 			MaxBackoffMs:     viper.GetInt64("retry.max_backoff_ms"),
 		},
+		Compression: models.CompressionConfig{
+			Enabled: viper.GetBool("compression.enabled"),
+			Level:   viper.GetString("compression.level"),
+		},
 		JobsDir: ExpandEnvVars(viper.GetString("jobs_dir")),
+	}
+
+	// Handle compression default: enabled=true unless explicitly set to false
+	// viper.GetBool returns false for missing keys, but we want true as default
+	if !viper.IsSet("compression.enabled") {
+		config.Compression.Enabled = true
 	}
 
 	// Get enabled steps
@@ -112,6 +122,9 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 		}
 		if config.JobsDir == "" {
 			config.JobsDir = defaults.JobsDir
+		}
+		if config.Compression.Level == "" {
+			config.Compression.Level = defaults.Compression.Level
 		}
 	} else {
 		// Config was loaded, apply defaults only for truly missing values
@@ -140,6 +153,10 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 		// Apply DIMP Bundle split threshold default if not set
 		if config.Services.DIMP.BundleSplitThresholdMB == 0 {
 			config.Services.DIMP.BundleSplitThresholdMB = 10 // 10MB default
+		}
+		// Apply compression level default if not set
+		if config.Compression.Level == "" {
+			config.Compression.Level = "default"
 		}
 	}
 

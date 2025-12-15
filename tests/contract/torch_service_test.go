@@ -330,7 +330,7 @@ func TestTORCHService_DownloadFile_Success(t *testing.T) {
 	// Create temp destination directory
 	tempDir := t.TempDir()
 
-	files, err := client.DownloadExtractionFiles([]string{server.URL + "/output/batch-1.ndjson"}, tempDir, false)
+	files, err := client.DownloadExtractionFiles([]string{server.URL + "/output/batch-1.ndjson"}, tempDir, false, false, "")
 	assert.NoError(t, err)
 	require.Len(t, files, 1)
 
@@ -361,7 +361,7 @@ func TestTORCHService_DownloadFile_NotFound(t *testing.T) {
 	// Create temp destination directory
 	tempDir := t.TempDir()
 
-	_, err := client.DownloadExtractionFiles([]string{server.URL + "/output/missing.ndjson"}, tempDir, false)
+	_, err := client.DownloadExtractionFiles([]string{server.URL + "/output/missing.ndjson"}, tempDir, false, false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "404")
 }
@@ -390,7 +390,7 @@ func TestTORCHService_DownloadFile_ServerError(t *testing.T) {
 	// Create temp destination directory
 	tempDir := t.TempDir()
 
-	_, err := client.DownloadExtractionFiles([]string{server.URL + "/output/batch-1.ndjson"}, tempDir, false)
+	_, err := client.DownloadExtractionFiles([]string{server.URL + "/output/batch-1.ndjson"}, tempDir, false, false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "500")
 	assert.Equal(t, 1, callCount, "Should call once (no retry in current implementation)")
@@ -495,7 +495,7 @@ func TestTORCHService_EndToEnd_SubmitPollDownload(t *testing.T) {
 
 	// Download files
 	downloadDir := filepath.Join(tempDir, "downloads")
-	files, err := client.DownloadExtractionFiles(urls, downloadDir, false)
+	files, err := client.DownloadExtractionFiles(urls, downloadDir, false, false, "")
 	require.NoError(t, err)
 	require.Len(t, files, 1)
 

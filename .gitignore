@@ -57,3 +57,7 @@ package-lock.json
 # VitePress build output and cache
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+
+# Patch coverage
+coverage.xml
+patch-coverage.html

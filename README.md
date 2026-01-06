@@ -11,6 +11,7 @@ A command-line tool for processing FHIR healthcare data through TORCH extraction
 [![Documentation](https://img.shields.io/badge/Documentation-GitHub%20Pages-success?logo=github)](https://medizininformatik-initiative.github.io/aether/)
 [![codecov](https://codecov.io/gh/medizininformatik-initiative/aether/branch/main/graph/badge.svg)](https://codecov.io/gh/medizininformatik-initiative/aether)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/medizininformatik-initiative/aether/badge)](https://scorecard.dev/viewer/?uri=github.com/medizininformatik-initiative/aether)
+[![OpenSSF Best Practices](https://img.shields.io/cii/level/11528?logo=linuxfoundation&label=ossf%20best%20practices)](https://www.bestpractices.dev/projects/11528)
 
 ## What Does Aether Do?
 

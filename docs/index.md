@@ -17,10 +17,13 @@ features:
   - icon: 🔗
     title: TORCH Integration
     details: Extract patient data from TORCH servers using CRTDL queries
+    link: /guides/torch-integration
   - icon: 🔐
     title: DIMP Pseudonymization
     details: Protect patient privacy by pseudonymizing FHIR data
+    link: /guides/dimp-pseudonymization
   - icon: ⚙️
     title: Simple Configuration
     details: One YAML file to configure everything
+    link: /getting-started/configuration
 ---

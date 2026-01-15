@@ -1,6 +1,6 @@
-# DIMP Pseudonymization
+# DIMP
 
-DIMP provides de-identification and pseudonymization for FHIR data, protecting patient privacy while keeping the data useful for research.
+DIMP (**D**e-identify, **M**inimize, **P**seudonymize) provides de-identification, minimization, and pseudonymization for FHIR data, protecting patient privacy while keeping the data useful for research.
 
 ## What DIMP Does
 
@@ -33,7 +33,7 @@ aether pipeline start your-query.crtdl
 
 Aether will:
 1. Extract data from TORCH (or import from files)
-2. Send it to DIMP for pseudonymization
+2. Send it to DIMP for dimping
 3. Save the protected data in the jobs folder
 
 ## Output

@@ -32,7 +32,7 @@ Removes or masks identifying information to protect patient privacy.
 
 **What it does:**
 - Sends FHIR data to the DIMP service
-- Receives pseudonymized data back
+- Receives dimped data back
 - Saves the protected data
 
 **Configuration:**
@@ -55,7 +55,7 @@ Most users will run both steps together:
 pipeline:
   enabled_steps:
     - torch   # First: get data from TORCH
-    - dimp    # Then: pseudonymize it
+    - dimp    # Then: dimp it
 ```
 
 Run with:

@@ -61,7 +61,7 @@ export default defineConfig({
           collapsed: false,
           items: [
             { text: 'TORCH Integration', link: '/guides/torch-integration' },
-            { text: 'DIMP Pseudonymization', link: '/guides/dimp-pseudonymization' },
+            { text: 'DIMP', link: '/guides/dimp' },
             { text: 'Pipeline Steps', link: '/guides/pipeline-steps' }
           ]
         },

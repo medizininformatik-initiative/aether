@@ -605,13 +605,58 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Executing step: %s\n\n", stepToExecute)
 
 	if err := executeStep(jobToExecute, stepToExecute, config, logger, noProgress); err != nil {
+		if err == errPipelinePaused {
+			return nil // Exit gracefully - pipeline is paused at wait step
+		}
+		// Mark job as failed
+		failedJob := pipeline.FailJob(jobToExecute, err.Error())
+		if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
+			logger.Error("Failed to save failed job state", "error", saveErr)
+		}
 		return err
 	}
 
-	fmt.Printf("\nUse 'aether pipeline status %s' to check progress\n", jobID)
-	fmt.Printf("Or run 'aether pipeline continue %s' to proceed to the next step\n", jobID)
+	// Loop through remaining steps (same as runPipelineStart)
+	currentJob := jobToExecute
+	for {
+		currentStepName := models.StepName(currentJob.CurrentStep)
+		nextStepName := currentJob.Config.Pipeline.GetNextStep(currentStepName)
 
-	return nil
+		if nextStepName == "" {
+			fmt.Println("All steps completed, marking job as complete...")
+			completedJob := pipeline.CompleteJob(currentJob)
+			if err := pipeline.UpdateJob(config.JobsDir, completedJob); err != nil {
+				return fmt.Errorf("failed to update job: %w", err)
+			}
+			fmt.Printf("\n✓ Pipeline completed successfully\n")
+			fmt.Printf("Job ID: %s\n", completedJob.JobID)
+			return nil
+		}
+
+		fmt.Printf("\nAdvancing to step: %s\n", nextStepName)
+		advancedJob, err := pipeline.AdvanceToNextStep(currentJob)
+		if err != nil {
+			return fmt.Errorf("failed to advance to next step: %w", err)
+		}
+
+		if err := pipeline.UpdateJob(config.JobsDir, advancedJob); err != nil {
+			return fmt.Errorf("failed to save job state: %w", err)
+		}
+
+		if err := executeStep(advancedJob, nextStepName, config, logger, noProgress); err != nil {
+			if err == errPipelinePaused {
+				return nil // Exit gracefully - pipeline is paused at wait step
+			}
+			// Mark job as failed
+			failedJob := pipeline.FailJob(advancedJob, err.Error())
+			if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
+				logger.Error("Failed to save failed job state", "error", saveErr)
+			}
+			return err
+		}
+
+		currentJob = advancedJob
+	}
 }
 
 func getStatusSymbol(status models.StepStatus) string {

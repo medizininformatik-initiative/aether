@@ -50,15 +50,24 @@ services:
 pipeline:
   # List of steps to execute in order
   # Import step options (must be first): torch, local_import, http_import
-  # Other step options: dimp, validation, csv_conversion, parquet_conversion
+  # Other step options: dimp, validation, csv_conversion, parquet_conversion, wait
   # NOTE: At least one import step must be first in enabled_steps
   # NOTE: Enable all the import types you want to support - the system will automatically
   #       use the correct one based on your input (TORCH URL → torch, local dir → local_import, etc.)
+  #
+  # Wait step:
+  #   Use 'wait' to pause the pipeline for inspection or manual modification.
+  #   - Creates a copy of data in a {previous_output}_wait directory (e.g., import_wait/)
+  #   - Pipeline pauses until 'aether pipeline continue <job-id>' is run
+  #   - Cannot be first step (needs previous output)
+  #   - Consecutive waits are not allowed
   enabled_steps:
     - torch           # TORCH import via CRTDL or direct TORCH URL
     - local_import    # Import from local directory
     - http_import     # Import from HTTP URL
+    # - wait          # Uncomment to pause after import for inspection
     - dimp
+    # - wait          # Uncomment to pause after pseudonymization
     - csv_conversion
     - parquet_conversion
 

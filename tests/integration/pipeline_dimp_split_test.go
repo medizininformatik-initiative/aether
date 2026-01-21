@@ -57,7 +57,7 @@ func TestDIMPStepWithLargeBundle(t *testing.T) {
 				},
 			},
 			Pipeline: models.PipelineConfig{
-				EnabledSteps: []models.StepName{models.StepDIMP},
+				EnabledSteps: []models.StepName{models.StepLocalImport, models.StepDIMP},
 			},
 			Retry: models.RetryConfig{
 				MaxAttempts:      3,
@@ -164,7 +164,7 @@ func TestDIMPStepWithLargeBundleAndChunks(t *testing.T) {
 				},
 			},
 			Pipeline: models.PipelineConfig{
-				EnabledSteps: []models.StepName{models.StepDIMP},
+				EnabledSteps: []models.StepName{models.StepLocalImport, models.StepDIMP},
 			},
 			Retry: models.RetryConfig{
 				MaxAttempts:      3,
@@ -242,7 +242,7 @@ func TestDIMPStepWithSmallBundleNoSplit(t *testing.T) {
 				},
 			},
 			Pipeline: models.PipelineConfig{
-				EnabledSteps: []models.StepName{models.StepDIMP},
+				EnabledSteps: []models.StepName{models.StepLocalImport, models.StepDIMP},
 			},
 			Retry: models.RetryConfig{
 				MaxAttempts:      3,
@@ -488,7 +488,7 @@ func TestDIMPStepWithOversizedResource(t *testing.T) {
 				},
 			},
 			Pipeline: models.PipelineConfig{
-				EnabledSteps: []models.StepName{models.StepDIMP},
+				EnabledSteps: []models.StepName{models.StepLocalImport, models.StepDIMP},
 			},
 			Retry: models.RetryConfig{
 				MaxAttempts:      3,
@@ -546,7 +546,7 @@ func TestDIMPStepWithCustomThreshold(t *testing.T) {
 					},
 				},
 				Pipeline: models.PipelineConfig{
-					EnabledSteps: []models.StepName{models.StepDIMP},
+					EnabledSteps: []models.StepName{models.StepLocalImport, models.StepDIMP},
 				},
 				Retry: models.RetryConfig{
 					MaxAttempts:      3,
@@ -597,7 +597,7 @@ func TestDIMPStepWithCustomThreshold(t *testing.T) {
 					},
 				},
 				Pipeline: models.PipelineConfig{
-					EnabledSteps: []models.StepName{models.StepDIMP},
+					EnabledSteps: []models.StepName{models.StepLocalImport, models.StepDIMP},
 				},
 				Retry: models.RetryConfig{
 					MaxAttempts:      3,
@@ -648,7 +648,7 @@ func TestDIMPStepWithCustomThreshold(t *testing.T) {
 					},
 				},
 				Pipeline: models.PipelineConfig{
-					EnabledSteps: []models.StepName{models.StepDIMP},
+					EnabledSteps: []models.StepName{models.StepLocalImport, models.StepDIMP},
 				},
 				Retry: models.RetryConfig{
 					MaxAttempts:      3,

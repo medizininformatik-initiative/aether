@@ -14,6 +14,32 @@ const (
 	StateFileName = "state.json"
 )
 
+// StateFileOps interface for file operations in state management, allowing mocking in tests
+type StateFileOps interface {
+	WriteFile(name string, data []byte, perm os.FileMode) error
+	Rename(oldpath, newpath string) error
+	Remove(name string) error
+}
+
+// defaultStateFileOps implements StateFileOps using the standard library
+type defaultStateFileOps struct{}
+
+func (d defaultStateFileOps) WriteFile(name string, data []byte, perm os.FileMode) error {
+	return os.WriteFile(name, data, perm)
+}
+func (d defaultStateFileOps) Rename(oldpath, newpath string) error {
+	return os.Rename(oldpath, newpath)
+}
+func (d defaultStateFileOps) Remove(name string) error { return os.Remove(name) }
+
+// StateFileOpsProvider allows tests to inject mock file operations
+var StateFileOpsProvider StateFileOps = defaultStateFileOps{}
+
+// MarshalFunc is the function used to marshal job state to JSON (mockable for tests)
+var MarshalFunc = func(v any, prefix, indent string) ([]byte, error) {
+	return json.MarshalIndent(v, prefix, indent)
+}
+
 // GetJobDir returns the directory path for a specific job
 func GetJobDir(jobsBaseDir string, jobID string) string {
 	return filepath.Join(jobsBaseDir, jobID)
@@ -29,7 +55,6 @@ func GetStateFilePath(jobsBaseDir string, jobID string) string {
 func LoadJobState(jobsBaseDir string, jobID string) (*models.PipelineJob, error) {
 	statePath := GetStateFilePath(jobsBaseDir, jobID)
 
-	// Read file
 	data, err := os.ReadFile(statePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -38,13 +63,11 @@ func LoadJobState(jobsBaseDir string, jobID string) (*models.PipelineJob, error)
 		return nil, fmt.Errorf("failed to read job state: %w", err)
 	}
 
-	// Parse JSON
 	var job models.PipelineJob
 	if err := json.Unmarshal(data, &job); err != nil {
 		return nil, fmt.Errorf("failed to parse job state: %w", err)
 	}
 
-	// Validate loaded job
 	if err := job.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid job state loaded from disk: %w", err)
 	}
@@ -55,34 +78,28 @@ func LoadJobState(jobsBaseDir string, jobID string) (*models.PipelineJob, error)
 // SaveJobState writes a job's state to disk with atomic write
 // Uses temp file + rename for atomicity (prevents corruption if process dies mid-write)
 func SaveJobState(jobsBaseDir string, job *models.PipelineJob) error {
-	// Validate job before saving
 	if err := job.Validate(); err != nil {
 		return fmt.Errorf("cannot save invalid job: %w", err)
 	}
 
-	// Ensure job directory exists
 	jobDir := GetJobDir(jobsBaseDir, job.JobID)
 	if err := os.MkdirAll(jobDir, 0755); err != nil {
 		return fmt.Errorf("failed to create job directory: %w", err)
 	}
 
-	// Marshal to JSON with indentation for human readability
-	data, err := json.MarshalIndent(job, "", "  ")
+	data, err := MarshalFunc(job, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal job state: %w", err)
 	}
 
-	// Write to temporary file first (atomic write pattern)
 	tempFile := filepath.Join(jobDir, fmt.Sprintf(".state.tmp.%s", uuid.New().String()))
-	if err := os.WriteFile(tempFile, data, 0644); err != nil {
+	if err := StateFileOpsProvider.WriteFile(tempFile, data, 0644); err != nil {
 		return fmt.Errorf("failed to write temp state file: %w", err)
 	}
 
-	// Atomic rename (overwrites existing state.json)
 	statePath := GetStateFilePath(jobsBaseDir, job.JobID)
-	if err := os.Rename(tempFile, statePath); err != nil {
-		// Cleanup temp file on failure
-		_ = os.Remove(tempFile)
+	if err := StateFileOpsProvider.Rename(tempFile, statePath); err != nil {
+		_ = StateFileOpsProvider.Remove(tempFile)
 		return fmt.Errorf("failed to save job state: %w", err)
 	}
 
@@ -106,8 +123,6 @@ func ListAllJobs(jobsBaseDir string) ([]string, error) {
 		}
 
 		jobID := entry.Name()
-
-		// Verify this is a valid job (has state.json)
 		statePath := GetStateFilePath(jobsBaseDir, jobID)
 		if _, err := os.Stat(statePath); err == nil {
 			jobIDs = append(jobIDs, jobID)
@@ -122,12 +137,10 @@ func ListAllJobs(jobsBaseDir string) ([]string, error) {
 func DeleteJob(jobsBaseDir string, jobID string) error {
 	jobDir := GetJobDir(jobsBaseDir, jobID)
 
-	// Verify job exists before deleting
 	if _, err := os.Stat(jobDir); os.IsNotExist(err) {
 		return fmt.Errorf("job not found: %s", jobID)
 	}
 
-	// Remove entire job directory
 	if err := os.RemoveAll(jobDir); err != nil {
 		return fmt.Errorf("failed to delete job: %w", err)
 	}
@@ -149,7 +162,6 @@ func EnsureJobDirs(jobsBaseDir string, jobID string) (map[models.StepName]string
 		models.StepParquetConversion: filepath.Join(jobDir, "parquet"),
 	}
 
-	// Create all directories
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
@@ -172,7 +184,40 @@ func GetJobOutputDir(jobsBaseDir string, jobID string, step models.StepName) str
 		return filepath.Join(jobDir, "csv")
 	case models.StepParquetConversion:
 		return filepath.Join(jobDir, "parquet")
+	case models.StepWait:
+		// Wait step output depends on previous step - use GetWaitStepDir instead
+		return jobDir
 	default:
 		return jobDir
 	}
+}
+
+// GetWaitStepDir returns the wait directory based on the previous step's output
+// For example, if previous step is torch (outputs to import/), returns import_wait/
+func GetWaitStepDir(jobsBaseDir, jobID string, previousStep models.StepName) string {
+	prevDir := GetJobOutputDir(jobsBaseDir, jobID, previousStep)
+	return prevDir + "_wait"
+}
+
+// GetStepInputDir returns the input directory for a step, considering wait steps
+// If the previous step was a wait step, returns the _wait directory
+// Otherwise returns the standard output directory of the preceding step
+func GetStepInputDir(jobsBaseDir, jobID string, steps []models.StepName, currentStepIndex int) string {
+	if currentStepIndex <= 0 {
+		return GetJobDir(jobsBaseDir, jobID)
+	}
+
+	prevStep := steps[currentStepIndex-1]
+
+	if prevStep == models.StepWait {
+		for i := currentStepIndex - 2; i >= 0; i-- {
+			if steps[i] != models.StepWait {
+				return GetWaitStepDir(jobsBaseDir, jobID, steps[i])
+			}
+		}
+		// Shouldn't happen with proper validation (wait can't be first)
+		return GetJobDir(jobsBaseDir, jobID)
+	}
+
+	return GetJobOutputDir(jobsBaseDir, jobID, prevStep)
 }

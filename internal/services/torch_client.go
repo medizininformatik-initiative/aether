@@ -258,7 +258,7 @@ func (c *TORCHClient) PollExtractionStatus(extractionURL string, showProgress bo
 // DownloadExtractionFiles downloads all NDJSON files from the extraction result
 // Returns list of downloaded files with metadata
 // Uses spinner for each file download (file size is unknown)
-func (c *TORCHClient) DownloadExtractionFiles(fileURLs []string, destinationDir string, showProgress bool) ([]models.FHIRDataFile, error) {
+func (c *TORCHClient) DownloadExtractionFiles(fileURLs []string, destinationDir string, showProgress bool, compress bool, compressionLevel string) ([]models.FHIRDataFile, error) {
 	c.logger.Info("Downloading TORCH extraction files",
 		"file_count", len(fileURLs),
 		"destination", destinationDir)
@@ -268,7 +268,6 @@ func (c *TORCHClient) DownloadExtractionFiles(fileURLs []string, destinationDir 
 		return []models.FHIRDataFile{}, nil
 	}
 
-	// Ensure destination directory exists
 	if err := os.MkdirAll(destinationDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create destination directory: %w", err)
 	}
@@ -278,31 +277,27 @@ func (c *TORCHClient) DownloadExtractionFiles(fileURLs []string, destinationDir 
 	for i, fileURL := range fileURLs {
 		c.logger.Debug("Downloading TORCH file", "index", i+1, "total", len(fileURLs), "url", fileURL)
 
-		// Determine filename
 		fileName := filepath.Base(fileURL)
 		if fileName == "." || fileName == "/" {
 			fileName = fmt.Sprintf("torch-batch-%d.ndjson", i+1)
 		}
 
-		// Ensure .ndjson extension
 		if !strings.HasSuffix(fileName, ".ndjson") {
 			fileName = fileName + ".ndjson"
 		}
 
-		destPath := filepath.Join(destinationDir, fileName)
+		outputFileName := lib.GetCompressedFilename(fileName, compress)
+		destPath := filepath.Join(destinationDir, outputFileName)
 
-		// Start spinner for this download (file size unknown)
 		var spinner *ui.Spinner
 		if showProgress {
-			spinnerMsg := fmt.Sprintf("Downloading file %d/%d: %s", i+1, len(fileURLs), fileName)
+			spinnerMsg := fmt.Sprintf("Downloading file %d/%d: %s", i+1, len(fileURLs), outputFileName)
 			spinner = ui.NewSpinner(spinnerMsg)
 			spinner.Start()
 		}
 
-		// Download file
-		file, err := c.downloadFile(fileURL, destPath)
+		file, err := c.downloadFile(fileURL, destPath, compress, compressionLevel)
 
-		// Stop spinner
 		if spinner != nil {
 			spinner.Stop(err == nil)
 		}
@@ -314,9 +309,10 @@ func (c *TORCHClient) DownloadExtractionFiles(fileURLs []string, destinationDir 
 
 		downloadedFiles = append(downloadedFiles, file)
 		c.logger.Info("Downloaded TORCH file",
-			"file", fileName,
+			"file", outputFileName,
 			"size", file.FileSize,
-			"resources", file.LineCount)
+			"resources", file.LineCount,
+			"compressed", compress)
 	}
 
 	c.logger.Info("All TORCH files downloaded successfully", "total_files", len(downloadedFiles))
@@ -325,18 +321,15 @@ func (c *TORCHClient) DownloadExtractionFiles(fileURLs []string, destinationDir 
 }
 
 // downloadFile downloads a single file from URL to destination path
-func (c *TORCHClient) downloadFile(fileURL, destPath string) (models.FHIRDataFile, error) {
-	// Create request
+func (c *TORCHClient) downloadFile(fileURL, destPath string, compress bool, compressionLevel string) (models.FHIRDataFile, error) {
 	req, err := http.NewRequest("GET", fileURL, nil)
 	if err != nil {
 		return models.FHIRDataFile{}, fmt.Errorf("failed to create download request: %w", err)
 	}
 
-	// Add authentication header for TORCH requests
 	req.Header.Set("Authorization", c.buildBasicAuthHeader())
 	req.Header.Set("Accept", "application/fhir+ndjson")
 
-	// Send request
 	resp, err := c.httpClient.client.Do(req)
 	if err != nil {
 		return models.FHIRDataFile{}, &TORCHError{
@@ -348,7 +341,6 @@ func (c *TORCHClient) downloadFile(fileURL, destPath string) (models.FHIRDataFil
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Check for errors
 	if resp.StatusCode >= 400 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		errorType := lib.ClassifyHTTPError(resp.StatusCode)
@@ -361,24 +353,47 @@ func (c *TORCHClient) downloadFile(fileURL, destPath string) (models.FHIRDataFil
 		}
 	}
 
-	// Create destination file
 	destFile, err := os.Create(destPath)
 	if err != nil {
 		return models.FHIRDataFile{}, fmt.Errorf("failed to create destination file: %w", err)
 	}
-	defer func() { _ = destFile.Close() }()
 
-	// Copy content
-	bytesWritten, err := io.Copy(destFile, resp.Body)
+	var writer io.WriteCloser = destFile
+	if compress {
+		compWriter, err := lib.CreateCompressedWriter(destFile, compressionLevel)
+		if err != nil {
+			_ = destFile.Close()
+			return models.FHIRDataFile{}, fmt.Errorf("failed to create compressed writer: %w", err)
+		}
+		writer = compWriter
+	}
+
+	bytesWritten, err := io.Copy(writer, resp.Body)
+
+	if closeErr := writer.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	if compress {
+		if closeErr := destFile.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}
+
 	if err != nil {
 		_ = os.Remove(destPath)
 		return models.FHIRDataFile{}, fmt.Errorf("failed to write file: %w", err)
 	}
 
-	// Count lines (FHIR resources)
+	fileInfo, statErr := os.Stat(destPath)
+	var fileSize int64
+	if statErr == nil {
+		fileSize = fileInfo.Size()
+	} else {
+		fileSize = bytesWritten
+	}
+
 	lineCount, _ := lib.CountResourcesInFile(destPath)
 
-	// Extract resource type from filename
 	fileName := filepath.Base(destPath)
 	resourceType := models.GetResourceTypeFromFilename(fileName)
 
@@ -386,7 +401,7 @@ func (c *TORCHClient) downloadFile(fileURL, destPath string) (models.FHIRDataFil
 		FileName:     fileName,
 		FilePath:     fileName, // Relative to job directory
 		ResourceType: resourceType,
-		FileSize:     bytesWritten,
+		FileSize:     fileSize,
 		SourceStep:   models.StepTorchImport,
 		LineCount:    lineCount,
 		CreatedAt:    lib.GetFileModTime(destPath),

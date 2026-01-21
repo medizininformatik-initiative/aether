@@ -992,7 +992,7 @@ func TestPipeline_TORCHExtraction_JobResumption(t *testing.T) {
 	t.Logf("Phase 2: Polling resumed and completed, got %d file URL(s)", len(urls))
 
 	// Download files
-	files, err := torchClient.DownloadExtractionFiles(urls, services.GetJobOutputDir(jobsDir, reloadedJob.JobID, models.StepTorchImport), false)
+	files, err := torchClient.DownloadExtractionFiles(urls, services.GetJobOutputDir(jobsDir, reloadedJob.JobID, models.StepTorchImport), false, false, "")
 	require.NoError(t, err)
 	require.Len(t, files, 1)
 

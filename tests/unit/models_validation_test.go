@@ -242,3 +242,134 @@ func TestFHIRDataFile_Validate(t *testing.T) {
 		})
 	}
 }
+
+// TestGetNormalizedBaseName tests stripping compression extension from filenames
+func TestGetNormalizedBaseName(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Compressed file",
+			input:    "Patient.ndjson.zst",
+			expected: "Patient.ndjson",
+		},
+		{
+			name:     "Uncompressed file",
+			input:    "Patient.ndjson",
+			expected: "Patient.ndjson",
+		},
+		{
+			name:     "Full path compressed",
+			input:    "/path/to/Patient.ndjson.zst",
+			expected: "Patient.ndjson",
+		},
+		{
+			name:     "Full path uncompressed",
+			input:    "/path/to/Patient.ndjson",
+			expected: "Patient.ndjson",
+		},
+		{
+			name:     "Multiple extensions",
+			input:    "data.backup.ndjson.zst",
+			expected: "data.backup.ndjson",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := models.GetNormalizedBaseName(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// TestDetectDuplicateFHIRFiles tests detection of duplicate compressed/uncompressed files
+func TestDetectDuplicateFHIRFiles(t *testing.T) {
+	tests := []struct {
+		name    string
+		files   []string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "No duplicates - all compressed",
+			files: []string{
+				"/path/Patient.ndjson.zst",
+				"/path/Observation.ndjson.zst",
+			},
+			wantErr: false,
+		},
+		{
+			name: "No duplicates - all uncompressed",
+			files: []string{
+				"/path/Patient.ndjson",
+				"/path/Observation.ndjson",
+			},
+			wantErr: false,
+		},
+		{
+			name: "No duplicates - mixed but different base names",
+			files: []string{
+				"/path/Patient.ndjson.zst",
+				"/path/Observation.ndjson",
+			},
+			wantErr: false,
+		},
+		{
+			name: "Duplicate - same file compressed and uncompressed",
+			files: []string{
+				"/path/Patient.ndjson",
+				"/path/Patient.ndjson.zst",
+			},
+			wantErr: true,
+			errMsg:  "found duplicate FHIR files",
+		},
+		{
+			name: "Multiple duplicates",
+			files: []string{
+				"/path/Patient.ndjson",
+				"/path/Patient.ndjson.zst",
+				"/path/Observation.ndjson",
+				"/path/Observation.ndjson.zst",
+			},
+			wantErr: true,
+			errMsg:  "found duplicate FHIR files",
+		},
+		{
+			name: "Single duplicate among many files",
+			files: []string{
+				"/path/Patient.ndjson",
+				"/path/Observation.ndjson.zst",
+				"/path/Condition.ndjson",
+				"/path/Patient.ndjson.zst", // Duplicate
+			},
+			wantErr: true,
+			errMsg:  "Patient.ndjson",
+		},
+		{
+			name:    "Empty file list",
+			files:   []string{},
+			wantErr: false,
+		},
+		{
+			name:    "Single file",
+			files:   []string{"/path/Patient.ndjson"},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := models.DetectDuplicateFHIRFiles(tt.files)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}

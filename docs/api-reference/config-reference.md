@@ -35,6 +35,11 @@ retry:
   initial_backoff_ms: integer   # Initial backoff in milliseconds (default: 1000)
   max_backoff_ms: integer       # Maximum backoff in milliseconds (default: 30000)
 
+# Compression settings
+compression:
+  enabled: boolean              # Enable zstd compression (default: true)
+  level: string                 # Compression level: fastest, default, better, best
+
 # Job configuration
 jobs_dir: string                # Directory for job state and data (default: ./jobs)
 ```
@@ -243,6 +248,57 @@ Example with defaults:
 - Attempt 4: 8s
 - Attempt 5: 16s
 - Attempt 6+: 30s (capped)
+
+## Compression Options
+
+Aether uses zstd compression for FHIR NDJSON files, reducing disk usage and improving file transfer speeds. Compression is enabled by default.
+
+### Compression Enabled
+
+**Key**: `compression.enabled`
+**Type**: Boolean
+**Default**: `true`
+
+Enable or disable zstd compression for pipeline output files.
+
+```yaml
+compression:
+  enabled: true   # Compressed files use .ndjson.zst extension
+```
+
+When enabled:
+- Output files use `.ndjson.zst` extension
+- Typical compression ratio: 4-7x depending on level
+- Transparent decompression when reading files
+
+When disabled:
+- Output files use plain `.ndjson` extension
+- Useful for debugging or compatibility with tools that don't support zstd
+
+### Compression Level
+
+**Key**: `compression.level`
+**Type**: String
+**Default**: `"default"`
+**Valid Values**: `fastest`, `default`, `better`, `best`
+
+Controls the trade-off between compression speed and ratio.
+
+```yaml
+compression:
+  level: "default"  # Balanced speed and compression
+```
+
+**Level Comparison**:
+
+| Level     | Speed      | Ratio  | Use Case                          |
+|-----------|------------|--------|-----------------------------------|
+| `fastest` | ~500 MB/s  | ~3-4x  | Large datasets, CPU-constrained   |
+| `default` | ~200 MB/s  | ~4-5x  | Balanced (recommended)            |
+| `better`  | ~100 MB/s  | ~5-6x  | Storage-constrained environments  |
+| `best`    | ~50 MB/s   | ~6-7x  | Archival, maximum compression     |
+
+**Backward Compatibility**: Aether automatically detects and reads both compressed (`.ndjson.zst`) and uncompressed (`.ndjson`) files, regardless of the compression setting. This allows processing of data from older pipeline runs or external sources.
 
 ## Job Options
 

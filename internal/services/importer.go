@@ -12,9 +12,9 @@ import (
 )
 
 // ImportFromLocalDirectory copies FHIR NDJSON files from a local directory to the job's import directory
+// If compress is true, output files will be compressed with zstd (.ndjson.zst)
 // Returns list of imported files and any error
-func ImportFromLocalDirectory(sourcePath string, destinationDir string, logger *lib.Logger) ([]models.FHIRDataFile, error) {
-	// Validate source directory exists
+func ImportFromLocalDirectory(sourcePath string, destinationDir string, logger *lib.Logger, compress bool, compressionLevel string) ([]models.FHIRDataFile, error) {
 	sourceInfo, err := os.Stat(sourcePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -33,12 +33,10 @@ func ImportFromLocalDirectory(sourcePath string, destinationDir string, logger *
 		}
 	}
 
-	// Ensure destination directory exists
 	if err := os.MkdirAll(destinationDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create destination directory: %w", err)
 	}
 
-	// Find all NDJSON files in source directory
 	ndjsonFiles, err := findNDJSONFiles(sourcePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan source directory: %w", err)
@@ -48,12 +46,15 @@ func ImportFromLocalDirectory(sourcePath string, destinationDir string, logger *
 		return nil, fmt.Errorf("no FHIR NDJSON files found in %s", sourcePath)
 	}
 
+	if err := models.DetectDuplicateFHIRFiles(ndjsonFiles); err != nil {
+		return nil, err
+	}
+
 	logger.Info("Found FHIR files", "count", len(ndjsonFiles), "source", sourcePath)
 
-	// Import each file
 	var importedFiles []models.FHIRDataFile
 	for _, srcFile := range ndjsonFiles {
-		imported, err := copyFile(srcFile, destinationDir, logger)
+		imported, err := copyFile(srcFile, destinationDir, logger, compress, compressionLevel)
 		if err != nil {
 			return importedFiles, fmt.Errorf("failed to import %s: %w", srcFile, err)
 		}
@@ -73,12 +74,10 @@ func findNDJSONFiles(rootPath string) ([]string, error) {
 			return err
 		}
 
-		// Skip directories
 		if info.IsDir() {
 			return nil
 		}
 
-		// Check if file is NDJSON
 		if models.IsValidFHIRFile(info.Name()) {
 			files = append(files, path)
 		}
@@ -90,63 +89,87 @@ func findNDJSONFiles(rootPath string) ([]string, error) {
 }
 
 // copyFile copies a single file to the destination directory
+// If compress is true, output will be compressed with zstd
+// Handles both compressed and uncompressed source files transparently
 // Returns FHIRDataFile metadata
-func copyFile(sourcePath string, destDir string, logger *lib.Logger) (models.FHIRDataFile, error) {
-	// Open source file
-	srcFile, err := os.Open(sourcePath)
+func copyFile(sourcePath string, destDir string, logger *lib.Logger, compress bool, compressionLevel string) (models.FHIRDataFile, error) {
+	srcReader, err := lib.OpenFileForReading(sourcePath)
 	if err != nil {
 		return models.FHIRDataFile{}, fmt.Errorf("failed to open source file: %w", err)
 	}
 	defer func() {
-		if err := srcFile.Close(); err != nil {
+		if err := srcReader.Close(); err != nil {
 			logger.Error("Failed to close source file", "error", err)
 		}
 	}()
 
-	// Get source file info
-	srcInfo, err := srcFile.Stat()
+	srcInfo, err := os.Stat(sourcePath)
 	if err != nil {
 		return models.FHIRDataFile{}, fmt.Errorf("failed to stat source file: %w", err)
 	}
 
-	// Create destination file path
-	fileName := filepath.Base(sourcePath)
-	destPath := filepath.Join(destDir, fileName)
+	baseFileName := lib.GetUncompressedFilename(filepath.Base(sourcePath))
+	outputFileName := lib.GetCompressedFilename(baseFileName, compress)
+	destPath := filepath.Join(destDir, outputFileName)
 
-	// Create destination file
 	destFile, err := os.Create(destPath)
 	if err != nil {
 		return models.FHIRDataFile{}, fmt.Errorf("failed to create destination file: %w", err)
 	}
-	defer func() {
-		if err := destFile.Close(); err != nil {
-			logger.Error("Failed to close destination file", "error", err)
-		}
-	}()
 
-	// Copy file contents
-	bytesWritten, err := io.Copy(destFile, srcFile)
+	var writer io.WriteCloser = destFile
+	if compress {
+		compWriter, err := lib.CreateCompressedWriter(destFile, compressionLevel)
+		if err != nil {
+			_ = destFile.Close()
+			return models.FHIRDataFile{}, fmt.Errorf("failed to create compressed writer: %w", err)
+		}
+		writer = compWriter
+	}
+
+	bytesWritten, err := io.Copy(writer, srcReader)
 	if err != nil {
+		_ = writer.Close()
+		_ = destFile.Close()
 		return models.FHIRDataFile{}, fmt.Errorf("failed to copy file: %w", err)
 	}
 
-	// Count lines (FHIR resources)
+	if err := writer.Close(); err != nil {
+		if compress {
+			_ = destFile.Close()
+		}
+		return models.FHIRDataFile{}, fmt.Errorf("failed to close writer: %w", err)
+	}
+
+	if compress {
+		if err := destFile.Close(); err != nil {
+			logger.Error("Failed to close destination file", "error", err)
+		}
+	}
+
+	fileInfo, err := os.Stat(destPath)
+	var fileSize int64
+	if err == nil {
+		fileSize = fileInfo.Size()
+	} else {
+		fileSize = bytesWritten
+	}
+
 	lineCount, err := lib.CountResourcesInFile(destPath)
 	if err != nil {
-		logger.Warn("Failed to count resources", "file", fileName, "error", err)
+		logger.Warn("Failed to count resources", "file", outputFileName, "error", err)
 		lineCount = 0
 	}
 
-	// Extract resource type from filename
-	resourceType := models.GetResourceTypeFromFilename(fileName)
+	resourceType := models.GetResourceTypeFromFilename(outputFileName)
 
-	logger.Debug("File imported", "file", fileName, "size", bytesWritten, "resources", lineCount)
+	logger.Debug("File imported", "file", outputFileName, "size", fileSize, "resources", lineCount, "compressed", compress)
 
 	return models.FHIRDataFile{
-		FileName:     fileName,
-		FilePath:     fileName, // Relative to job import directory
+		FileName:     outputFileName,
+		FilePath:     outputFileName, // Relative to job import directory
 		ResourceType: resourceType,
-		FileSize:     bytesWritten,
+		FileSize:     fileSize,
 		SourceStep:   models.StepLocalImport,
 		LineCount:    lineCount,
 		CreatedAt:    srcInfo.ModTime(),
@@ -157,7 +180,6 @@ func copyFile(sourcePath string, destDir string, logger *lib.Logger) (models.FHI
 func ValidateImportSource(sourcePath string, inputType models.InputType) error {
 	switch inputType {
 	case models.InputTypeLocal:
-		// Check if directory exists and is accessible
 		info, err := os.Stat(sourcePath)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -167,7 +189,6 @@ func ValidateImportSource(sourcePath string, inputType models.InputType) error {
 		}
 
 		if !info.IsDir() {
-			// Provide helpful hint if it's a file that was misdetected
 			fileExt := strings.ToLower(filepath.Ext(sourcePath))
 			var hint string
 			switch fileExt {
@@ -179,7 +200,6 @@ func ValidateImportSource(sourcePath string, inputType models.InputType) error {
 			return fmt.Errorf("expected directory but got file: %s%s", sourcePath, hint)
 		}
 
-		// Check if directory contains NDJSON files
 		files, err := findNDJSONFiles(sourcePath)
 		if err != nil {
 			return fmt.Errorf("failed to scan directory: %w", err)
@@ -192,19 +212,15 @@ func ValidateImportSource(sourcePath string, inputType models.InputType) error {
 		return nil
 
 	case models.InputTypeHTTP:
-		// URL validation already done in models.Validate()
-		// Just check format
 		if sourcePath == "" {
 			return fmt.Errorf("URL cannot be empty")
 		}
 		return nil
 
 	case models.InputTypeCRTDL:
-		// CRTDL file validation
 		if sourcePath == "" {
 			return fmt.Errorf("CRTDL file path cannot be empty")
 		}
-		// Check file exists and is readable
 		info, err := os.Stat(sourcePath)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -218,11 +234,9 @@ func ValidateImportSource(sourcePath string, inputType models.InputType) error {
 		return nil
 
 	case models.InputTypeTORCHURL:
-		// TORCH result URL validation
 		if sourcePath == "" {
 			return fmt.Errorf("TORCH result URL cannot be empty")
 		}
-		// Basic URL format check
 		if !strings.HasPrefix(sourcePath, "http://") && !strings.HasPrefix(sourcePath, "https://") {
 			return fmt.Errorf("TORCH URL must start with http:// or https://")
 		}

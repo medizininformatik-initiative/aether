@@ -54,6 +54,14 @@ retry:
   # Maximum backoff delay in milliseconds (exponential backoff cap)
   max_backoff_ms: 30000
 
+# Compression settings for pipeline output files
+compression:
+  # Enable zstd compression (default: true)
+  enabled: true
+
+  # Compression level: fastest, default, better, best
+  level: "default"
+
 # Directory to store job state and data
 # Can be absolute or relative path
 jobs_dir: "./jobs"

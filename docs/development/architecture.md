@@ -169,12 +169,18 @@ Job state is persisted to JSON files in the jobs directory:
 ```
 jobs/
 └── {job-id}/
-    ├── status.json           # Job metadata and step status
-    ├── config.json           # Configuration snapshot
-    ├── import_results.ndjson # Imported FHIR data
-    ├── dimp_results.ndjson   # De-identified data
-    └── logs.txt              # Execution logs
+    ├── status.json               # Job metadata and step status
+    ├── config.json               # Configuration snapshot
+    ├── import/
+    │   ├── Patient.ndjson.zst    # Compressed FHIR data (zstd)
+    │   └── Observation.ndjson.zst
+    ├── pseudonymized/
+    │   ├── Patient.ndjson.zst    # De-identified data (zstd)
+    │   └── Observation.ndjson.zst
+    └── logs.txt                  # Execution logs
 ```
+
+**Note**: File extension is `.ndjson.zst` when compression is enabled (default) or `.ndjson` when disabled.
 
 This enables:
 - **Resume capability**: Continue failed pipelines without reprocessing
@@ -221,13 +227,32 @@ Persisted Results
 
 - One job directory per execution
 - Can clean up old jobs with `aether job delete`
-- NDJSON format is space-efficient
+- **Zstd compression** reduces file sizes by 4-7x (enabled by default)
+- Files use `.ndjson.zst` extension when compressed
+- Automatic detection of both compressed and uncompressed files for backward compatibility
 
 ### Network Usage
 
 - Exponential backoff retry strategy (reduces unnecessary requests)
 - Configurable polling intervals for TORCH
 - Automatic bundle splitting for DIMP
+
+### Compression
+
+Aether uses zstd compression (via `github.com/klauspost/compress/zstd`) for all pipeline output files:
+
+- **Default enabled**: Compression is on by default, configurable via `compression.enabled`
+- **Configurable levels**: `fastest`, `default`, `better`, `best` trade off speed vs ratio
+- **Transparent I/O**: `OpenFileForReading()` auto-detects compressed files
+- **Backward compatible**: Reads both `.ndjson` and `.ndjson.zst` files seamlessly
+
+**Compression ratios** (typical FHIR NDJSON data):
+| Level     | Ratio  | Write Speed |
+|-----------|--------|-------------|
+| fastest   | ~3-4x  | ~500 MB/s   |
+| default   | ~4-5x  | ~200 MB/s   |
+| better    | ~5-6x  | ~100 MB/s   |
+| best      | ~6-7x  | ~50 MB/s    |
 
 ## Extensibility
 

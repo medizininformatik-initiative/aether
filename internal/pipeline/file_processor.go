@@ -3,27 +3,31 @@ package pipeline
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+
+	"github.com/medizininformatik-initiative/aether/internal/lib"
 )
 
 // FileContext holds file handles and cleanup logic for atomic file writing
 type FileContext struct {
-	InFile   *os.File
-	OutFile  *os.File
-	TempFile string
-	Cleanup  func()
+	InFile    io.ReadCloser  // Input file (may be compressed)
+	OutFile   *os.File       // Output file handle
+	OutWriter io.WriteCloser // Output writer (may be compressed)
+	TempFile  string
+	Cleanup   func()
 }
 
 // SetupFileProcessing initializes files for atomic write pattern
 // Writes to .part file first, renamed on success
-func SetupFileProcessing(inputFile, outputFile string) (*FileContext, error) {
-	// Open input file
-	inFile, err := os.Open(inputFile)
+// If compress is true, output will be compressed with zstd
+// Handles both compressed and uncompressed input files transparently
+func SetupFileProcessing(inputFile, outputFile string, compress bool, compressionLevel string) (*FileContext, error) {
+	inFile, err := lib.OpenFileForReading(inputFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open input file: %w", err)
 	}
 
-	// Create temporary output file with .part extension
 	tempOutputFile := outputFile + ".part"
 	outFile, err := os.Create(tempOutputFile)
 	if err != nil {
@@ -31,16 +35,24 @@ func SetupFileProcessing(inputFile, outputFile string) (*FileContext, error) {
 		return nil, fmt.Errorf("failed to create temporary output file: %w", err)
 	}
 
-	// Track whether operation succeeded for cleanup
-	var success bool
+	var outWriter io.WriteCloser = outFile
+	if compress {
+		compWriter, err := lib.CreateCompressedWriter(outFile, compressionLevel)
+		if err != nil {
+			_ = outFile.Close()
+			_ = inFile.Close()
+			return nil, fmt.Errorf("failed to create compressed writer: %w", err)
+		}
+		outWriter = compWriter
+	}
+
 	ctx := &FileContext{
-		InFile:   inFile,
-		OutFile:  outFile,
-		TempFile: tempOutputFile,
+		InFile:    inFile,
+		OutFile:   outFile,
+		OutWriter: outWriter,
+		TempFile:  tempOutputFile,
 		Cleanup: func() {
-			if !success {
-				_ = os.Remove(tempOutputFile)
-			}
+			_ = os.Remove(tempOutputFile)
 		},
 	}
 
@@ -49,42 +61,48 @@ func SetupFileProcessing(inputFile, outputFile string) (*FileContext, error) {
 
 // FinalizeFileProcessing closes files and atomically renames .part to final filename
 func FinalizeFileProcessing(ctx *FileContext, outputFile string, markSuccess bool) error {
-	defer ctx.Cleanup()
+	if ctx.OutWriter != nil && ctx.OutWriter != ctx.OutFile {
+		if err := ctx.OutWriter.Close(); err != nil {
+			ctx.Cleanup()
+			return fmt.Errorf("failed to close compressed writer: %w", err)
+		}
+	}
 
-	// Close output file before rename
 	if err := ctx.OutFile.Close(); err != nil {
+		ctx.Cleanup()
 		return fmt.Errorf("failed to close output file: %w", err)
 	}
 
-	// Close input file
 	if err := ctx.InFile.Close(); err != nil {
+		ctx.Cleanup()
 		return fmt.Errorf("failed to close input file: %w", err)
 	}
 
-	// Only rename if successful
 	if !markSuccess {
+		ctx.Cleanup()
 		return nil
 	}
 
-	// Atomic rename: move .part file to final filename
 	if err := os.Rename(ctx.TempFile, outputFile); err != nil {
+		ctx.Cleanup()
 		return fmt.Errorf("failed to rename temporary file: %w", err)
 	}
 
 	return nil
 }
 
-// WriteProcessedResource marshals and writes a FHIR resource to file
-func WriteProcessedResource(resource map[string]any, outFile *os.File) error {
+// WriteProcessedResource marshals and writes a FHIR resource to a writer
+// The writer may be a plain file or a compressed writer
+func WriteProcessedResource(resource map[string]any, writer io.Writer) error {
 	pseudonymizedJSON, err := json.Marshal(resource)
 	if err != nil {
 		return fmt.Errorf("failed to marshal pseudonymized resource: %w", err)
 	}
 
-	if _, err := outFile.Write(pseudonymizedJSON); err != nil {
+	if _, err := writer.Write(pseudonymizedJSON); err != nil {
 		return fmt.Errorf("failed to write output: %w", err)
 	}
-	if _, err := outFile.Write([]byte("\n")); err != nil {
+	if _, err := writer.Write([]byte("\n")); err != nil {
 		return fmt.Errorf("failed to write newline: %w", err)
 	}
 

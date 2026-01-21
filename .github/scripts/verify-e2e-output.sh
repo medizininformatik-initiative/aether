@@ -104,8 +104,8 @@ verify_job() {
     fi
     success "Job ${job_id}: import directory exists"
 
-    # Count NDJSON files in import directory
-    local ndjson_count=$(find "${import_dir}" -name "*.ndjson" -type f | wc -l)
+    # Count NDJSON files in import directory (both uncompressed and compressed)
+    local ndjson_count=$(find "${import_dir}" \( -name "*.ndjson" -o -name "*.ndjson.zst" \) -type f | wc -l)
     if [[ ${ndjson_count} -eq 0 ]]; then
         error "Job ${job_id}: No NDJSON files found in import directory"
     else
@@ -123,13 +123,23 @@ verify_job() {
             fi
 
             # Check if file contains FHIR resourceType (basic validation)
-            if rg -q '"resourceType"' "${ndjson_file}"; then
-                valid_files=$((valid_files + 1))
+            # Handle both compressed (.zst) and uncompressed files
+            if [[ "${ndjson_file}" == *.zst ]]; then
+                # Decompress and check for resourceType
+                if zstd -dcq "${ndjson_file}" 2>/dev/null | rg -q '"resourceType"'; then
+                    valid_files=$((valid_files + 1))
+                else
+                    warn "Job ${job_id}: NDJSON file may not contain valid FHIR resources: $(basename "${ndjson_file}")"
+                fi
             else
-                warn "Job ${job_id}: NDJSON file may not contain valid FHIR resources: $(basename "${ndjson_file}")"
+                if rg -q '"resourceType"' "${ndjson_file}"; then
+                    valid_files=$((valid_files + 1))
+                else
+                    warn "Job ${job_id}: NDJSON file may not contain valid FHIR resources: $(basename "${ndjson_file}")"
+                fi
             fi
         fi
-    done < <(find "${import_dir}" -name "*.ndjson" -type f)
+    done < <(find "${import_dir}" \( -name "*.ndjson" -o -name "*.ndjson.zst" \) -type f)
 
     if [[ ${valid_files} -gt 0 ]]; then
         success "Job ${job_id}: ${valid_files} valid NDJSON file(s) verified"
@@ -139,7 +149,7 @@ verify_job() {
     local pseudo_dir="${job_dir}/pseudonymized"
     if [[ -d "${pseudo_dir}" ]]; then
         info "Job ${job_id}: pseudonymized directory exists"
-        local pseudo_count=$(find "${pseudo_dir}" -name "*.ndjson" -type f | wc -l)
+        local pseudo_count=$(find "${pseudo_dir}" \( -name "*.ndjson" -o -name "*.ndjson.zst" \) -type f | wc -l)
         if [[ ${pseudo_count} -gt 0 ]]; then
             success "Job ${job_id}: Found ${pseudo_count} pseudonymized file(s)"
         else

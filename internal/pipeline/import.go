@@ -29,30 +29,34 @@ func ExecuteImportStep(job *models.PipelineJob, logger *lib.Logger, httpClient *
 		return &updatedJob, err
 	}
 
+	// Get compression settings
+	compress := job.Config.Compression.Enabled
+	compressionLevel := job.Config.Compression.Level
+
 	// Execute import based on input type
 	var importedFiles []models.FHIRDataFile
 	var err error
 
 	switch job.InputType {
 	case models.InputTypeLocal:
-		logger.Info("Importing from local directory", "source", job.InputSource)
-		importedFiles, err = services.ImportFromLocalDirectory(job.InputSource, importDir, logger)
+		logger.Info("Importing from local directory", "source", job.InputSource, "compress", compress)
+		importedFiles, err = services.ImportFromLocalDirectory(job.InputSource, importDir, logger, compress, compressionLevel)
 
 	case models.InputTypeHTTP:
-		logger.Info("Downloading from URL", "source", job.InputSource)
+		logger.Info("Downloading from URL", "source", job.InputSource, "compress", compress)
 		if showProgress {
-			importedFiles, err = services.DownloadFromURLWithProgress(job.InputSource, importDir, httpClient, logger)
+			importedFiles, err = services.DownloadFromURLWithProgress(job.InputSource, importDir, httpClient, logger, compress, compressionLevel)
 		} else {
-			importedFiles, err = services.DownloadFromURL(job.InputSource, importDir, httpClient, logger, false)
+			importedFiles, err = services.DownloadFromURL(job.InputSource, importDir, httpClient, logger, false, compress, compressionLevel)
 		}
 
 	case models.InputTypeCRTDL:
-		logger.Info("Extracting data from TORCH using CRTDL", "source", job.InputSource)
-		importedFiles, err = executeTORCHExtraction(job, importDir, httpClient, logger, showProgress)
+		logger.Info("Extracting data from TORCH using CRTDL", "source", job.InputSource, "compress", compress)
+		importedFiles, err = executeTORCHExtraction(job, importDir, httpClient, logger, showProgress, compress, compressionLevel)
 
 	case models.InputTypeTORCHURL:
-		logger.Info("Downloading from TORCH result URL", "source", job.InputSource)
-		importedFiles, err = executeTORCHDownload(job, importDir, httpClient, logger, showProgress)
+		logger.Info("Downloading from TORCH result URL", "source", job.InputSource, "compress", compress)
+		importedFiles, err = executeTORCHDownload(job, importDir, httpClient, logger, showProgress, compress, compressionLevel)
 
 	default:
 		err = fmt.Errorf("unsupported input type: %s", job.InputType)
@@ -105,7 +109,7 @@ func failImportStep(job *models.PipelineJob, err error, errorType models.ErrorTy
 
 // executeTORCHExtraction performs CRTDL-based data extraction from TORCH server
 // Submits CRTDL, polls for completion, and downloads resulting NDJSON files
-func executeTORCHExtraction(job *models.PipelineJob, importDir string, httpClient *services.HTTPClient, logger *lib.Logger, showProgress bool) ([]models.FHIRDataFile, error) {
+func executeTORCHExtraction(job *models.PipelineJob, importDir string, httpClient *services.HTTPClient, logger *lib.Logger, showProgress bool, compress bool, compressionLevel string) ([]models.FHIRDataFile, error) {
 	// Create TORCH client
 	torchClient := services.NewTORCHClient(job.Config.Services.TORCH, httpClient, logger)
 
@@ -131,7 +135,7 @@ func executeTORCHExtraction(job *models.PipelineJob, importDir string, httpClien
 	}
 
 	// Download extraction files
-	files, err := torchClient.DownloadExtractionFiles(fileURLs, importDir, showProgress)
+	files, err := torchClient.DownloadExtractionFiles(fileURLs, importDir, showProgress, compress, compressionLevel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download TORCH files: %w", err)
 	}
@@ -141,7 +145,7 @@ func executeTORCHExtraction(job *models.PipelineJob, importDir string, httpClien
 
 // executeTORCHDownload downloads files from a direct TORCH result URL
 // This bypasses extraction submission and directly downloads from an existing result
-func executeTORCHDownload(job *models.PipelineJob, importDir string, httpClient *services.HTTPClient, logger *lib.Logger, showProgress bool) ([]models.FHIRDataFile, error) {
+func executeTORCHDownload(job *models.PipelineJob, importDir string, httpClient *services.HTTPClient, logger *lib.Logger, showProgress bool, compress bool, compressionLevel string) ([]models.FHIRDataFile, error) {
 	// Create TORCH client
 	torchClient := services.NewTORCHClient(job.Config.Services.TORCH, httpClient, logger)
 
@@ -157,7 +161,7 @@ func executeTORCHDownload(job *models.PipelineJob, importDir string, httpClient 
 	}
 
 	// Download files
-	files, err := torchClient.DownloadExtractionFiles(fileURLs, importDir, showProgress)
+	files, err := torchClient.DownloadExtractionFiles(fileURLs, importDir, showProgress, compress, compressionLevel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download TORCH files: %w", err)
 	}

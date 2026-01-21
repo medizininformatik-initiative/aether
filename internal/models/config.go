@@ -7,10 +7,26 @@ import (
 
 // ProjectConfig is the top-level configuration for the Aether pipeline
 type ProjectConfig struct {
-	Services ServiceConfig  `yaml:"services" json:"services"`
-	Pipeline PipelineConfig `yaml:"pipeline" json:"pipeline"`
-	Retry    RetryConfig    `yaml:"retry" json:"retry"`
-	JobsDir  string         `yaml:"jobs_dir" json:"jobs_dir"`
+	Services    ServiceConfig     `yaml:"services" json:"services"`
+	Pipeline    PipelineConfig    `yaml:"pipeline" json:"pipeline"`
+	Retry       RetryConfig       `yaml:"retry" json:"retry"`
+	Compression CompressionConfig `yaml:"compression" json:"compression"`
+	JobsDir     string            `yaml:"jobs_dir" json:"jobs_dir"`
+}
+
+// CompressionConfig holds compression settings for pipeline output files.
+type CompressionConfig struct {
+	Enabled bool   `yaml:"enabled" json:"enabled"`
+	Level   string `yaml:"level" json:"level"`
+}
+
+// DefaultCompressionConfig returns the default compression configuration.
+// Compression is enabled by default with the "default" compression level.
+func DefaultCompressionConfig() CompressionConfig {
+	return CompressionConfig{
+		Enabled: true,
+		Level:   "default",
+	}
 }
 
 // ServiceConfig contains connection details for external HTTP services
@@ -90,7 +106,8 @@ func DefaultConfig() ProjectConfig {
 			InitialBackoffMs: 1000,
 			MaxBackoffMs:     30000,
 		},
-		JobsDir: "./jobs",
+		Compression: DefaultCompressionConfig(),
+		JobsDir:     "./jobs",
 	}
 }
 

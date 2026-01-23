@@ -56,15 +56,6 @@ func TestImportFromLocalDirectory_Success(t *testing.T) {
 		assert.Equal(t, models.StepLocalImport, imported.SourceStep, "SourceStep should be import")
 		assert.Equal(t, 1, imported.LineCount, "LineCount should be 1 for single-line files")
 	}
-
-	// Verify resource types are extracted correctly
-	resourceTypes := make(map[string]bool)
-	for _, file := range importedFiles {
-		resourceTypes[file.ResourceType] = true
-	}
-	assert.True(t, resourceTypes["Patient"], "Patient resource type should be identified")
-	assert.True(t, resourceTypes["Observation"], "Observation resource type should be identified")
-	assert.True(t, resourceTypes["Bundle"], "Bundle resource type should be identified")
 }
 
 // TestImportFromLocalDirectory_NonexistentDirectory verifies error handling for missing source directory

@@ -151,12 +151,11 @@ func TestFHIRDataFile_Validate(t *testing.T) {
 		{
 			name: "Valid NDJSON file",
 			file: models.FHIRDataFile{
-				FileName:     "Patient.ndjson",
-				FilePath:     "safe/path/Patient.ndjson",
-				FileSize:     1024,
-				LineCount:    100,
-				ResourceType: "Patient",
-				SourceStep:   models.StepLocalImport,
+				FileName:   "Patient.ndjson",
+				FilePath:   "safe/path/Patient.ndjson",
+				FileSize:   1024,
+				LineCount:  100,
+				SourceStep: models.StepLocalImport,
 			},
 			wantErr: false,
 		},

@@ -395,16 +395,14 @@ func (c *TORCHClient) downloadFile(fileURL, destPath string, compress bool, comp
 	lineCount, _ := lib.CountResourcesInFile(destPath)
 
 	fileName := filepath.Base(destPath)
-	resourceType := models.GetResourceTypeFromFilename(fileName)
 
 	return models.FHIRDataFile{
-		FileName:     fileName,
-		FilePath:     fileName, // Relative to job directory
-		ResourceType: resourceType,
-		FileSize:     fileSize,
-		SourceStep:   models.StepTorchImport,
-		LineCount:    lineCount,
-		CreatedAt:    lib.GetFileModTime(destPath),
+		FileName:   fileName,
+		FilePath:   fileName, // Relative to job directory
+		FileSize:   fileSize,
+		SourceStep: models.StepTorchImport,
+		LineCount:  lineCount,
+		CreatedAt:  lib.GetFileModTime(destPath),
 	}, nil
 }
 

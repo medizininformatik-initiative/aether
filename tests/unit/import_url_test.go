@@ -49,7 +49,6 @@ func TestDownloadFromURL_Success(t *testing.T) {
 	assert.Equal(t, "Patient.ndjson", downloaded.FileName, "FileName should be extracted from URL")
 	assert.Greater(t, downloaded.FileSize, int64(0), "FileSize should be > 0")
 	assert.Equal(t, models.StepHttpImport, downloaded.SourceStep, "SourceStep should be import")
-	assert.Equal(t, "Patient", downloaded.ResourceType, "ResourceType should be extracted from filename")
 	assert.Equal(t, 3, downloaded.LineCount, "Should count 3 lines/resources")
 
 	// Verify file was saved
@@ -409,7 +408,6 @@ func TestDownloadFromURL_WithCompression(t *testing.T) {
 	assert.Equal(t, "Patient.ndjson.zst", downloaded.FileName, "FileName should have .zst extension")
 	assert.Greater(t, downloaded.FileSize, int64(0), "FileSize should be > 0")
 	assert.Equal(t, models.StepHttpImport, downloaded.SourceStep, "SourceStep should be import")
-	assert.Equal(t, "Patient", downloaded.ResourceType, "ResourceType should be extracted from filename")
 	assert.Equal(t, 3, downloaded.LineCount, "Should count 3 lines/resources")
 
 	// Verify compressed file was saved

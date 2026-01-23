@@ -9,13 +9,12 @@ import (
 
 // FHIRDataFile represents a single FHIR NDJSON file in the pipeline
 type FHIRDataFile struct {
-	FileName     string    `json:"file_name"`
-	FilePath     string    `json:"file_path"`     // Relative to job directory
-	ResourceType string    `json:"resource_type"` // e.g., "Patient", "Observation"
-	FileSize     int64     `json:"file_size"`     // Bytes
-	SourceStep   StepName  `json:"source_step"`   // Which step produced this file
-	LineCount    int       `json:"line_count"`    // Number of FHIR resources
-	CreatedAt    time.Time `json:"created_at"`
+	FileName   string    `json:"file_name"`
+	FilePath   string    `json:"file_path"`   // Relative to job directory
+	FileSize   int64     `json:"file_size"`   // Bytes
+	SourceStep StepName  `json:"source_step"` // Which step produced this file
+	LineCount  int       `json:"line_count"`  // Number of FHIR resources
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // IsValidFHIRFile checks if the file has valid FHIR NDJSON format
@@ -39,24 +38,6 @@ func IsSafePath(path string) bool {
 	}
 
 	return true
-}
-
-// GetResourceTypeFromFilename attempts to extract resource type from filename
-// Example: "Patient_001.ndjson" -> "Patient"
-// Example: "Patient_001.ndjson.zst" -> "Patient"
-func GetResourceTypeFromFilename(filename string) string {
-	base := strings.TrimSuffix(filename, ".zst")
-	base = strings.TrimSuffix(base, ".ndjson")
-
-	parts := strings.FieldsFunc(base, func(r rune) bool {
-		return r == '_' || r == '-' || r == '.'
-	})
-
-	if len(parts) > 0 {
-		return parts[0]
-	}
-
-	return "Unknown"
 }
 
 // GetNormalizedBaseName returns the base filename without compression extension.

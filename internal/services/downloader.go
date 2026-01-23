@@ -93,18 +93,15 @@ func DownloadFromURL(url string, destinationDir string, httpClient *HTTPClient, 
 		lineCount = 0
 	}
 
-	resourceType := models.GetResourceTypeFromFilename(outputFileName)
-
 	logger.Info("File downloaded successfully", "file", outputFileName, "size", fileSize, "resources", lineCount, "compressed", compress)
 
 	downloadedFile := models.FHIRDataFile{
-		FileName:     outputFileName,
-		FilePath:     outputFileName, // Relative to job import directory
-		ResourceType: resourceType,
-		FileSize:     fileSize,
-		SourceStep:   models.StepHttpImport,
-		LineCount:    lineCount,
-		CreatedAt:    lib.GetFileModTime(destPath),
+		FileName:   outputFileName,
+		FilePath:   outputFileName, // Relative to job import directory
+		FileSize:   fileSize,
+		SourceStep: models.StepHttpImport,
+		LineCount:  lineCount,
+		CreatedAt:  lib.GetFileModTime(destPath),
 	}
 
 	return []models.FHIRDataFile{downloadedFile}, nil
@@ -179,18 +176,16 @@ func DownloadFromURLWithProgress(url string, destinationDir string, httpClient *
 	}
 
 	lineCount, _ := lib.CountResourcesInFile(destPath)
-	resourceType := models.GetResourceTypeFromFilename(outputFileName)
 
 	logger.Info("Download completed", "file", outputFileName, "size", fileSize, "resources", lineCount, "compressed", compress)
 
 	downloadedFile := models.FHIRDataFile{
-		FileName:     outputFileName,
-		FilePath:     outputFileName,
-		ResourceType: resourceType,
-		FileSize:     fileSize,
-		SourceStep:   models.StepHttpImport,
-		LineCount:    lineCount,
-		CreatedAt:    lib.GetFileModTime(destPath),
+		FileName:   outputFileName,
+		FilePath:   outputFileName,
+		FileSize:   fileSize,
+		SourceStep: models.StepHttpImport,
+		LineCount:  lineCount,
+		CreatedAt:  lib.GetFileModTime(destPath),
 	}
 
 	return []models.FHIRDataFile{downloadedFile}, nil

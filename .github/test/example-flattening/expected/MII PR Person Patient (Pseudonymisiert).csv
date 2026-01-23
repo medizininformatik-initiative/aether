@@ -1,0 +1,3 @@
+id,active,deceased_boolean,deceased_datetime,gender,birth_date
+mii-patient-example-1,true,,2024-02-22,male,1965-07-15
+mii-patient-example-42,true,true,,male,1442-12-12

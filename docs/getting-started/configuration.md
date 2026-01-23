@@ -45,13 +45,28 @@ services:
     bundle_split_threshold_mb: 10               # Split large files (default: 10)
 ```
 
+### Flattening Settings
+
+The flattening service transforms FHIR NDJSON data into CSV files. It requires a CRTDL file as input.
+
+```yaml
+services:
+  flattening:
+    service_url: "http://fhir-flattener:8000"   # fhir-flattener service URL
+    lookup_path: "/path/to/flatten-lookup.json" # Element-to-ViewDefinition mappings
+    formats:
+      - csv                                     # Output format (only csv supported)
+    timeout: 30m                                # Request timeout (default: 30m)
+```
+
 ### Pipeline Settings
 
 ```yaml
 pipeline:
   enabled_steps:
-    - torch   # Extract from TORCH
-    - dimp    # Pseudonymize the data
+    - torch       # Extract from TORCH
+    - dimp        # Pseudonymize the data
+    - flattening  # Transform to CSV (requires CRTDL input)
 ```
 
 ### Jobs Directory

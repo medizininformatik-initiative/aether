@@ -32,6 +32,14 @@ services:
   parquet_conversion:
     url: ""
 
+  # Flattening Service (FHIR to CSV transformation)
+  flattening:
+    service_url: "http://fhir-flattener:8000"
+    lookup_path: "/app/torch/queries/flatten-lookup.json"
+    formats:
+      - csv
+    timeout: 30m
+
 pipeline:
   # List of steps to execute in order
   # Options: import, dimp, validation, csv_conversion, parquet_conversion
@@ -40,6 +48,7 @@ pipeline:
     - torch
     - wait
     - dimp
+    - flattening
     # - csv_conversion  # Commented out - service not running
     # - parquet_conversion  # Commented out - service not running
 

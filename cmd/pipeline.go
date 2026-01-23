@@ -213,6 +213,23 @@ func executeStep(job *models.PipelineJob, stepName models.StepName, config *mode
 		fmt.Println("Parquet conversion step not yet implemented - job will remain at this step")
 		return nil
 
+	case models.StepFlattening:
+		fmt.Println("Starting flattening step...")
+		if err := pipeline.ExecuteFlatteningStep(job, jobDir, logger); err != nil {
+			failedJob := pipeline.FailJob(job, err.Error())
+			if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
+				logger.Error("Failed to save job state", "error", saveErr)
+			}
+			return fmt.Errorf("flattening step failed: %w", err)
+		}
+
+		if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
+			return fmt.Errorf("failed to save job state: %w", err)
+		}
+
+		fmt.Printf("\n✓ Flattening completed\n")
+		return nil
+
 	case models.StepWait:
 		// Execute wait step - creates empty wait directory and pauses pipeline
 		stepIndex := -1

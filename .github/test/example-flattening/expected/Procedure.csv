@@ -1,0 +1,2 @@
+id,patient,system_ops,code_ops,system_sct,code_sct,status,performed_datetime,performed_period_start,performed_period_end,performed_string,dokumentationsdatum
+mii-procedure-example-1,Patient/mii-patient-example-1,http://fhir.de/CodeSystem/bfarm/ops,8-930,http://snomed.info/sct,182777000,completed,,2024-01-15T11:00:00+01:00,2024-01-17T14:30:00+01:00,,2024-01-16T09:15:00+01:00

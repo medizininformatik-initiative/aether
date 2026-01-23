@@ -1,0 +1,29 @@
+# Aether Flattening E2E Test Configuration
+# Uses internal Docker hostnames since aether runs inside the Docker network
+
+services:
+  # DIMP Service (dummy URL - step is already completed in pre-staged state)
+  dimp:
+    url: "http://fhir-pseudonymizer:8080/fhir"
+
+  # Flattening Service (FHIR to CSV transformation)
+  flattening:
+    service_url: "http://fhir-flattener:8000"
+    lookup_path: "/app/example-flattening/queries/flatten-lookup.json"
+    formats:
+      - csv
+    timeout: 5m
+
+pipeline:
+  # Pipeline starts from pre-staged data after local_import and dimp steps
+  enabled_steps:
+    - local_import # Already completed (pre-staged)
+    - dimp         # Already completed (pre-staged)
+    - flattening   # This is the step being tested
+
+# Disable compression for simpler test comparison
+compression:
+  enabled: false
+
+# Directory to store job state and data
+jobs_dir: "./jobs"

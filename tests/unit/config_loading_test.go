@@ -831,6 +831,9 @@ func TestGetServiceURL(t *testing.T) {
 			ParquetConversion: models.ParquetConversionConfig{
 				URL: "http://parquet.example.com:9001",
 			},
+			Flattening: models.FlatteningConfig{
+				ServiceURL: "http://flattener.example.com:8000",
+			},
 		},
 	}
 
@@ -843,9 +846,33 @@ func TestGetServiceURL(t *testing.T) {
 	// Test Parquet URL
 	assert.Equal(t, "http://parquet.example.com:9001", config.Services.GetServiceURL(models.StepParquetConversion))
 
+	// Test Flattening URL
+	assert.Equal(t, "http://flattener.example.com:8000", config.Services.GetServiceURL(models.StepFlattening))
+
 	// Test unknown step
 	assert.Equal(t, "", config.Services.GetServiceURL(models.StepLocalImport))
 	assert.Equal(t, "", config.Services.GetServiceURL(models.StepValidation))
+}
+
+// TestHasServiceURLFlattening verifies HasServiceURL for flattening step
+func TestHasServiceURLFlattening(t *testing.T) {
+	t.Run("flattening with service URL", func(t *testing.T) {
+		config := models.ServiceConfig{
+			Flattening: models.FlatteningConfig{
+				ServiceURL: "http://flattener.example.com:8000",
+			},
+		}
+		assert.True(t, config.HasServiceURL(models.StepFlattening))
+	})
+
+	t.Run("flattening without service URL", func(t *testing.T) {
+		config := models.ServiceConfig{
+			Flattening: models.FlatteningConfig{
+				ServiceURL: "",
+			},
+		}
+		assert.False(t, config.HasServiceURL(models.StepFlattening))
+	})
 }
 
 // TestGetNextStep verifies pipeline step progression

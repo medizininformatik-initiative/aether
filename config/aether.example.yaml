@@ -47,10 +47,30 @@ services:
   parquet_conversion:
     url: "http://localhost:9000/convert/parquet"
 
+  # Flattening Service (optional)
+  # fhir-flattener transforms FHIR NDJSON data into CSV files using ViewDefinitions
+  # Only used with CRTDL-based pipelines (requires CRTDL file to define attribute groups)
+  # Leave service_url empty to skip flattening step
+  flattening:
+    # fhir-flattener service URL (internal Docker network hostname and port)
+    service_url: "http://fhir-flattener:8000"
+
+    # Path to the flatten-lookup.json file containing element-to-ViewDefinition mappings
+    # This file maps CRTDL attributeRef values to SQL-on-FHIR ViewDefinition snippets
+    lookup_path: "/path/to/flatten-lookup.json"
+
+    # Output formats - currently only "csv" is supported
+    formats:
+      - csv
+
+    # Request timeout for the flattening service
+    # Default: 30m (30 minutes)
+    timeout: 30m
+
 pipeline:
   # List of steps to execute in order
   # Import step options (must be first): torch, local_import, http_import
-  # Other step options: dimp, validation, csv_conversion, parquet_conversion, wait
+  # Other step options: dimp, validation, csv_conversion, parquet_conversion, wait, flattening
   # NOTE: At least one import step must be first in enabled_steps
   # NOTE: Enable all the import types you want to support - the system will automatically
   #       use the correct one based on your input (TORCH URL → torch, local dir → local_import, etc.)
@@ -68,6 +88,7 @@ pipeline:
     # - wait          # Uncomment to pause after import for inspection
     - dimp
     # - wait          # Uncomment to pause after pseudonymization
+    - flattening      # Transform FHIR to CSV using fhir-flattener (CRTDL input only)
     - csv_conversion
     - parquet_conversion
 

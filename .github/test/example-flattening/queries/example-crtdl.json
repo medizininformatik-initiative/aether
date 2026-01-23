@@ -1,0 +1,120 @@
+{
+  "display": "",
+  "version": "http://json-schema.org/to-be-done/schema#",
+  "cohortDefinition": {
+    "version": "http://to_be_decided.com/draft-1/schema#",
+    "display": "Ausgewählte Merkmale",
+    "inclusionCriteria": [
+      [
+        {
+          "termCodes": [
+            {
+              "code": "263495000",
+              "display": "Geschlecht",
+              "system": "http://snomed.info/sct",
+              "version": ""
+            }
+          ],
+          "context": {
+            "code": "Patient",
+            "display": "Patient",
+            "system": "fdpg.mii.cds",
+            "version": "1.0.0"
+          },
+          "valueFilter": {
+            "selectedConcepts": [
+              {
+                "code": "female",
+                "display": "Female",
+                "system": "http://hl7.org/fhir/administrative-gender"
+              },
+              {
+                "code": "male",
+                "display": "Male",
+                "system": "http://hl7.org/fhir/administrative-gender"
+              }
+            ],
+            "type": "concept"
+          }
+        }
+      ]
+    ]
+  },
+  "dataExtraction": {
+    "attributeGroups": [
+      {
+        "attributes": [
+          {
+            "attributeRef": "Patient.active",
+            "mustHave": false
+          },
+          {
+            "attributeRef": "Patient.deceased[x]",
+            "mustHave": false
+          },
+          {
+            "attributeRef": "Patient.gender",
+            "mustHave": true
+          },
+          {
+            "attributeRef": "Patient.birthDate",
+            "mustHave": true
+          }
+        ],
+        "id": "42b72307-d33b-4fa1-95c8-e01390a9ec8a",
+        "groupReference": "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/PatientPseudonymisiert",
+        "name": "MII PR Person Patient (Pseudonymisiert)"
+      },
+      {
+        "attributes": [
+          {
+            "attributeRef": "Condition.code",
+            "mustHave": true
+          },
+          {
+            "attributeRef": "Condition.recordedDate",
+            "mustHave": false
+          },
+          {
+            "attributeRef": "Condition.clinicalStatus",
+            "mustHave": false
+          },
+          {
+            "attributeRef": "Condition.verificationStatus",
+            "mustHave": false
+          },
+          {
+            "attributeRef": "Condition.extension:Feststellungsdatum",
+            "mustHave": false
+          }
+        ],
+        "id": "d20a1423-4188-4c3f-98c8-725b0f09746b",
+        "groupReference": "https://www.medizininformatik-initiative.de/fhir/core/modul-diagnose/StructureDefinition/Diagnose",
+        "name": "Diagnosis"
+      },
+      {
+        "attributes": [
+          {
+            "attributeRef": "Procedure.code",
+            "mustHave": true
+          },
+          {
+            "attributeRef": "Procedure.status",
+            "mustHave": false
+          },
+          {
+            "attributeRef": "Procedure.performed[x]",
+            "mustHave": false
+          },
+          {
+            "attributeRef": "Procedure.extension:Dokumentationsdatum",
+            "mustHave": false
+          }
+        ],
+        "id": "d49d96a5-53af-4069-862b-2ff804eac084",
+        "groupReference": "https://www.medizininformatik-initiative.de/fhir/core/modul-prozedur/StructureDefinition/Procedure",
+        "name": "Procedure"
+      }
+    ]
+  }
+}

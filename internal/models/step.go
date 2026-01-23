@@ -28,7 +28,8 @@ const (
 	StepValidation        StepName = "validation"
 	StepCSVConversion     StepName = "csv_conversion"
 	StepParquetConversion StepName = "parquet_conversion"
-	StepWait              StepName = "wait" // Pause pipeline for user inspection/modification
+	StepWait              StepName = "wait"       // Pause pipeline for user inspection/modification
+	StepFlattening        StepName = "flattening" // Transform FHIR data to CSV using fhir-flattener
 )
 
 // StepStatus defines the execution state of a pipeline step
@@ -69,7 +70,7 @@ const (
 // IsValidStepName checks if the step name is recognized
 func IsValidStepName(name StepName) bool {
 	switch name {
-	case StepTorchImport, StepLocalImport, StepHttpImport, StepDIMP, StepValidation, StepCSVConversion, StepParquetConversion, StepWait:
+	case StepTorchImport, StepLocalImport, StepHttpImport, StepDIMP, StepValidation, StepCSVConversion, StepParquetConversion, StepWait, StepFlattening:
 		return true
 	default:
 		return false

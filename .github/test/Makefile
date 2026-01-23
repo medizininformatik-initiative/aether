@@ -1,7 +1,7 @@
 # Makefile for Aether Test Infrastructure
 # Located in .github/test/
 
-.PHONY: help services start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test test-with-services download-testdata upload-testdata e2e-test clean-test-data
+.PHONY: help services start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test flattener-up flattener-down flattener-logs test-with-services download-testdata upload-testdata e2e-test e2e-test-flattening clean-test-data
 
 # Default target
 .DEFAULT_GOAL := help
@@ -15,9 +15,10 @@ help:
 	@echo "Available Services:"
 	@echo "  torch             TORCH data extraction service"
 	@echo "  dimp              DIMP pseudonymization service"
+	@echo "  flattener         fhir-flattener CSV transformation service"
 	@echo ""
 	@echo "Targets:"
-	@echo "  start             Start all services (TORCH + DIMP)"
+	@echo "  start             Start all services (TORCH + DIMP + Flattener)"
 	@echo "  stop              Stop all services"
 	@echo "  torch-up          Start TORCH test service"
 	@echo "  torch-down        Stop TORCH test service"
@@ -28,10 +29,14 @@ help:
 	@echo "  dimp-logs         Show DIMP service logs"
 	@echo "  dimp-restart      Restart DIMP service"
 	@echo "  dimp-test         Run integration tests with DIMP service"
+	@echo "  flattener-up      Start fhir-flattener service"
+	@echo "  flattener-down    Stop fhir-flattener service"
+	@echo "  flattener-logs    Show fhir-flattener service logs"
 	@echo "  test-with-services Run all tests with required services"
 	@echo "  download-testdata Download test data (only if not present)"
 	@echo "  upload-testdata   Upload test data to TORCH (requires services)"
 	@echo "  e2e-test          Run end-to-end test (downloads, uploads, runs pipeline)"
+	@echo "  e2e-test-flattening Run flattening E2E test with pre-staged example data"
 	@echo "  clean-test-data   Clean test data and temporary files"
 
 ## services: Alias for help
@@ -109,6 +114,26 @@ dimp-logs:
 dimp-restart: dimp-down dimp-up
 	@echo "✓ DIMP service restarted"
 
+## flattener-up: Start fhir-flattener service
+flattener-up:
+	@echo "Starting fhir-flattener service..."
+	cd flattener && docker compose up -d
+	@echo "✓ fhir-flattener service running at http://localhost:8088"
+	@echo ""
+	@echo "Test the service:"
+	@echo "  curl http://localhost:8088/health"
+
+## flattener-down: Stop fhir-flattener service
+flattener-down:
+	@echo "Stopping fhir-flattener service..."
+	cd flattener && docker compose down
+	@echo "✓ fhir-flattener service stopped"
+
+## flattener-logs: Show fhir-flattener service logs
+flattener-logs:
+	@echo "Showing fhir-flattener service logs..."
+	cd flattener && docker compose logs -f
+
 ## dimp-test: Run integration tests with DIMP service
 dimp-test:
 	@echo "Running integration tests with DIMP service..."
@@ -167,6 +192,15 @@ e2e-test: download-testdata
 	@echo "Running E2E test script..."
 	../scripts/run-e2e-test.sh
 	@echo "✓ End-to-end test complete"
+
+## e2e-test-flattening: Run flattening E2E test with pre-staged example data
+e2e-test-flattening:
+	@echo "Running flattening E2E test..."
+	@echo "Starting fhir-flattener and aether-runner services..."
+	@docker compose up -d --wait aether-runner fhir-flattener
+	@echo "Running flattening E2E test script..."
+	@../scripts/run-flattening-e2e-test.sh
+	@echo "✓ Flattening E2E test complete"
 
 ## clean-test-data: Clean test data and temporary files
 clean-test-data:

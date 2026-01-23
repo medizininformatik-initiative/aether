@@ -5,6 +5,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 	"github.com/medizininformatik-initiative/aether/internal/models"
@@ -79,6 +80,12 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 			},
 			ParquetConversion: models.ParquetConversionConfig{
 				URL: ExpandEnvVars(viper.GetString("services.parquet_conversion.url")),
+			},
+			Flattening: models.FlatteningConfig{
+				ServiceURL: ExpandEnvVars(viper.GetString("services.flattening.service_url")),
+				LookupPath: ExpandEnvVars(viper.GetString("services.flattening.lookup_path")),
+				Formats:    viper.GetStringSlice("services.flattening.formats"),
+				Timeout:    viper.GetDuration("services.flattening.timeout"),
 			},
 		},
 		Retry: models.RetryConfig{
@@ -157,6 +164,13 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 		// Apply compression level default if not set
 		if config.Compression.Level == "" {
 			config.Compression.Level = "default"
+		}
+		// Apply Flattening defaults if not set
+		if config.Services.Flattening.Timeout == 0 {
+			config.Services.Flattening.Timeout = 30 * time.Minute
+		}
+		if len(config.Services.Flattening.Formats) == 0 {
+			config.Services.Flattening.Formats = []string{"csv"}
 		}
 	}
 

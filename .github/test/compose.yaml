@@ -6,6 +6,7 @@ networks:
 include:
   - torch/compose.yaml
   - dimp/compose.yaml
+  - flattener/compose.yaml
 
 services:
   # E2E test runner - runs aether inside the Docker network
@@ -16,10 +17,13 @@ services:
     working_dir: /app
     volumes:
       - ./aether.yaml:/app/aether.yaml:ro
+      - ./aether-flattening.yaml:/app/aether-flattening.yaml:ro
       - ./torch/queries:/app/torch/queries:ro
+      - ./example-flattening:/app/example-flattening:ro
       - ./jobs:/app/jobs
     # Keep container running so we can exec into it
     command: ["sleep", "infinity"]
     depends_on:
       - torch-proxy
       - fhir-pseudonymizer
+      - fhir-flattener

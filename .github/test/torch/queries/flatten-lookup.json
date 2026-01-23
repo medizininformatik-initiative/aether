@@ -1,0 +1,137 @@
+[
+  {
+    "url": "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient",
+    "resourceType": "Patient",
+    "elements": {
+      "Patient.identifier": {
+        "viewDefinition": {
+          "select": [
+            {
+              "forEach": "identifier",
+              "column": [
+                {"name": "identifier_system", "path": "system"},
+                {"name": "identifier_value", "path": "value"}
+              ]
+            }
+          ]
+        }
+      },
+      "Patient.birthDate": {
+        "viewDefinition": {
+          "select": [
+            {
+              "column": [
+                {"name": "birthDate", "path": "birthDate"}
+              ]
+            }
+          ]
+        }
+      },
+      "Patient.name": {
+        "children": ["Patient.name.family", "Patient.name.given"],
+        "viewDefinition": {
+          "select": [
+            {
+              "forEach": "name"
+            }
+          ]
+        }
+      },
+      "Patient.name.family": {
+        "parent": "Patient.name",
+        "viewDefinition": {
+          "select": [
+            {
+              "column": [
+                {"name": "family", "path": "family"}
+              ]
+            }
+          ]
+        }
+      },
+      "Patient.name.given": {
+        "parent": "Patient.name",
+        "viewDefinition": {
+          "select": [
+            {
+              "column": [
+                {"name": "given", "path": "given[0]"}
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "url": "https://www.medizininformatik-initiative.de/fhir/core/modul-diagnose/StructureDefinition/Diagnose",
+    "resourceType": "Condition",
+    "elements": {
+      "Condition.code": {
+        "viewDefinition": {
+          "select": [
+            {
+              "forEach": "code.coding",
+              "column": [
+                {"name": "code_system", "path": "system"},
+                {"name": "code_code", "path": "code"},
+                {"name": "code_display", "path": "display"}
+              ]
+            }
+          ]
+        }
+      },
+      "Condition.recordedDate": {
+        "viewDefinition": {
+          "select": [
+            {
+              "column": [
+                {"name": "recordedDate", "path": "recordedDate"}
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "url": "https://www.medizininformatik-initiative.de/fhir/core/modul-diagnose/StructureDefinition/DiagnoseHierarchical",
+    "resourceType": "Condition",
+    "elements": {
+      "Condition.coding": {
+        "children": ["Condition.coding.icd10", "Condition.coding.snomed"],
+        "viewDefinition": {
+          "select": []
+        }
+      },
+      "Condition.coding.icd10": {
+        "parent": "Condition.coding",
+        "viewDefinition": {
+          "select": [
+            {
+              "forEach": "code.coding.where(system='http://fhir.de/CodeSystem/bfarm/icd-10-gm')",
+              "column": [
+                {"name": "icd10_code", "path": "code"},
+                {"name": "icd10_display", "path": "display"}
+              ]
+            }
+          ]
+        }
+      },
+      "Condition.coding.snomed": {
+        "parent": "Condition.coding",
+        "viewDefinition": {
+          "select": [
+            {
+              "forEach": "code.coding.where(system='http://snomed.info/sct')",
+              "column": [
+                {"name": "snomed_code", "path": "code"},
+                {"name": "snomed_display", "path": "display"}
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+]

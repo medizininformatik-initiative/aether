@@ -1,0 +1,14 @@
+# fhir-flattener service for E2E testing
+# Transforms FHIR data to CSV using ViewDefinitions
+
+services:
+  fhir-flattener:
+    image: ghcr.io/medizininformatik-initiative/fhir-flattener:0.1.0-alpha.4@sha256:13bb3465bdca2e7599968077e0e095b3ef59d5d1f918bf02c952ad064206577f
+    working_dir: /app
+    networks: [ "aether" ]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/fhir/metadata"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s

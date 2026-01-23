@@ -35,6 +35,7 @@ type ServiceConfig struct {
 	CSVConversion     CSVConversionConfig     `yaml:"csv_conversion" json:"csv_conversion"`
 	ParquetConversion ParquetConversionConfig `yaml:"parquet_conversion" json:"parquet_conversion"`
 	TORCH             TORCHConfig             `yaml:"torch" json:"torch"`
+	Flattening        FlatteningConfig        `yaml:"flattening" json:"flattening"`
 }
 
 // DIMPConfig contains DIMP pseudonymization service settings
@@ -97,6 +98,7 @@ func DefaultConfig() ProjectConfig {
 				PollingIntervalSeconds:    5,
 				MaxPollingIntervalSeconds: 30,
 			},
+			Flattening: DefaultFlatteningConfig(),
 		},
 		Pipeline: PipelineConfig{
 			EnabledSteps: []StepName{StepLocalImport, StepHttpImport},
@@ -178,6 +180,8 @@ func (c *ServiceConfig) HasServiceURL(step StepName) bool {
 		return c.CSVConversion.URL != ""
 	case StepParquetConversion:
 		return c.ParquetConversion.URL != ""
+	case StepFlattening:
+		return c.Flattening.ServiceURL != ""
 	default:
 		return true // Import and validation don't require external services
 	}
@@ -192,6 +196,8 @@ func (c *ServiceConfig) GetServiceURL(step StepName) string {
 		return c.CSVConversion.URL
 	case StepParquetConversion:
 		return c.ParquetConversion.URL
+	case StepFlattening:
+		return c.Flattening.ServiceURL
 	default:
 		return ""
 	}

@@ -13,6 +13,34 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
+// TestGetJobOutputDir tests the output directory mapping for different steps
+func TestGetJobOutputDir(t *testing.T) {
+	baseDir := "/tmp/jobs"
+	jobID := "test-job-123"
+
+	tests := []struct {
+		step     models.StepName
+		expected string
+	}{
+		{models.StepLocalImport, "/tmp/jobs/test-job-123/import"},
+		{models.StepTorchImport, "/tmp/jobs/test-job-123/import"},
+		{models.StepHttpImport, "/tmp/jobs/test-job-123/import"},
+		{models.StepDIMP, "/tmp/jobs/test-job-123/pseudonymized"},
+		{models.StepCSVConversion, "/tmp/jobs/test-job-123/csv"},
+		{models.StepFlattening, "/tmp/jobs/test-job-123/csv"},
+		{models.StepParquetConversion, "/tmp/jobs/test-job-123/parquet"},
+		{models.StepWait, "/tmp/jobs/test-job-123"},
+		{models.StepValidation, "/tmp/jobs/test-job-123"},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.step), func(t *testing.T) {
+			result := services.GetJobOutputDir(baseDir, jobID, tt.step)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 // TestStatePersistence_SaveAndLoad tests the complete save/load cycle
 // Unit test for state persistence (save/load cycle)
 func TestStatePersistence_SaveAndLoad(t *testing.T) {

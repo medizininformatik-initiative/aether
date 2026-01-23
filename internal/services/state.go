@@ -160,6 +160,7 @@ func EnsureJobDirs(jobsBaseDir string, jobID string) (map[models.StepName]string
 		models.StepDIMP:              filepath.Join(jobDir, "pseudonymized"),
 		models.StepCSVConversion:     filepath.Join(jobDir, "csv"),
 		models.StepParquetConversion: filepath.Join(jobDir, "parquet"),
+		models.StepFlattening:        filepath.Join(jobDir, "csv"),
 	}
 
 	for _, dir := range dirs {
@@ -180,7 +181,7 @@ func GetJobOutputDir(jobsBaseDir string, jobID string, step models.StepName) str
 		return filepath.Join(jobDir, "import")
 	case models.StepDIMP:
 		return filepath.Join(jobDir, "pseudonymized")
-	case models.StepCSVConversion:
+	case models.StepCSVConversion, models.StepFlattening:
 		return filepath.Join(jobDir, "csv")
 	case models.StepParquetConversion:
 		return filepath.Join(jobDir, "parquet")

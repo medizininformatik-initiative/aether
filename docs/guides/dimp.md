@@ -46,6 +46,33 @@ jobs/<job-id>/
 └── dimp_results.ndjson  # Pseudonymized data
 ```
 
+## CRTDL Preprocessing
+
+DIMP requires certain attributes (like `Patient.identifier`) to be present in the extracted FHIR data. If your CRTDL query doesn't include these attributes, DIMP pseudonymization will fail.
+
+CRTDL preprocessing automatically enriches your CRTDL with the required attributes before sending it to TORCH:
+
+```yaml
+services:
+  crtdl_preprocessing:
+    enabled: true
+    enrichments:
+      - group_reference: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/PatientPseudonymisiert"
+        create_if_not_exists:
+          group_name: "PatientPseudonymisiert"
+        attributes_to_add:
+          - attribute_ref: "Patient.identifier"
+            must_have: false
+      - group_reference: "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung"
+        attributes_to_add:
+          - attribute_ref: "Encounter.identifier"
+            must_have: false
+```
+
+The `create_if_not_exists` option creates the group in the CRTDL if it doesn't already exist. This is useful for groups like `PatientPseudonymisiert` that may not be part of the original research query but are needed by DIMP.
+
+Enrichment rules can also be loaded from an external JSON file. See [CRTDL Preprocessing](../api-reference/config-reference.md#crtdl-preprocessing) in the configuration reference for details.
+
 ## Large Bundles
 
 For large datasets, Aether automatically splits bundles before sending to DIMP:

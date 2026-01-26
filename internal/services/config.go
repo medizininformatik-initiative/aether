@@ -125,21 +125,30 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 				Dir: ExpandEnvVars(viper.GetString("services.local_import.dir")),
 			},
 		},
-		Retry: models.RetryConfig{
-			MaxAttempts:      viper.GetInt("retry.max_attempts"),
-			InitialBackoffMs: viper.GetInt64("retry.initial_backoff_ms"),
-			MaxBackoffMs:     viper.GetInt64("retry.max_backoff_ms"),
-		},
-		Compression: models.CompressionConfig{
-			Enabled: viper.GetBool("compression.enabled"),
-			Level:   viper.GetString("compression.level"),
-		},
-		TLS: models.TLSConfig{
-			CACertPath:         ExpandEnvVars(viper.GetString("tls.ca_cert_path")),
-			InsecureSkipVerify: viper.GetBool("tls.insecure_skip_verify"),
-		},
-		JobsDir: ExpandEnvVars(viper.GetString("jobs_dir")),
 	}
+
+	// Load CRTDL preprocessing configuration separately
+	// Using UnmarshalKey for complex nested structures (enrichments array)
+	var crtdlPreprocessing models.CRTDLPreprocessingConfig
+	if err := viper.UnmarshalKey("services.crtdl_preprocessing", &crtdlPreprocessing); err == nil {
+		config.Services.CRTDLPreprocessing = crtdlPreprocessing
+	}
+
+	// Continue building the rest of the config
+	config.Retry = models.RetryConfig{
+		MaxAttempts:      viper.GetInt("retry.max_attempts"),
+		InitialBackoffMs: viper.GetInt64("retry.initial_backoff_ms"),
+		MaxBackoffMs:     viper.GetInt64("retry.max_backoff_ms"),
+	}
+	config.Compression = models.CompressionConfig{
+		Enabled: viper.GetBool("compression.enabled"),
+		Level:   viper.GetString("compression.level"),
+	}
+	config.TLS = models.TLSConfig{
+		CACertPath:         ExpandEnvVars(viper.GetString("tls.ca_cert_path")),
+		InsecureSkipVerify: viper.GetBool("tls.insecure_skip_verify"),
+	}
+	config.JobsDir = ExpandEnvVars(viper.GetString("jobs_dir"))
 
 	// Handle compression default: enabled=true unless explicitly set to false
 	// viper.GetBool returns false for missing keys, but we want true as default

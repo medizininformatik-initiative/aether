@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"time"
@@ -111,8 +112,12 @@ type ColumnDefinition struct {
 }
 
 // CRTDLDocument represents the CRTDL file structure
+// Includes all top-level fields to preserve the full document during preprocessing
 type CRTDLDocument struct {
-	DataExtraction DataExtraction `json:"dataExtraction"`
+	Display          string          `json:"display,omitempty"`
+	Version          string          `json:"version,omitempty"`
+	CohortDefinition json.RawMessage `json:"cohortDefinition,omitempty"` // Preserved as-is, not processed
+	DataExtraction   DataExtraction  `json:"dataExtraction"`
 }
 
 // DataExtraction represents the dataExtraction section of a CRTDL document
@@ -130,8 +135,9 @@ type AttributeGroup struct {
 
 // Attribute represents a single attribute within an attributeGroup
 type Attribute struct {
-	AttributeRef string `json:"attributeRef"` // Element ID reference to lookup
-	MustHave     bool   `json:"mustHave"`     // Whether this attribute is required
+	AttributeRef string   `json:"attributeRef"`           // Element ID reference to lookup
+	MustHave     bool     `json:"mustHave"`               // Whether this attribute is required
+	LinkedGroups []string `json:"linkedGroups,omitempty"` // Profile URLs for linked groups (resolved to IDs during preprocessing)
 }
 
 // FlatteningRequest represents the FHIR Parameters request body sent to fhir-flattener

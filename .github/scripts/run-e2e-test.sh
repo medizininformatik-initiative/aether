@@ -106,6 +106,26 @@ if echo "$OUTPUT" | grep -q "Pipeline paused at wait step"; then
 fi
 
 echo ""
+echo "Verifying CRTDL preprocessing..."
+
+# Check that enriched-crtdl.json was created
+if docker compose exec -T aether-runner sh -c "test -f /app/jobs/$JOB_ID/enriched-crtdl.json"; then
+    echo "✓ enriched-crtdl.json exists"
+
+    # Verify Patient.identifier:PseudonymisierterIdentifier was added (enrichment applied)
+    # The enrichment adds this attribute which is required for DIMP pseudonymization
+    if docker compose exec -T aether-runner sh -c "grep -q 'Patient.identifier:PseudonymisierterIdentifier' /app/jobs/$JOB_ID/enriched-crtdl.json"; then
+        echo "✓ enriched-crtdl.json has Patient.identifier:PseudonymisierterIdentifier (enrichment applied)"
+    else
+        echo "✗ ERROR: enriched-crtdl.json does not have Patient.identifier:PseudonymisierterIdentifier"
+        exit 1
+    fi
+else
+    echo "✗ ERROR: enriched-crtdl.json was not created (preprocessing may not have run)"
+    exit 1
+fi
+
+echo ""
 echo "Verifying send step: checking Blaze FHIR server for transferred resources..."
 
 # Verify DocumentReference was created on the Blaze FHIR server

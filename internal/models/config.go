@@ -39,14 +39,15 @@ func DefaultCompressionConfig() CompressionConfig {
 
 // ServiceConfig contains connection details for external HTTP services
 type ServiceConfig struct {
-	DIMP              DIMPConfig              `yaml:"dimp" json:"dimp"`
-	CSVConversion     CSVConversionConfig     `yaml:"csv_conversion" json:"csv_conversion"`
-	ParquetConversion ParquetConversionConfig `yaml:"parquet_conversion" json:"parquet_conversion"`
-	TORCH             TORCHConfig             `yaml:"torch" json:"torch"`
-	Flattening        FlatteningConfig        `yaml:"flattening" json:"flattening"`
-	Send              SendConfig              `yaml:"send" json:"send"`
-	LocalImport       LocalImportConfig       `yaml:"local_import" json:"local_import" mapstructure:"local_import"`
-	Validation        ValidationConfig        `yaml:"validation" json:"validation" mapstructure:"validation"`
+	DIMP               DIMPConfig               `yaml:"dimp" json:"dimp"`
+	CSVConversion      CSVConversionConfig      `yaml:"csv_conversion" json:"csv_conversion"`
+	ParquetConversion  ParquetConversionConfig  `yaml:"parquet_conversion" json:"parquet_conversion"`
+	TORCH              TORCHConfig              `yaml:"torch" json:"torch"`
+	Flattening         FlatteningConfig         `yaml:"flattening" json:"flattening"`
+	CRTDLPreprocessing CRTDLPreprocessingConfig `yaml:"crtdl_preprocessing" json:"crtdl_preprocessing" mapstructure:"crtdl_preprocessing"`
+	Send               SendConfig               `yaml:"send" json:"send"`
+	LocalImport        LocalImportConfig        `yaml:"local_import" json:"local_import" mapstructure:"local_import"`
+	Validation         ValidationConfig         `yaml:"validation" json:"validation" mapstructure:"validation"`
 }
 
 // ValidationConfig contains FHIR validation service settings
@@ -316,7 +317,8 @@ func DefaultConfig() ProjectConfig {
 				FileReadyRetries:          10,
 				FileReadyIntervalSeconds:  10,
 			},
-			Flattening: DefaultFlatteningConfig(),
+			Flattening:         DefaultFlatteningConfig(),
+			CRTDLPreprocessing: DefaultCRTDLPreprocessingConfig(),
 		},
 		Pipeline: PipelineConfig{
 			EnabledSteps: []StepName{StepLocalImport, StepHttpImport},

@@ -47,6 +47,18 @@ services:
   local_import:
     dir: string
 
+  crtdl_preprocessing:
+    enabled: boolean                       # default: false
+    enrichments_path: string               # Path to external JSON file
+    enrichments:                           # Inline enrichment rules
+      - group_reference: string
+        create_if_not_exists:              # Optional: create group if not in CRTDL
+          group_name: string
+        attributes_to_add:
+          - attribute_ref: string
+            must_have: boolean
+            linked_groups: [string]        # Profile URLs, resolved to group IDs
+
 pipeline:
   enabled_steps: [string]
   max_ndjson_line_size_mb: integer           # default: 100
@@ -218,6 +230,76 @@ services:
 | Option | Type | Description |
 |--------|------|-------------|
 | `dir` | string | Default import directory (overridable with `--dir` flag) |
+
+### CRTDL Preprocessing
+
+Enriches CRTDL documents with additional attributes before sending to TORCH. This is required when using DIMP pseudonymization, which needs certain identifier attributes (e.g., `Patient.identifier`) to be present in the CRTDL extraction query.
+
+```yaml
+services:
+  crtdl_preprocessing:
+    enabled: true
+    enrichments:
+      - group_reference: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/PatientPseudonymisiert"
+        create_if_not_exists:
+          group_name: "PatientPseudonymisiert"
+        attributes_to_add:
+          - attribute_ref: "Patient.identifier"
+            must_have: false
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | false | Enable CRTDL preprocessing |
+| `enrichments_path` | string | - | Path to external JSON enrichment file |
+| `enrichments` | list | - | Inline enrichment rules (mutually exclusive with `enrichments_path`) |
+
+**Enrichment rule options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `group_reference` | string | Profile URL of the CRTDL attribute group to enrich (required) |
+| `create_if_not_exists.group_name` | string | If group is missing from CRTDL, create it with this name |
+| `attributes_to_add[].attribute_ref` | string | FHIR attribute reference to add (required) |
+| `attributes_to_add[].must_have` | bool | Whether the attribute is required for extraction |
+| `attributes_to_add[].linked_groups` | []string | Profile URLs to resolve to group IDs for cross-references |
+
+**External JSON file format:**
+
+When using `enrichments_path`, the file uses camelCase field names:
+
+```json
+[
+  {
+    "groupReference": "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/PatientPseudonymisiert",
+    "createIfNotExists": {
+      "groupName": "PatientPseudonymisiert"
+    },
+    "attributesToAdd": [
+      {
+        "attributeRef": "Patient.identifier",
+        "mustHave": false
+      }
+    ]
+  }
+]
+```
+
+A shorter syntax is also supported for group creation:
+
+```json
+{
+  "groupReference": "https://example.org/fhir/StructureDefinition/Patient",
+  "addGroupIfNotExists": true,
+  "attributesToAdd": [
+    {"attributeRef": "Patient.identifier", "mustHave": false}
+  ]
+}
+```
+
+When `addGroupIfNotExists` is `true`, the group name is automatically derived from the last segment of the profile URL (e.g., `"Patient"` from the URL above). Use `createIfNotExists` with an explicit `groupName` if you need a custom name.
+
+> **Note:** `addGroupIfNotExists` and `createIfNotExists` are mutually exclusive. Unknown fields in the JSON file will produce an error.
 
 ## Pipeline
 

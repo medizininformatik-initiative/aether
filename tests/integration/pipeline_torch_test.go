@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -845,6 +846,209 @@ func TestPipeline_TORCHExtraction_WithWaitStep_DataModification(t *testing.T) {
 	t.Logf("Pipeline flow verified: TORCH -> Wait (empty) -> User writes modified data -> DIMP reads from wait")
 }
 
+// Integration test - verify CRTDL preprocessing enriches document before TORCH submission
+
+func TestPipeline_TORCHExtraction_WithPreprocessing(t *testing.T) {
+	// Setup: Create test environment
+	tempDir := t.TempDir()
+	jobsDir := filepath.Join(tempDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	// Create CRTDL file with a Patient group (missing the enrichment attributes)
+	crtdlPath := filepath.Join(tempDir, "test-preprocessing.crtdl")
+	crtdlContent := map[string]any{
+		"cohortDefinition": map[string]any{
+			"version":           "1.0.0",
+			"display":           "Test cohort",
+			"inclusionCriteria": []any{},
+		},
+		"dataExtraction": map[string]any{
+			"attributeGroups": []map[string]any{
+				{
+					"id":             "patient-group",
+					"name":           "Patient",
+					"groupReference": "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient",
+					"attributes": []map[string]any{
+						{"attributeRef": "Patient.id", "mustHave": true},
+						{"attributeRef": "Patient.gender", "mustHave": false},
+					},
+				},
+			},
+		},
+	}
+	crtdlJSON, _ := json.Marshal(crtdlContent)
+	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
+
+	// Track what CRTDL was submitted to TORCH
+	var submittedCRTDL map[string]any
+
+	// Mock TORCH server that captures the submitted CRTDL
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Handle extraction submission
+		if r.Method == "POST" && r.URL.Path == "/fhir/$extract-data" {
+			var params map[string]any
+			err := json.NewDecoder(r.Body).Decode(&params)
+			require.NoError(t, err)
+
+			// Decode the base64 CRTDL from the request
+			if paramsArray, ok := params["parameter"].([]any); ok && len(paramsArray) > 0 {
+				if param, ok := paramsArray[0].(map[string]any); ok {
+					if base64Content, ok := param["valueBase64Binary"].(string); ok {
+						decodedBytes, err := base64.StdEncoding.DecodeString(base64Content)
+						require.NoError(t, err)
+						err = json.Unmarshal(decodedBytes, &submittedCRTDL)
+						require.NoError(t, err)
+						t.Logf("Captured submitted CRTDL: %+v", submittedCRTDL)
+					}
+				}
+			}
+
+			// Return 202 with Content-Location
+			w.Header().Set("Content-Location", server.URL+"/fhir/extraction/preprocess-job")
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+
+		// Handle polling - return complete immediately
+		if r.Method == "GET" && r.URL.Path == "/fhir/extraction/preprocess-job" {
+			result := map[string]any{
+				"resourceType": "Parameters",
+				"parameter": []map[string]any{
+					{
+						"name": "output",
+						"part": []map[string]any{
+							{
+								"name":     "url",
+								"valueUrl": server.URL + "/output/Patient.ndjson",
+							},
+						},
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(result)
+			return
+		}
+
+		// Handle file download
+		if r.Method == "GET" && r.URL.Path == "/output/Patient.ndjson" {
+			w.Header().Set("Content-Type", "application/fhir+ndjson")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"resourceType":"Patient","id":"test-1"}`))
+			return
+		}
+
+		// Handle ping
+		if r.Method == "GET" && r.URL.Path == "/" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	// Create configuration WITH preprocessing enabled
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			TORCH: models.TORCHConfig{
+				BaseURL:                   server.URL,
+				Username:                  "testuser",
+				Password:                  "testpass",
+				ExtractionTimeoutMinutes:  1,
+				PollingIntervalSeconds:    1,
+				MaxPollingIntervalSeconds: 5,
+			},
+			CRTDLPreprocessing: models.CRTDLPreprocessingConfig{
+				Enabled: true,
+				Enrichments: []models.GroupEnrichment{
+					{
+						GroupReference: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient",
+						AttributesToAdd: []models.EnrichmentAttribute{
+							{AttributeRef: "Patient.identifier:PseudonymisierterIdentifier", MustHave: true},
+							{AttributeRef: "Patient.birthDate", MustHave: false},
+						},
+					},
+				},
+			},
+		},
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepTorchImport},
+		},
+		Retry: models.RetryConfig{
+			MaxAttempts:      3,
+			InitialBackoffMs: 100,
+			MaxBackoffMs:     1000,
+		},
+		JobsDir: jobsDir,
+	}
+
+	// Create job with CRTDL input
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	job, err := pipeline.CreateJob(crtdlPath, config, logger)
+	require.NoError(t, err)
+
+	// Execute import step (triggers TORCH extraction with preprocessing)
+	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
+	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+
+	// Verify successful execution
+	require.NoError(t, err)
+	assert.NotNil(t, updatedJob)
+
+	// Verify import step completed
+	importStep, found := models.GetStepByName(*updatedJob, models.StepTorchImport)
+	require.True(t, found)
+	assert.Equal(t, models.StepStatusCompleted, importStep.Status)
+
+	// Verify the CRTDL submitted to TORCH was enriched
+	require.NotNil(t, submittedCRTDL, "TORCH should have received a CRTDL")
+
+	// Extract the attribute groups from submitted CRTDL
+	dataExtraction, ok := submittedCRTDL["dataExtraction"].(map[string]any)
+	require.True(t, ok, "Submitted CRTDL should have dataExtraction")
+
+	attributeGroups, ok := dataExtraction["attributeGroups"].([]any)
+	require.True(t, ok, "Submitted CRTDL should have attributeGroups")
+	require.Len(t, attributeGroups, 1, "Should have one attribute group")
+
+	// Verify the Patient group has the enriched attributes
+	patientGroup, ok := attributeGroups[0].(map[string]any)
+	require.True(t, ok)
+
+	attributes, ok := patientGroup["attributes"].([]any)
+	require.True(t, ok)
+
+	// Original had 2 attributes, enrichment added 2 more = 4 total
+	assert.Len(t, attributes, 4, "Patient group should have 4 attributes (2 original + 2 enriched)")
+
+	// Verify the enriched attributes are present
+	attributeRefs := make([]string, 0, len(attributes))
+	for _, attr := range attributes {
+		if attrMap, ok := attr.(map[string]any); ok {
+			if ref, ok := attrMap["attributeRef"].(string); ok {
+				attributeRefs = append(attributeRefs, ref)
+			}
+		}
+	}
+	assert.Contains(t, attributeRefs, "Patient.id", "Should have original Patient.id")
+	assert.Contains(t, attributeRefs, "Patient.gender", "Should have original Patient.gender")
+	assert.Contains(t, attributeRefs, "Patient.identifier:PseudonymisierterIdentifier", "Should have enriched PseudonymisierterIdentifier")
+	assert.Contains(t, attributeRefs, "Patient.birthDate", "Should have enriched birthDate")
+
+	// Verify enriched CRTDL was saved to job directory
+	enrichedPath := filepath.Join(jobsDir, job.JobID, "enriched-crtdl.json")
+	enrichedContent, err := os.ReadFile(enrichedPath)
+	require.NoError(t, err, "Enriched CRTDL should be saved to job directory")
+	assert.Contains(t, string(enrichedContent), "Patient.identifier:PseudonymisierterIdentifier",
+		"Saved enriched CRTDL should contain the enrichment attribute")
+
+	t.Logf("SUCCESS: CRTDL preprocessing enriched document before TORCH submission")
+	t.Logf("Original attributes: 2, Enriched attributes: 4")
+}
+
 // Integration test - verify job resumption after process restart during polling
 
 func TestPipeline_TORCHExtraction_JobResumption(t *testing.T) {
@@ -1016,4 +1220,465 @@ func TestPipeline_TORCHExtraction_JobResumption(t *testing.T) {
 	assert.GreaterOrEqual(t, pollCount, 2, "Should have polled at least twice before completion")
 
 	t.Logf("Job resumption test passed: extraction completed successfully after simulated restart")
+}
+
+// Integration test - verify error handling when CRTDL preprocessing fails
+// Covers error paths in internal/pipeline/import.go (preprocessCRTDL function)
+
+func TestPipeline_TORCHExtraction_PreprocessingError_InvalidEnrichmentsPath(t *testing.T) {
+	// Setup: Create test environment
+	tempDir := t.TempDir()
+	jobsDir := filepath.Join(tempDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	// Create valid CRTDL file
+	crtdlPath := filepath.Join(tempDir, "valid.crtdl")
+	crtdlContent := map[string]any{
+		"cohortDefinition": map[string]any{
+			"version":           "1.0.0",
+			"inclusionCriteria": []any{},
+		},
+		"dataExtraction": map[string]any{
+			"attributeGroups": []map[string]any{
+				{
+					"id":             "patient-group",
+					"name":           "Patient",
+					"groupReference": "https://example.org/Patient",
+					"attributes": []map[string]any{
+						{"attributeRef": "Patient.id", "mustHave": true},
+					},
+				},
+			},
+		},
+	}
+	crtdlJSON, _ := json.Marshal(crtdlContent)
+	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
+
+	// Mock TORCH server (won't be called since enrichments loading fails)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// Create configuration WITH preprocessing enabled but INVALID enrichments path
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			TORCH: models.TORCHConfig{
+				BaseURL:                   server.URL,
+				Username:                  "testuser",
+				Password:                  "testpass",
+				ExtractionTimeoutMinutes:  1,
+				PollingIntervalSeconds:    1,
+				MaxPollingIntervalSeconds: 5,
+			},
+			CRTDLPreprocessing: models.CRTDLPreprocessingConfig{
+				Enabled:         true,
+				EnrichmentsPath: "/nonexistent/path/enrichments.json", // Invalid path
+			},
+		},
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepTorchImport},
+		},
+		Retry: models.RetryConfig{
+			MaxAttempts:      3,
+			InitialBackoffMs: 100,
+			MaxBackoffMs:     1000,
+		},
+		JobsDir: jobsDir,
+	}
+
+	// Create job with CRTDL input
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	job, err := pipeline.CreateJob(crtdlPath, config, logger)
+	require.NoError(t, err)
+
+	// Execute import step - should fail during enrichments loading
+	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
+	_, err = pipeline.ExecuteImportStep(job, logger, httpClient, false)
+
+	// Verify error is returned due to invalid enrichments path
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "preprocess CRTDL", "Error should mention preprocessing failure")
+}
+
+func TestPipeline_TORCHExtraction_PreprocessingDisabled_UsesOriginalCRTDL(t *testing.T) {
+	// Setup: Create test environment
+	tempDir := t.TempDir()
+	jobsDir := filepath.Join(tempDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	// Create CRTDL file
+	crtdlPath := filepath.Join(tempDir, "original.crtdl")
+	crtdlContent := map[string]any{
+		"cohortDefinition": map[string]any{
+			"version":           "1.0.0",
+			"inclusionCriteria": []any{},
+		},
+		"dataExtraction": map[string]any{
+			"attributeGroups": []map[string]any{
+				{
+					"id":             "patient-group",
+					"name":           "Patient",
+					"groupReference": "https://example.org/Patient",
+					"attributes": []map[string]any{
+						{"attributeRef": "Patient.id", "mustHave": true},
+					},
+				},
+			},
+		},
+	}
+	crtdlJSON, _ := json.Marshal(crtdlContent)
+	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
+
+	// Track submitted CRTDL
+	var submittedCRTDL map[string]any
+
+	// Mock TORCH server
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Handle extraction submission
+		if r.Method == "POST" && r.URL.Path == "/fhir/$extract-data" {
+			var params map[string]any
+			err := json.NewDecoder(r.Body).Decode(&params)
+			require.NoError(t, err)
+
+			// Decode the base64 CRTDL
+			if paramsArray, ok := params["parameter"].([]any); ok && len(paramsArray) > 0 {
+				if param, ok := paramsArray[0].(map[string]any); ok {
+					if base64Content, ok := param["valueBase64Binary"].(string); ok {
+						decodedBytes, _ := base64.StdEncoding.DecodeString(base64Content)
+						_ = json.Unmarshal(decodedBytes, &submittedCRTDL)
+					}
+				}
+			}
+
+			w.Header().Set("Content-Location", server.URL+"/fhir/extraction/no-preprocess-job")
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+
+		// Handle polling - return complete immediately
+		if r.Method == "GET" && r.URL.Path == "/fhir/extraction/no-preprocess-job" {
+			result := map[string]any{
+				"resourceType": "Parameters",
+				"parameter": []map[string]any{
+					{
+						"name": "output",
+						"part": []map[string]any{
+							{
+								"name":     "url",
+								"valueUrl": server.URL + "/output/Patient.ndjson",
+							},
+						},
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(result)
+			return
+		}
+
+		// Handle file download
+		if r.Method == "GET" && r.URL.Path == "/output/Patient.ndjson" {
+			w.Header().Set("Content-Type", "application/fhir+ndjson")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"resourceType":"Patient","id":"test-1"}`))
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// Create configuration WITHOUT preprocessing (disabled)
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			TORCH: models.TORCHConfig{
+				BaseURL:                   server.URL,
+				Username:                  "testuser",
+				Password:                  "testpass",
+				ExtractionTimeoutMinutes:  1,
+				PollingIntervalSeconds:    1,
+				MaxPollingIntervalSeconds: 5,
+			},
+			CRTDLPreprocessing: models.CRTDLPreprocessingConfig{
+				Enabled: false, // Disabled - should use original CRTDL
+			},
+		},
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepTorchImport},
+		},
+		Retry: models.RetryConfig{
+			MaxAttempts:      3,
+			InitialBackoffMs: 100,
+			MaxBackoffMs:     1000,
+		},
+		JobsDir: jobsDir,
+	}
+
+	// Create job with CRTDL input
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	job, err := pipeline.CreateJob(crtdlPath, config, logger)
+	require.NoError(t, err)
+
+	// Execute import step - should use original CRTDL without preprocessing
+	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
+	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+
+	// Verify successful execution
+	require.NoError(t, err)
+	assert.NotNil(t, updatedJob)
+
+	// Verify import step completed
+	importStep, found := models.GetStepByName(*updatedJob, models.StepTorchImport)
+	require.True(t, found)
+	assert.Equal(t, models.StepStatusCompleted, importStep.Status)
+
+	// Verify the original CRTDL was submitted (only 1 attribute)
+	require.NotNil(t, submittedCRTDL)
+	dataExtraction := submittedCRTDL["dataExtraction"].(map[string]any)
+	attributeGroups := dataExtraction["attributeGroups"].([]any)
+	patientGroup := attributeGroups[0].(map[string]any)
+	attributes := patientGroup["attributes"].([]any)
+
+	// Original CRTDL only has 1 attribute
+	assert.Len(t, attributes, 1, "Original CRTDL should have only 1 attribute (no enrichment)")
+
+	// Verify NO enriched CRTDL file was saved (preprocessing was disabled)
+	enrichedPath := filepath.Join(jobsDir, job.JobID, "enriched-crtdl.json")
+	_, err = os.Stat(enrichedPath)
+	assert.True(t, os.IsNotExist(err), "Enriched CRTDL should NOT be saved when preprocessing is disabled")
+}
+
+// TestPipeline_TORCHExtraction_PreprocessingError_InvalidCRTDL tests error handling when CRTDL parsing fails
+// (covers import.go lines 262-264)
+func TestPipeline_TORCHExtraction_PreprocessingError_InvalidCRTDL(t *testing.T) {
+	// Setup: Create test environment
+	tempDir := t.TempDir()
+	jobsDir := filepath.Join(tempDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	// Create INVALID CRTDL file (not valid JSON)
+	crtdlPath := filepath.Join(tempDir, "invalid.crtdl")
+	_ = os.WriteFile(crtdlPath, []byte("{this is not valid json"), 0644)
+
+	// Mock TORCH server (won't be called since CRTDL parsing fails)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// Create configuration WITH preprocessing enabled
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			TORCH: models.TORCHConfig{
+				BaseURL:                   server.URL,
+				Username:                  "testuser",
+				Password:                  "testpass",
+				ExtractionTimeoutMinutes:  1,
+				PollingIntervalSeconds:    1,
+				MaxPollingIntervalSeconds: 5,
+			},
+			CRTDLPreprocessing: models.CRTDLPreprocessingConfig{
+				Enabled: true,
+				Enrichments: []models.GroupEnrichment{
+					{
+						GroupReference: "https://example.org/Patient",
+						AttributesToAdd: []models.EnrichmentAttribute{
+							{AttributeRef: "Patient.test", MustHave: true},
+						},
+					},
+				},
+			},
+		},
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepTorchImport},
+		},
+		Retry: models.RetryConfig{
+			MaxAttempts:      3,
+			InitialBackoffMs: 100,
+			MaxBackoffMs:     1000,
+		},
+		JobsDir: jobsDir,
+	}
+
+	// Create job manually (bypassing CreateJob which might validate CRTDL)
+	job := &models.PipelineJob{
+		JobID:       "550e8400-e29b-41d4-a716-446655440000", // Valid UUID
+		InputSource: crtdlPath,
+		InputType:   models.InputTypeCRTDL,
+		CurrentStep: string(models.StepTorchImport),
+		Status:      models.JobStatusPending,
+		Steps:       models.InitializeSteps([]models.StepName{models.StepTorchImport}),
+		Config:      config,
+	}
+
+	// Save job
+	err := pipeline.UpdateJob(jobsDir, job)
+	require.NoError(t, err)
+
+	// Execute import step - should fail during CRTDL parsing
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
+	_, err = pipeline.ExecuteImportStep(job, logger, httpClient, false)
+
+	// Verify error is returned due to invalid CRTDL
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "preprocess CRTDL", "Error should mention preprocessing failure")
+	t.Logf("Got expected error: %v", err)
+}
+
+// TestPipeline_TORCHExtraction_PreprocessingEnabled_EmptyEnrichments tests path when preprocessing is enabled but no enrichments configured
+// (covers import.go lines 272-276)
+func TestPipeline_TORCHExtraction_PreprocessingEnabled_EmptyEnrichments(t *testing.T) {
+	// Setup: Create test environment
+	tempDir := t.TempDir()
+	jobsDir := filepath.Join(tempDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	// Create valid CRTDL file
+	crtdlPath := filepath.Join(tempDir, "valid.crtdl")
+	crtdlContent := map[string]any{
+		"cohortDefinition": map[string]any{
+			"version":           "1.0.0",
+			"inclusionCriteria": []any{},
+		},
+		"dataExtraction": map[string]any{
+			"attributeGroups": []map[string]any{
+				{
+					"id":             "patient-group",
+					"name":           "Patient",
+					"groupReference": "https://example.org/Patient",
+					"attributes": []map[string]any{
+						{"attributeRef": "Patient.id", "mustHave": true},
+					},
+				},
+			},
+		},
+	}
+	crtdlJSON, _ := json.Marshal(crtdlContent)
+	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
+
+	// Track submitted CRTDL content
+	var submittedBase64 string
+
+	// Mock TORCH server
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Handle extraction submission
+		if r.Method == "POST" && r.URL.Path == "/fhir/$extract-data" {
+			var params map[string]any
+			err := json.NewDecoder(r.Body).Decode(&params)
+			require.NoError(t, err)
+
+			// Capture the base64 CRTDL
+			if paramsArray, ok := params["parameter"].([]any); ok && len(paramsArray) > 0 {
+				if param, ok := paramsArray[0].(map[string]any); ok {
+					if base64Content, ok := param["valueBase64Binary"].(string); ok {
+						submittedBase64 = base64Content
+					}
+				}
+			}
+
+			w.Header().Set("Content-Location", server.URL+"/fhir/extraction/empty-enrichment-job")
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+
+		// Handle polling - return complete immediately
+		if r.Method == "GET" && r.URL.Path == "/fhir/extraction/empty-enrichment-job" {
+			result := map[string]any{
+				"resourceType": "Parameters",
+				"parameter": []map[string]any{
+					{
+						"name": "output",
+						"part": []map[string]any{
+							{
+								"name":     "url",
+								"valueUrl": server.URL + "/output/Patient.ndjson",
+							},
+						},
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(result)
+			return
+		}
+
+		// Handle file download
+		if r.Method == "GET" && r.URL.Path == "/output/Patient.ndjson" {
+			w.Header().Set("Content-Type", "application/fhir+ndjson")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"resourceType":"Patient","id":"test-1"}`))
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// Create configuration WITH preprocessing ENABLED but with EMPTY enrichments list
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			TORCH: models.TORCHConfig{
+				BaseURL:                   server.URL,
+				Username:                  "testuser",
+				Password:                  "testpass",
+				ExtractionTimeoutMinutes:  1,
+				PollingIntervalSeconds:    1,
+				MaxPollingIntervalSeconds: 5,
+			},
+			CRTDLPreprocessing: models.CRTDLPreprocessingConfig{
+				Enabled:     true,
+				Enrichments: []models.GroupEnrichment{}, // Empty enrichments!
+			},
+		},
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepTorchImport},
+		},
+		Retry: models.RetryConfig{
+			MaxAttempts:      3,
+			InitialBackoffMs: 100,
+			MaxBackoffMs:     1000,
+		},
+		JobsDir: jobsDir,
+	}
+
+	// Create job with CRTDL input
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	job, err := pipeline.CreateJob(crtdlPath, config, logger)
+	require.NoError(t, err)
+
+	// Execute import step - should use original CRTDL content when no enrichments configured
+	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
+	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+
+	// Verify successful execution
+	require.NoError(t, err)
+	assert.NotNil(t, updatedJob)
+
+	// Verify import step completed
+	importStep, found := models.GetStepByName(*updatedJob, models.StepTorchImport)
+	require.True(t, found)
+	assert.Equal(t, models.StepStatusCompleted, importStep.Status)
+
+	// Verify original file content was submitted (decoded base64 should match file content)
+	require.NotEmpty(t, submittedBase64, "TORCH should have received CRTDL content")
+	decodedBytes, err := base64.StdEncoding.DecodeString(submittedBase64)
+	require.NoError(t, err)
+
+	// The decoded content should exactly match the original file
+	originalContent, err := os.ReadFile(crtdlPath)
+	require.NoError(t, err)
+	assert.Equal(t, originalContent, decodedBytes, "When no enrichments configured, original file content should be submitted")
+
+	// Verify NO enriched CRTDL file was saved (no enrichments applied)
+	enrichedPath := filepath.Join(jobsDir, job.JobID, "enriched-crtdl.json")
+	_, err = os.Stat(enrichedPath)
+	assert.True(t, os.IsNotExist(err), "Enriched CRTDL should NOT be saved when no enrichments are applied")
+
+	t.Logf("SUCCESS: With empty enrichments, original CRTDL content was submitted")
 }

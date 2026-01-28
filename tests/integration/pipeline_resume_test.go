@@ -193,39 +193,6 @@ func TestPipelineResume_MultipleStepsCompleted(t *testing.T) {
 	assert.Equal(t, models.StepStatusCompleted, dimpStep.Status, "DIMP should be completed")
 }
 
-// TestPipelineResume_PreservesRetryCount tests that retry counts are preserved across sessions
-func TestPipelineResume_PreservesRetryCount(t *testing.T) {
-	tempDir := t.TempDir()
-	jobsDir := filepath.Join(tempDir, "jobs")
-
-	job := createCompletedImportJob(t, jobsDir, 5)
-	originalJobID := job.JobID
-
-	// Simulate failed DIMP with retries
-	dimpStep, _ := models.GetStepByName(*job, models.StepDIMP)
-
-	// First retry
-	retriedStep := models.IncrementRetry(dimpStep)
-	retriedStep = models.IncrementRetry(retriedStep)
-	retriedStep = models.IncrementRetry(retriedStep)
-
-	// Fail after 3 retries
-	failedStep := models.FailStep(retriedStep, models.ErrorTypeTransient, "Service unavailable", 503)
-
-	updatedJob := models.ReplaceStep(*job, failedStep)
-	err := pipeline.UpdateJob(jobsDir, &updatedJob)
-	require.NoError(t, err)
-
-	// Reload job
-	reloadedJob, err := pipeline.LoadJob(jobsDir, originalJobID)
-	require.NoError(t, err)
-
-	// Verify: Retry count is preserved
-	reloadedDimpStep, _ := models.GetStepByName(*reloadedJob, models.StepDIMP)
-	assert.Equal(t, 3, reloadedDimpStep.RetryCount, "Retry count should be preserved")
-	assert.Equal(t, models.StepStatusFailed, reloadedDimpStep.Status)
-}
-
 // TestPipelineResume_CompletedJob tests loading a fully completed job
 func TestPipelineResume_CompletedJob(t *testing.T) {
 	tempDir := t.TempDir()

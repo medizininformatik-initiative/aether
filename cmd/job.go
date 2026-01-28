@@ -141,7 +141,6 @@ func runJobList(cmd *cobra.Command, args []string) error {
 		Status     string
 		Step       string
 		Files      int
-		RetryCount int
 		CreatedAt  time.Time
 		ElapsedStr string
 	}
@@ -157,18 +156,11 @@ func runJobList(cmd *cobra.Command, args []string) error {
 		elapsed := time.Since(job.CreatedAt)
 		elapsedStr := formatDuration(elapsed)
 
-		// Get retry count from current step
-		retryCount := 0
-		if currentStep, found := pipeline.GetCurrentStep(job); found {
-			retryCount = currentStep.RetryCount
-		}
-
 		jobs = append(jobs, jobSummary{
 			ID:         job.JobID,
 			Status:     string(job.Status),
 			Step:       job.CurrentStep,
 			Files:      job.TotalFiles,
-			RetryCount: retryCount,
 			CreatedAt:  job.CreatedAt,
 			ElapsedStr: elapsedStr,
 		})
@@ -180,19 +172,18 @@ func runJobList(cmd *cobra.Command, args []string) error {
 	})
 
 	// Print table header
-	fmt.Printf("%-38s %-15s %-20s %-8s %-8s %s\n", "JOB ID", "STATUS", "STEP", "FILES", "RETRIES", "AGE")
-	fmt.Println("------------------------------------------------------------------------------------------------------------------------")
+	fmt.Printf("%-38s %-15s %-20s %-8s %s\n", "JOB ID", "STATUS", "STEP", "FILES", "AGE")
+	fmt.Println("------------------------------------------------------------------------------------------")
 
 	// Print jobs
 	for _, j := range jobs {
 		statusSymbol := getJobStatusSymbol(j.Status)
-		fmt.Printf("%-38s %s %-13s %-20s %-8d %-8d %s\n",
+		fmt.Printf("%-38s %s %-13s %-20s %-8d %s\n",
 			j.ID,
 			statusSymbol,
 			j.Status,
 			j.Step,
 			j.Files,
-			j.RetryCount,
 			j.ElapsedStr,
 		)
 	}

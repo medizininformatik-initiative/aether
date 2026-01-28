@@ -84,11 +84,6 @@ func (s *PipelineStep) Validate() error {
 		return fmt.Errorf("invalid step status: %s", s.Status)
 	}
 
-	// Validate retry count is non-negative
-	if s.RetryCount < 0 {
-		return errors.New("retry_count cannot be negative")
-	}
-
 	// Validate FilesProcessed and BytesProcessed are non-negative
 	if s.FilesProcessed < 0 {
 		return errors.New("files_processed cannot be negative")

@@ -192,36 +192,3 @@ func classifyImportError(err error, inputType models.InputType) models.ErrorType
 	return models.ErrorTypeNonTransient
 }
 
-// RetryImportStep attempts to retry a failed import step
-// Should only be called if the error was transient
-func RetryImportStep(job *models.PipelineJob, logger *lib.Logger, httpClient *services.HTTPClient, showProgress bool) (*models.PipelineJob, error) {
-	// Get current import step
-	currentStep := models.StepName(job.CurrentStep)
-	importStep, found := models.GetStepByName(*job, currentStep)
-	if !found {
-		return nil, fmt.Errorf("import step not found")
-	}
-
-	// Check if retry is allowed
-	if importStep.LastError == nil {
-		return nil, fmt.Errorf("no error to retry")
-	}
-
-	if !lib.ShouldRetry(importStep.LastError.Type, importStep.RetryCount, job.Config.Retry.MaxAttempts) {
-		return nil, fmt.Errorf("retry not allowed: max attempts reached or non-transient error")
-	}
-
-	// Increment retry count
-	retriedStep := models.IncrementRetry(importStep)
-	updatedJob := models.ReplaceStep(*job, retriedStep)
-
-	lib.LogRetry(logger, "import step", retriedStep.RetryCount, job.Config.Retry.MaxAttempts, importStep.LastError)
-
-	// Calculate backoff
-	backoff := lib.CalculateBackoff(retriedStep.RetryCount-1, job.Config.Retry.InitialBackoffMs, job.Config.Retry.MaxBackoffMs)
-	logger.Info("Waiting before retry", "backoff", backoff)
-	time.Sleep(backoff)
-
-	// Retry the import
-	return ExecuteImportStep(&updatedJob, logger, httpClient, showProgress)
-}

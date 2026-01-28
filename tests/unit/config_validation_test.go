@@ -356,3 +356,243 @@ func TestProjectConfig_Validate(t *testing.T) {
 		})
 	}
 }
+
+// TestSendConfig_Validate tests validation of SendConfig struct
+func TestSendConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  models.SendConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "Valid config",
+			config: models.SendConfig{
+				ServerURL:              "https://fhir.example.com/fhir",
+				ProjectIdentifier:      "TEST-PROJECT",
+				OrganizationIdentifier: "test.org",
+			},
+			wantErr: false,
+		},
+		{
+			name: "Missing server_url",
+			config: models.SendConfig{
+				ServerURL:              "",
+				ProjectIdentifier:      "TEST-PROJECT",
+				OrganizationIdentifier: "test.org",
+			},
+			wantErr: true,
+			errMsg:  "server_url is required",
+		},
+		{
+			name: "Invalid server_url - malformed",
+			config: models.SendConfig{
+				ServerURL:              "://not-a-valid-url",
+				ProjectIdentifier:      "TEST-PROJECT",
+				OrganizationIdentifier: "test.org",
+			},
+			wantErr: true,
+			errMsg:  "invalid send server_url",
+		},
+		{
+			name: "Invalid server_url - wrong scheme (ftp)",
+			config: models.SendConfig{
+				ServerURL:              "ftp://fhir.example.com/fhir",
+				ProjectIdentifier:      "TEST-PROJECT",
+				OrganizationIdentifier: "test.org",
+			},
+			wantErr: true,
+			errMsg:  "must use http or https scheme",
+		},
+		{
+			name: "Invalid server_url - wrong scheme (empty)",
+			config: models.SendConfig{
+				ServerURL:              "fhir.example.com/fhir",
+				ProjectIdentifier:      "TEST-PROJECT",
+				OrganizationIdentifier: "test.org",
+			},
+			wantErr: true,
+			errMsg:  "must use http or https scheme",
+		},
+		{
+			name: "Missing project_identifier",
+			config: models.SendConfig{
+				ServerURL:              "https://fhir.example.com/fhir",
+				ProjectIdentifier:      "",
+				OrganizationIdentifier: "test.org",
+			},
+			wantErr: true,
+			errMsg:  "project_identifier is required",
+		},
+		{
+			name: "Missing organization_identifier",
+			config: models.SendConfig{
+				ServerURL:              "https://fhir.example.com/fhir",
+				ProjectIdentifier:      "TEST-PROJECT",
+				OrganizationIdentifier: "",
+			},
+			wantErr: true,
+			errMsg:  "organization_identifier is required",
+		},
+		{
+			name: "Valid config with http scheme",
+			config: models.SendConfig{
+				ServerURL:              "http://localhost:8080/fhir",
+				ProjectIdentifier:      "TEST-PROJECT",
+				OrganizationIdentifier: "test.org",
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestProjectConfig_Validate_SendStep tests validation of ProjectConfig with send step
+func TestProjectConfig_Validate_SendStep(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  models.ProjectConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "Valid config with send step",
+			config: models.ProjectConfig{
+				Pipeline: models.PipelineConfig{
+					EnabledSteps: []models.StepName{models.StepLocalImport, models.StepSend},
+				},
+				Services: models.ServiceConfig{
+					Send: models.SendConfig{
+						ServerURL:              "https://fhir.example.com/fhir",
+						ProjectIdentifier:      "TEST-PROJECT",
+						OrganizationIdentifier: "test.org",
+					},
+				},
+				Retry: models.RetryConfig{
+					MaxAttempts:      3,
+					InitialBackoffMs: 500,
+					MaxBackoffMs:     5000,
+				},
+				JobsDir: "/tmp/jobs",
+			},
+			wantErr: false,
+		},
+		{
+			name: "Send step enabled but missing server_url",
+			config: models.ProjectConfig{
+				Pipeline: models.PipelineConfig{
+					EnabledSteps: []models.StepName{models.StepLocalImport, models.StepSend},
+				},
+				Services: models.ServiceConfig{
+					Send: models.SendConfig{
+						ServerURL:              "",
+						ProjectIdentifier:      "TEST-PROJECT",
+						OrganizationIdentifier: "test.org",
+					},
+				},
+				Retry: models.RetryConfig{
+					MaxAttempts:      3,
+					InitialBackoffMs: 500,
+					MaxBackoffMs:     5000,
+				},
+				JobsDir: "/tmp/jobs",
+			},
+			wantErr: true,
+			errMsg:  "service URL required for enabled step 'send'",
+		},
+		{
+			name: "Send step enabled but invalid send config - missing project identifier",
+			config: models.ProjectConfig{
+				Pipeline: models.PipelineConfig{
+					EnabledSteps: []models.StepName{models.StepLocalImport, models.StepSend},
+				},
+				Services: models.ServiceConfig{
+					Send: models.SendConfig{
+						ServerURL:              "https://fhir.example.com/fhir",
+						ProjectIdentifier:      "",
+						OrganizationIdentifier: "test.org",
+					},
+				},
+				Retry: models.RetryConfig{
+					MaxAttempts:      3,
+					InitialBackoffMs: 500,
+					MaxBackoffMs:     5000,
+				},
+				JobsDir: "/tmp/jobs",
+			},
+			wantErr: true,
+			errMsg:  "send config validation failed",
+		},
+		{
+			name: "Send step enabled but invalid send config - missing organization identifier",
+			config: models.ProjectConfig{
+				Pipeline: models.PipelineConfig{
+					EnabledSteps: []models.StepName{models.StepLocalImport, models.StepSend},
+				},
+				Services: models.ServiceConfig{
+					Send: models.SendConfig{
+						ServerURL:              "https://fhir.example.com/fhir",
+						ProjectIdentifier:      "TEST-PROJECT",
+						OrganizationIdentifier: "",
+					},
+				},
+				Retry: models.RetryConfig{
+					MaxAttempts:      3,
+					InitialBackoffMs: 500,
+					MaxBackoffMs:     5000,
+				},
+				JobsDir: "/tmp/jobs",
+			},
+			wantErr: true,
+			errMsg:  "send config validation failed",
+		},
+		{
+			name: "Send step enabled but invalid send config - invalid URL scheme",
+			config: models.ProjectConfig{
+				Pipeline: models.PipelineConfig{
+					EnabledSteps: []models.StepName{models.StepLocalImport, models.StepSend},
+				},
+				Services: models.ServiceConfig{
+					Send: models.SendConfig{
+						ServerURL:              "ftp://fhir.example.com/fhir",
+						ProjectIdentifier:      "TEST-PROJECT",
+						OrganizationIdentifier: "test.org",
+					},
+				},
+				Retry: models.RetryConfig{
+					MaxAttempts:      3,
+					InitialBackoffMs: 500,
+					MaxBackoffMs:     5000,
+				},
+				JobsDir: "/tmp/jobs",
+			},
+			wantErr: true,
+			errMsg:  "send config validation failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}

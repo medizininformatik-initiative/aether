@@ -20,6 +20,7 @@ var StepPrerequisites = map[models.StepName][]models.StepName{
 	models.StepCSVConversion:     {"import"}, // Can convert original or pseudonymized data
 	models.StepParquetConversion: {"import"}, // Can convert original or pseudonymized data
 	models.StepWait:              {"import"}, // Wait requires at least one step to have run
+	models.StepSend:              {"import"}, // Send requires at least import to have run
 }
 
 // ValidateStepPrerequisites checks if all prerequisite steps have completed successfully

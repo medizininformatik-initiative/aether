@@ -36,6 +36,7 @@ type ServiceConfig struct {
 	ParquetConversion ParquetConversionConfig `yaml:"parquet_conversion" json:"parquet_conversion"`
 	TORCH             TORCHConfig             `yaml:"torch" json:"torch"`
 	Flattening        FlatteningConfig        `yaml:"flattening" json:"flattening"`
+	Send              SendConfig              `yaml:"send" json:"send"`
 }
 
 // DIMPConfig contains DIMP pseudonymization service settings
@@ -62,6 +63,110 @@ type TORCHConfig struct {
 	ExtractionTimeoutMinutes  int    `yaml:"extraction_timeout_minutes" json:"extraction_timeout_minutes"`
 	PollingIntervalSeconds    int    `yaml:"polling_interval_seconds" json:"polling_interval_seconds"`
 	MaxPollingIntervalSeconds int    `yaml:"max_polling_interval_seconds" json:"max_polling_interval_seconds"`
+}
+
+// SendConfig contains DSF transfer server settings for the send step
+type SendConfig struct {
+	ServerURL              string `yaml:"server_url" json:"server_url" mapstructure:"server_url"`
+	ProjectIdentifier      string `yaml:"project_identifier" json:"project_identifier" mapstructure:"project_identifier"`
+	OrganizationIdentifier string `yaml:"organization_identifier" json:"organization_identifier" mapstructure:"organization_identifier"`
+	// Authentication - Basic Auth (optional)
+	Username string `yaml:"username" json:"username" mapstructure:"username"`
+	Password string `yaml:"password" json:"password" mapstructure:"password"`
+	// Authentication - OAuth2 Client Credentials (optional)
+	OAuthIssuerURI    string `yaml:"oauth_issuer_uri" json:"oauth_issuer_uri" mapstructure:"oauth_issuer_uri"`
+	OAuthClientID     string `yaml:"oauth_client_id" json:"oauth_client_id" mapstructure:"oauth_client_id"`
+	OAuthClientSecret string `yaml:"oauth_client_secret" json:"oauth_client_secret" mapstructure:"oauth_client_secret"`
+}
+
+// Validate checks if SendConfig has all required fields
+func (c *SendConfig) Validate() error {
+	if c.ServerURL == "" {
+		return fmt.Errorf("send server_url is required")
+	}
+
+	parsedURL, err := url.Parse(c.ServerURL)
+	if err != nil {
+		return fmt.Errorf("invalid send server_url: %w", err)
+	}
+
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return fmt.Errorf("invalid send server_url: must use http or https scheme, got '%s'", parsedURL.Scheme)
+	}
+
+	if c.ProjectIdentifier == "" {
+		return fmt.Errorf("send project_identifier is required")
+	}
+
+	if c.OrganizationIdentifier == "" {
+		return fmt.Errorf("send organization_identifier is required")
+	}
+
+	// Validate authentication configuration
+	if err := c.validateAuth(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateAuth checks that authentication configuration is consistent
+func (c *SendConfig) validateAuth() error {
+	hasBasicAuth := c.Username != "" || c.Password != ""
+	hasOAuth2 := c.OAuthIssuerURI != "" || c.OAuthClientID != "" || c.OAuthClientSecret != ""
+
+	// Cannot mix both auth methods
+	if hasBasicAuth && hasOAuth2 {
+		return fmt.Errorf("send: cannot configure both basic auth and OAuth2; use one or the other")
+	}
+
+	// If using Basic Auth, both username and password must be set
+	if hasBasicAuth {
+		if c.Username == "" {
+			return fmt.Errorf("send: username is required when using basic auth")
+		}
+		if c.Password == "" {
+			return fmt.Errorf("send: password is required when using basic auth")
+		}
+	}
+
+	// If using OAuth2, all three fields must be set
+	if hasOAuth2 {
+		if c.OAuthIssuerURI == "" {
+			return fmt.Errorf("send: oauth_issuer_uri is required when using OAuth2")
+		}
+		if c.OAuthClientID == "" {
+			return fmt.Errorf("send: oauth_client_id is required when using OAuth2")
+		}
+		if c.OAuthClientSecret == "" {
+			return fmt.Errorf("send: oauth_client_secret is required when using OAuth2")
+		}
+	}
+
+	return nil
+}
+
+// SendAuthType represents the type of authentication to use
+type SendAuthType int
+
+const (
+	// SendAuthNone indicates no authentication
+	SendAuthNone SendAuthType = iota
+	// SendAuthBasic indicates Basic authentication
+	SendAuthBasic
+	// SendAuthOAuth2 indicates OAuth2 client credentials
+	SendAuthOAuth2
+)
+
+// GetAuthType returns the authentication type based on configuration
+func (c *SendConfig) GetAuthType() SendAuthType {
+	if c.Username != "" && c.Password != "" {
+		return SendAuthBasic
+	}
+	if c.OAuthIssuerURI != "" && c.OAuthClientID != "" && c.OAuthClientSecret != "" {
+		return SendAuthOAuth2
+	}
+	return SendAuthNone
 }
 
 // PipelineConfig defines which steps are enabled and their execution order
@@ -182,6 +287,8 @@ func (c *ServiceConfig) HasServiceURL(step StepName) bool {
 		return c.ParquetConversion.URL != ""
 	case StepFlattening:
 		return c.Flattening.ServiceURL != ""
+	case StepSend:
+		return c.Send.ServerURL != ""
 	default:
 		return true // Import and validation don't require external services
 	}
@@ -198,6 +305,8 @@ func (c *ServiceConfig) GetServiceURL(step StepName) string {
 		return c.ParquetConversion.URL
 	case StepFlattening:
 		return c.Flattening.ServiceURL
+	case StepSend:
+		return c.Send.ServerURL
 	default:
 		return ""
 	}

@@ -161,6 +161,7 @@ func EnsureJobDirs(jobsBaseDir string, jobID string) (map[models.StepName]string
 		models.StepCSVConversion:     filepath.Join(jobDir, "csv"),
 		models.StepParquetConversion: filepath.Join(jobDir, "parquet"),
 		models.StepFlattening:        filepath.Join(jobDir, "csv"),
+		models.StepSend:              filepath.Join(jobDir, "send"),
 	}
 
 	for _, dir := range dirs {
@@ -185,6 +186,8 @@ func GetJobOutputDir(jobsBaseDir string, jobID string, step models.StepName) str
 		return filepath.Join(jobDir, "csv")
 	case models.StepParquetConversion:
 		return filepath.Join(jobDir, "parquet")
+	case models.StepSend:
+		return filepath.Join(jobDir, "send")
 	case models.StepWait:
 		// Wait step output depends on previous step - use GetWaitStepDir instead
 		return jobDir

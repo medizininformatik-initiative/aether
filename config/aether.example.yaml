@@ -67,6 +67,34 @@ services:
     # Default: 30m (30 minutes)
     timeout: 30m
 
+  # DSF Transfer Server (send step)
+  # Prepares and sends FHIR Binary + DocumentReference resources to a FHIR transfer server
+  # for DSF-based data transfer. Each pipeline output file is zipped, base64-encoded,
+  # and wrapped in a Binary resource. A DocumentReference links all Binary resources.
+  # Leave server_url empty to skip the send step.
+  send:
+    # FHIR transfer server URL (must accept transaction Bundles)
+    server_url: "https://dsf-transfer.example.com/fhir"
+
+    # MII project identifier (used in DocumentReference.masterIdentifier)
+    project_identifier: "MII-PROJECT"
+
+    # DSF organization identifier (used in DocumentReference.author)
+    organization_identifier: "your-org.example.de"
+
+    # Authentication (optional) - choose ONE method or leave both empty for no auth
+    #
+    # Option 1: Basic Auth
+    # Use environment variables to avoid storing credentials in config files:
+    # username: "${FHIR_USER}"
+    # password: "${FHIR_PASSWORD}"
+    #
+    # Option 2: OAuth2 Client Credentials (Keycloak-compatible)
+    # Use environment variables to avoid storing credentials in config files:
+    # oauth_issuer_uri: "${FHIR_OAUTH_ISSUER_URI}"
+    # oauth_client_id: "${FHIR_OAUTH_CLIENT_ID}"
+    # oauth_client_secret: "${FHIR_OAUTH_CLIENT_SECRET}"
+
 pipeline:
   # List of steps to execute in order
   # Import step options (must be first): torch, local_import, http_import
@@ -74,6 +102,11 @@ pipeline:
   # NOTE: At least one import step must be first in enabled_steps
   # NOTE: Enable all the import types you want to support - the system will automatically
   #       use the correct one based on your input (TORCH URL → torch, local dir → local_import, etc.)
+  #
+  # Send step:
+  #   Use 'send' as a final step to upload data to a DSF transfer FHIR server.
+  #   Each output file is zipped, base64-encoded, and wrapped in a FHIR Binary.
+  #   A DocumentReference links all Binaries. Everything is POSTed as a transaction Bundle.
   #
   # Wait step:
   #   Use 'wait' to pause the pipeline for inspection or manual modification.
@@ -91,6 +124,7 @@ pipeline:
     - flattening      # Transform FHIR to CSV using fhir-flattener (CRTDL input only)
     - csv_conversion
     - parquet_conversion
+    # - send           # Uncomment to send data to DSF transfer server
 
 retry:
   # Maximum number of retry attempts for transient errors (network, 5xx)

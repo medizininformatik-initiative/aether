@@ -40,6 +40,12 @@ services:
       - csv
     timeout: 30m
 
+  # DSF Transfer Server (Blaze FHIR server for e2e testing)
+  send:
+    server_url: "http://blaze-fhir:8080/fhir"
+    project_identifier: "MII-E2E-TEST"
+    organization_identifier: "e2e-test.hospital.de"
+
 pipeline:
   # List of steps to execute in order
   # Options: import, dimp, validation, csv_conversion, parquet_conversion
@@ -49,6 +55,7 @@ pipeline:
     - wait
     - dimp
     - flattening
+    - send
     # - csv_conversion  # Commented out - service not running
     # - parquet_conversion  # Commented out - service not running
 

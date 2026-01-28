@@ -87,6 +87,18 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 				Formats:    viper.GetStringSlice("services.flattening.formats"),
 				Timeout:    viper.GetDuration("services.flattening.timeout"),
 			},
+			Send: models.SendConfig{
+				ServerURL:              ExpandEnvVars(viper.GetString("services.send.server_url")),
+				ProjectIdentifier:      ExpandEnvVars(viper.GetString("services.send.project_identifier")),
+				OrganizationIdentifier: ExpandEnvVars(viper.GetString("services.send.organization_identifier")),
+				// Basic Auth
+				Username: ExpandEnvVars(viper.GetString("services.send.username")),
+				Password: ExpandEnvVars(viper.GetString("services.send.password")),
+				// OAuth2 Client Credentials
+				OAuthIssuerURI:    ExpandEnvVars(viper.GetString("services.send.oauth_issuer_uri")),
+				OAuthClientID:     ExpandEnvVars(viper.GetString("services.send.oauth_client_id")),
+				OAuthClientSecret: ExpandEnvVars(viper.GetString("services.send.oauth_client_secret")),
+			},
 		},
 		Retry: models.RetryConfig{
 			MaxAttempts:      viper.GetInt("retry.max_attempts"),

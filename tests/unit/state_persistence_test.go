@@ -29,6 +29,7 @@ func TestGetJobOutputDir(t *testing.T) {
 		{models.StepCSVConversion, "/tmp/jobs/test-job-123/csv"},
 		{models.StepFlattening, "/tmp/jobs/test-job-123/csv"},
 		{models.StepParquetConversion, "/tmp/jobs/test-job-123/parquet"},
+		{models.StepSend, "/tmp/jobs/test-job-123/send"},
 		{models.StepWait, "/tmp/jobs/test-job-123"},
 		{models.StepValidation, "/tmp/jobs/test-job-123"},
 	}

@@ -1,0 +1,18 @@
+name: blaze
+
+services:
+  # Blaze FHIR server used as DSF transfer target for the send step
+  blaze-fhir:
+    image: samply/blaze:1.1.2@sha256:af980162fea1c1047ffab1e51400c7a8bbe4d61d6669de0ed915198280d46878
+    ports: [ ":8080" ]
+    networks: [ "aether" ]
+    environment:
+      BASE_URL: http://blaze-fhir:8080
+      LOG_LEVEL: debug
+      JAVA_TOOL_OPTIONS: "-Xmx2g"
+    healthcheck:
+      test: [ "CMD", "curl", "-sSf", "http://localhost:8080/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s

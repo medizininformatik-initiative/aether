@@ -161,18 +161,15 @@ func copyFile(sourcePath string, destDir string, logger *lib.Logger, compress bo
 		lineCount = 0
 	}
 
-	resourceType := models.GetResourceTypeFromFilename(outputFileName)
-
 	logger.Debug("File imported", "file", outputFileName, "size", fileSize, "resources", lineCount, "compressed", compress)
 
 	return models.FHIRDataFile{
-		FileName:     outputFileName,
-		FilePath:     outputFileName, // Relative to job import directory
-		ResourceType: resourceType,
-		FileSize:     fileSize,
-		SourceStep:   models.StepLocalImport,
-		LineCount:    lineCount,
-		CreatedAt:    srcInfo.ModTime(),
+		FileName:   outputFileName,
+		FilePath:   outputFileName, // Relative to job import directory
+		FileSize:   fileSize,
+		SourceStep: models.StepLocalImport,
+		LineCount:  lineCount,
+		CreatedAt:  srcInfo.ModTime(),
 	}, nil
 }
 

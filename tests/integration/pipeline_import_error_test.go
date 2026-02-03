@@ -67,8 +67,6 @@ func TestPipelineImportError_UnreachableURL(t *testing.T) {
 
 	// Note: Retries happen at the HTTP client level, not at the pipeline step level
 	// The HTTP client will retry internally based on its retry config
-	// The pipeline step's RetryCount is 0 because the pipeline didn't retry the step,
-	// but the HTTP client DID retry the request (we can see this in logs)
 
 	// Verify the error message indicates retries happened
 	assert.Contains(t, err.Error(), "failed after", "Error should indicate retry attempts")
@@ -120,8 +118,7 @@ func TestPipelineImportError_HTTP404(t *testing.T) {
 	importStep, _ := models.GetStepByName(*importedJob, models.StepName(importedJob.CurrentStep))
 	assert.Equal(t, models.StepStatusFailed, importStep.Status, "Import step should be failed")
 
-	// 404 is non-transient, so no retries should be attempted
-	assert.Equal(t, 0, importStep.RetryCount, "Should not retry non-transient 404 errors")
+	// 404 is non-transient
 	assert.Equal(t, models.ErrorTypeNonTransient, importStep.LastError.Type,
 		"404 should be non-transient")
 }
@@ -218,7 +215,6 @@ func TestPipelineImportError_InvalidLocalPath(t *testing.T) {
 	assert.Equal(t, models.StepStatusFailed, importStep.Status)
 	assert.Equal(t, models.ErrorTypeNonTransient, importStep.LastError.Type,
 		"File not found should be non-transient")
-	assert.Equal(t, 0, importStep.RetryCount, "Should not retry non-transient errors")
 }
 
 // TestPipelineImportError_EmptyDirectory verifies error handling for directories with no FHIR files

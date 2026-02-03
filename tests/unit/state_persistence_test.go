@@ -65,7 +65,6 @@ func TestStatePersistence_SaveAndLoad(t *testing.T) {
 				StartedAt:      &now,
 				FilesProcessed: 0,
 				BytesProcessed: 0,
-				RetryCount:     0,
 			},
 		},
 		Config: models.ProjectConfig{
@@ -110,7 +109,6 @@ func TestStatePersistence_SaveAndLoad(t *testing.T) {
 	// Verify: Step details match
 	assert.Equal(t, originalJob.Steps[0].Name, loadedJob.Steps[0].Name, "Step name should match")
 	assert.Equal(t, originalJob.Steps[0].Status, loadedJob.Steps[0].Status, "Step status should match")
-	assert.Equal(t, originalJob.Steps[0].RetryCount, loadedJob.Steps[0].RetryCount, "Retry count should match")
 }
 
 // TestStatePersistence_AtomicWrite verifies atomic write behavior
@@ -188,34 +186,6 @@ func TestStatePersistence_SaveInvalidJob(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid", "Error message should indicate validation failure")
 }
 
-// TestStatePersistence_RetryCountPersistence tests that retry counts are preserved
-func TestStatePersistence_RetryCountPersistence(t *testing.T) {
-	tempDir := t.TempDir()
-	jobID := uuid.New().String()
-
-	// Create job with retry count
-	job := createTestJob(jobID, tempDir)
-	job.Steps[0].RetryCount = 3
-	job.Steps[0].LastError = &models.StepError{
-		Type:      models.ErrorTypeTransient,
-		Message:   "Connection timeout",
-		Timestamp: time.Now(),
-	}
-
-	// Save and reload
-	err := services.SaveJobState(tempDir, job)
-	require.NoError(t, err)
-
-	loadedJob, err := services.LoadJobState(tempDir, jobID)
-	require.NoError(t, err)
-
-	// Verify: Retry count is preserved
-	assert.Equal(t, 3, loadedJob.Steps[0].RetryCount, "Retry count should be preserved")
-	assert.NotNil(t, loadedJob.Steps[0].LastError, "Last error should be preserved")
-	assert.Equal(t, models.ErrorTypeTransient, loadedJob.Steps[0].LastError.Type, "Error type should be preserved")
-	assert.Equal(t, "Connection timeout", loadedJob.Steps[0].LastError.Message, "Error message should be preserved")
-}
-
 // TestStatePersistence_MultipleSteps tests persistence of jobs with multiple steps
 func TestStatePersistence_MultipleSteps(t *testing.T) {
 	tempDir := t.TempDir()
@@ -240,7 +210,6 @@ func TestStatePersistence_MultipleSteps(t *testing.T) {
 			CompletedAt:    &completedTime,
 			FilesProcessed: 100,
 			BytesProcessed: 1024000,
-			RetryCount:     0,
 		},
 		{
 			Name:           models.StepDIMP,
@@ -248,14 +217,12 @@ func TestStatePersistence_MultipleSteps(t *testing.T) {
 			StartedAt:      &completedTime,
 			FilesProcessed: 50,
 			BytesProcessed: 512000,
-			RetryCount:     1,
 		},
 		{
 			Name:           models.StepCSVConversion,
 			Status:         models.StepStatusPending,
 			FilesProcessed: 0,
 			BytesProcessed: 0,
-			RetryCount:     0,
 		},
 	}
 
@@ -275,7 +242,6 @@ func TestStatePersistence_MultipleSteps(t *testing.T) {
 
 	assert.Equal(t, models.StepStatusInProgress, loadedJob.Steps[1].Status)
 	assert.Equal(t, 50, loadedJob.Steps[1].FilesProcessed)
-	assert.Equal(t, 1, loadedJob.Steps[1].RetryCount)
 
 	assert.Equal(t, models.StepStatusPending, loadedJob.Steps[2].Status)
 	assert.Equal(t, 0, loadedJob.Steps[2].FilesProcessed)
@@ -321,7 +287,6 @@ func createTestJob(jobID, jobsDir string) *models.PipelineJob {
 				Status:         models.StepStatusPending,
 				FilesProcessed: 0,
 				BytesProcessed: 0,
-				RetryCount:     0,
 			},
 		},
 		Config: models.ProjectConfig{

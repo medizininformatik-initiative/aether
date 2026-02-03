@@ -13,7 +13,6 @@ type PipelineStep struct {
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 	FilesProcessed int        `json:"files_processed"`
 	BytesProcessed int64      `json:"bytes_processed"`
-	RetryCount     int        `json:"retry_count"`
 	LastError      *StepError `json:"last_error,omitempty"`
 }
 
@@ -109,11 +108,6 @@ func (s StepStatus) CanTransitionTo(next StepStatus) bool {
 	default:
 		return false
 	}
-}
-
-// IsRetryable determines if a step error should trigger automatic retry
-func (e StepError) IsRetryable(maxRetries int, currentRetries int) bool {
-	return e.Type == ErrorTypeTransient && currentRetries < maxRetries
 }
 
 // IsTransientHTTPStatus classifies HTTP status codes for retry logic

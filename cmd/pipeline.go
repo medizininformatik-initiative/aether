@@ -426,10 +426,6 @@ func runPipelineStatus(cmd *cobra.Command, args []string) error {
 			fmt.Printf(")")
 		}
 
-		if step.RetryCount > 0 {
-			fmt.Printf(" [%d retries]", step.RetryCount)
-		}
-
 		if step.LastError != nil {
 			fmt.Printf("\n    Error: %s", step.LastError.Message)
 		}

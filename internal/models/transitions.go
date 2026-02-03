@@ -93,13 +93,6 @@ func FailStep(step PipelineStep, errorType ErrorType, errorMsg string, httpStatu
 	return step
 }
 
-// IncrementRetry creates a new PipelineStep with incremented retry count
-// Pure function - returns new instance
-func IncrementRetry(step PipelineStep) PipelineStep {
-	step.RetryCount++
-	return step
-}
-
 // UpdateStepProgress creates a new PipelineStep with updated progress metrics
 // Pure function - returns new instance
 func UpdateStepProgress(step PipelineStep, filesProcessed int, bytesProcessed int64) PipelineStep {
@@ -138,7 +131,6 @@ func InitializeSteps(enabledSteps []StepName) []PipelineStep {
 			CompletedAt:    nil,
 			FilesProcessed: 0,
 			BytesProcessed: 0,
-			RetryCount:     0,
 			LastError:      nil,
 		}
 	}

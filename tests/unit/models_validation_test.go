@@ -66,16 +66,6 @@ func TestPipelineStep_Validate(t *testing.T) {
 			errMsg:  "invalid step status",
 		},
 		{
-			name: "Negative retry count",
-			step: models.PipelineStep{
-				Name:       models.StepLocalImport,
-				Status:     models.StepStatusPending,
-				RetryCount: -1,
-			},
-			wantErr: true,
-			errMsg:  "retry_count cannot be negative",
-		},
-		{
 			name: "Negative files processed",
 			step: models.PipelineStep{
 				Name:           models.StepLocalImport,

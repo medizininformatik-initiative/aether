@@ -90,7 +90,6 @@ func TestPipelineImportLocal_EndToEnd(t *testing.T) {
 	assert.Equal(t, models.StepStatusCompleted, importStep.Status, "Import step should be completed")
 	assert.Equal(t, 3, importStep.FilesProcessed, "Should process 3 files")
 	assert.Greater(t, importStep.BytesProcessed, int64(0), "Should process bytes")
-	assert.Equal(t, 0, importStep.RetryCount, "Should not require retries")
 
 	// Verify job metrics
 	assert.Equal(t, 3, importedJob.TotalFiles, "Job should have 3 total files")

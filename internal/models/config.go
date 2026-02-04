@@ -37,6 +37,12 @@ type ServiceConfig struct {
 	TORCH             TORCHConfig             `yaml:"torch" json:"torch"`
 	Flattening        FlatteningConfig        `yaml:"flattening" json:"flattening"`
 	Send              SendConfig              `yaml:"send" json:"send"`
+	LocalImport       LocalImportConfig       `yaml:"local_import" json:"local_import" mapstructure:"local_import"`
+}
+
+// LocalImportConfig contains settings for local directory import
+type LocalImportConfig struct {
+	Dir string `yaml:"dir" json:"dir" mapstructure:"dir"` // Default directory path for local imports
 }
 
 // DIMPConfig contains DIMP pseudonymization service settings

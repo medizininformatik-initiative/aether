@@ -99,6 +99,9 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 				OAuthClientID:     ExpandEnvVars(viper.GetString("services.send.oauth_client_id")),
 				OAuthClientSecret: ExpandEnvVars(viper.GetString("services.send.oauth_client_secret")),
 			},
+			LocalImport: models.LocalImportConfig{
+				Dir: ExpandEnvVars(viper.GetString("services.local_import.dir")),
+			},
 		},
 		Retry: models.RetryConfig{
 			MaxAttempts:      viper.GetInt("retry.max_attempts"),

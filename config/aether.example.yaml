@@ -95,13 +95,34 @@ services:
     # oauth_client_id: "${FHIR_OAUTH_CLIENT_ID}"
     # oauth_client_secret: "${FHIR_OAUTH_CLIENT_SECRET}"
 
+  # Local Import Configuration
+  # Default directory for local FHIR NDJSON file imports
+  # Can be overridden with --dir flag on command line
+  local_import:
+    # Directory containing FHIR NDJSON files to import
+    # Supports environment variables: dir: "${FHIR_DATA_DIR}"
+    # Can be overridden with: aether pipeline start query.crtdl --dir /other/path
+    dir: "/path/to/fhir/data"
+
 pipeline:
   # List of steps to execute in order
   # Import step options (must be first): torch, local_import, http_import
   # Other step options: dimp, validation, csv_conversion, parquet_conversion, wait, flattening
-  # NOTE: At least one import step must be first in enabled_steps
-  # NOTE: Enable all the import types you want to support - the system will automatically
-  #       use the correct one based on your input (TORCH URL → torch, local dir → local_import, etc.)
+  #
+  # IMPORTANT: Only ONE import step should be enabled at a time!
+  #   - torch: Use with CRTDL for TORCH extraction
+  #   - local_import: Import from local directory (set via services.local_import.dir or --dir flag)
+  #   - http_import: Download from HTTP URL
+  #
+  # CRTDL file requirements:
+  #   - Required when: torch OR flattening step is enabled
+  #   - Optional when: only local_import or http_import (no flattening)
+  #   - Always provided as positional argument: aether pipeline start query.crtdl
+  #
+  # Local import directory:
+  #   - Configure via: services.local_import.dir in this file
+  #   - Or override with: --dir /path/to/data flag
+  #   - DEPRECATED: directory as positional argument (shows warning)
   #
   # Send step:
   #   Use 'send' as a final step to upload data to a DSF transfer FHIR server.
@@ -115,9 +136,10 @@ pipeline:
   #   - Cannot be first step (needs previous output)
   #   - Consecutive waits are not allowed
   enabled_steps:
-    - torch           # TORCH import via CRTDL or direct TORCH URL
-    - local_import    # Import from local directory
-    - http_import     # Import from HTTP URL
+    # Choose ONE import step:
+    # - torch           # TORCH import via CRTDL or direct TORCH URL
+    - local_import    # Import from local directory (configured above)
+    # - http_import     # Import from HTTP URL
     # - wait          # Uncomment to pause after import for inspection
     - dimp
     # - wait          # Uncomment to pause after pseudonymization

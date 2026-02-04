@@ -11,18 +11,32 @@ import (
 )
 
 // CreateJob initializes a new pipeline job
+// inputSource can be:
+//   - CRTDL file path (required if flattening or torch enabled)
+//   - HTTP(S) URL (for http_import)
+//   - Empty string (for local_import using config.Services.LocalImport.Dir)
+//
 // Returns the created job with generated UUID and initialized steps
 func CreateJob(inputSource string, config models.ProjectConfig, logger *lib.Logger) (*models.PipelineJob, error) {
 	// Generate unique job ID
 	jobID := uuid.New().String()
 
-	// Detect input type using enhanced detection
-	inputType, err := lib.DetectInputType(inputSource)
-	if err != nil {
-		return nil, fmt.Errorf("failed to detect input type: %w", err)
-	}
+	// Determine input type based on what was provided
+	var inputType models.InputType
+	var err error
 
-	logger.Info("Detected input type", "type", inputType, "source", inputSource)
+	if inputSource == "" {
+		// No input source provided - local_import will use config.Services.LocalImport.Dir
+		inputType = models.InputTypeLocal
+		logger.Info("No input source provided, using local import from config", "dir", config.Services.LocalImport.Dir)
+	} else {
+		// Detect input type from provided source
+		inputType, err = lib.DetectInputType(inputSource)
+		if err != nil {
+			return nil, fmt.Errorf("failed to detect input type: %w", err)
+		}
+		logger.Info("Detected input type", "type", inputType, "source", inputSource)
+	}
 
 	// Validate CRTDL syntax if input is CRTDL file
 	if inputType == models.InputTypeCRTDL {
@@ -32,18 +46,24 @@ func CreateJob(inputSource string, config models.ProjectConfig, logger *lib.Logg
 		logger.Info("CRTDL syntax validation passed")
 	}
 
-	// Determine initial step based on input type
+	// Determine initial step based on enabled import step in config
+	// Priority: find the first import step that's enabled
 	var initialStep models.StepName
-	switch inputType {
-	case models.InputTypeCRTDL, models.InputTypeTORCHURL:
-		initialStep = models.StepTorchImport
-	case models.InputTypeLocal:
-		initialStep = models.StepLocalImport
-	case models.InputTypeHTTP:
-		initialStep = models.StepHttpImport
-	default:
-		return nil, fmt.Errorf("unknown input type: %s", inputType)
+	for _, step := range config.Pipeline.EnabledSteps {
+		switch step {
+		case models.StepTorchImport, models.StepLocalImport, models.StepHttpImport:
+			initialStep = step
+		}
+		if initialStep != "" {
+			break
+		}
 	}
+
+	if initialStep == "" {
+		return nil, fmt.Errorf("no import step enabled in pipeline configuration")
+	}
+
+	logger.Info("Determined initial step from config", "step", initialStep)
 
 	// Initialize steps from config
 	steps := models.InitializeSteps(config.Pipeline.EnabledSteps)

@@ -1789,3 +1789,170 @@ func TestSendConfig_ValidateIncompleteOAuth2(t *testing.T) {
 		})
 	}
 }
+
+// TestConfigLoading_LocalImportDir verifies that services.local_import.dir is loaded correctly
+func TestConfigLoading_LocalImportDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	dataDir := filepath.Join(tmpDir, "data")
+	_ = os.MkdirAll(jobsDir, 0755)
+	_ = os.MkdirAll(dataDir, 0755)
+
+	configContent := `
+services:
+  local_import:
+    dir: "` + dataDir + `"
+
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err)
+
+	assert.Equal(t, dataDir, config.Services.LocalImport.Dir, "LocalImport.Dir should be loaded from config")
+}
+
+// TestConfigLoading_LocalImportDirEmpty verifies empty local_import.dir is handled correctly
+func TestConfigLoading_LocalImportDirEmpty(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  local_import:
+    dir: ""
+
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err)
+
+	assert.Empty(t, config.Services.LocalImport.Dir, "LocalImport.Dir should be empty when not configured")
+}
+
+// TestConfigLoading_LocalImportDirEnvVar verifies environment variable expansion in local_import.dir
+func TestConfigLoading_LocalImportDirEnvVar(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	dataDir := filepath.Join(tmpDir, "data")
+	_ = os.MkdirAll(jobsDir, 0755)
+	_ = os.MkdirAll(dataDir, 0755)
+
+	// Set environment variable
+	require.NoError(t, os.Setenv("TEST_FHIR_DATA_DIR", dataDir))
+	defer func() { _ = os.Unsetenv("TEST_FHIR_DATA_DIR") }()
+
+	configContent := `
+services:
+  local_import:
+    dir: "${TEST_FHIR_DATA_DIR}"
+
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err)
+
+	assert.Equal(t, dataDir, config.Services.LocalImport.Dir, "LocalImport.Dir should expand environment variable")
+}
+
+// TestPipelineJob_ValidateWithEmptyInputSource_LocalImportConfigDir verifies that
+// job validation allows empty InputSource when local_import uses config directory
+func TestPipelineJob_ValidateWithEmptyInputSource_LocalImportConfigDir(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a job with empty InputSource but with config.Services.LocalImport.Dir set
+	job := models.PipelineJob{
+		JobID:       "550e8400-e29b-41d4-a716-446655440000",
+		InputSource: "", // Empty - using config dir instead
+		InputType:   models.InputTypeLocal,
+		CurrentStep: string(models.StepLocalImport),
+		Status:      models.JobStatusPending,
+		Steps:       models.InitializeSteps([]models.StepName{models.StepLocalImport}),
+		Config: models.ProjectConfig{
+			JobsDir: tmpDir,
+			Pipeline: models.PipelineConfig{
+				EnabledSteps: []models.StepName{models.StepLocalImport},
+			},
+			Services: models.ServiceConfig{
+				LocalImport: models.LocalImportConfig{
+					Dir: "/configured/path", // Config directory is set
+				},
+			},
+		},
+	}
+
+	// Validation should pass because local_import config dir is set
+	err := job.Validate()
+	assert.NoError(t, err, "Validation should pass with empty InputSource when local_import config dir is set")
+}
+
+// TestPipelineJob_ValidateWithEmptyInputSource_NoConfigDir verifies that
+// job validation fails when InputSource is empty and no config directory is set
+func TestPipelineJob_ValidateWithEmptyInputSource_NoConfigDir(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a job with empty InputSource and no config dir
+	job := models.PipelineJob{
+		JobID:       "550e8400-e29b-41d4-a716-446655440000",
+		InputSource: "", // Empty - no config dir either
+		InputType:   models.InputTypeLocal,
+		CurrentStep: string(models.StepLocalImport),
+		Status:      models.JobStatusPending,
+		Steps:       models.InitializeSteps([]models.StepName{models.StepLocalImport}),
+		Config: models.ProjectConfig{
+			JobsDir: tmpDir,
+			Pipeline: models.PipelineConfig{
+				EnabledSteps: []models.StepName{models.StepLocalImport},
+			},
+			Services: models.ServiceConfig{
+				LocalImport: models.LocalImportConfig{
+					Dir: "", // No config directory
+				},
+			},
+		},
+	}
+
+	// Validation should fail because neither InputSource nor config dir is set
+	err := job.Validate()
+	assert.Error(t, err, "Validation should fail with empty InputSource and no config dir")
+	assert.Contains(t, err.Error(), "input_source is required", "Error should mention input_source")
+}

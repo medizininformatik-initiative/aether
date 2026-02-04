@@ -10,7 +10,10 @@ import (
 )
 
 // ExecuteImportStep performs the import step of the pipeline
-// Detects input type (local vs HTTP) and delegates to appropriate importer
+// Uses the current step (from job.CurrentStep) to determine import method
+// For local_import: uses config.Services.LocalImport.Dir or job.InputSource
+// For torch: uses TORCH extraction with CRTDL from job.InputSource
+// For http_import: downloads from URL in job.InputSource
 // Updates job state with progress and imported files
 func ExecuteImportStep(job *models.PipelineJob, logger *lib.Logger, httpClient *services.HTTPClient, showProgress bool) (*models.PipelineJob, error) {
 	startTime := time.Now()
@@ -21,28 +24,40 @@ func ExecuteImportStep(job *models.PipelineJob, logger *lib.Logger, httpClient *
 	// Get import output directory
 	importDir := services.GetJobOutputDir(job.Config.JobsDir, job.JobID, currentStep)
 
-	// Validate input source
-	if err := services.ValidateImportSource(job.InputSource, job.InputType); err != nil {
-		// Failed with non-transient error
-		updatedJob := failImportStep(job, err, models.ErrorTypeNonTransient, 0)
-		lib.LogStepFailed(logger, string(currentStep), job.JobID, err, false)
-		return &updatedJob, err
-	}
-
 	// Get compression settings
 	compress := job.Config.Compression.Enabled
 	compressionLevel := job.Config.Compression.Level
 
-	// Execute import based on input type
+	// Execute import based on the current step (enabled import step)
 	var importedFiles []models.FHIRDataFile
 	var err error
 
-	switch job.InputType {
-	case models.InputTypeLocal:
-		logger.Info("Importing from local directory", "source", job.InputSource, "compress", compress)
-		importedFiles, err = services.ImportFromLocalDirectory(job.InputSource, importDir, logger, compress, compressionLevel)
+	switch currentStep {
+	case models.StepLocalImport:
+		// Determine source directory: config dir takes precedence, fallback to job.InputSource
+		sourceDir := job.Config.Services.LocalImport.Dir
+		if sourceDir == "" {
+			sourceDir = job.InputSource
+		}
 
-	case models.InputTypeHTTP:
+		// Validate source directory
+		if err := services.ValidateImportSource(sourceDir, models.InputTypeLocal); err != nil {
+			updatedJob := failImportStep(job, err, models.ErrorTypeNonTransient, 0)
+			lib.LogStepFailed(logger, string(currentStep), job.JobID, err, false)
+			return &updatedJob, err
+		}
+
+		logger.Info("Importing from local directory", "source", sourceDir, "compress", compress)
+		importedFiles, err = services.ImportFromLocalDirectory(sourceDir, importDir, logger, compress, compressionLevel)
+
+	case models.StepHttpImport:
+		// Validate HTTP URL
+		if err := services.ValidateImportSource(job.InputSource, models.InputTypeHTTP); err != nil {
+			updatedJob := failImportStep(job, err, models.ErrorTypeNonTransient, 0)
+			lib.LogStepFailed(logger, string(currentStep), job.JobID, err, false)
+			return &updatedJob, err
+		}
+
 		logger.Info("Downloading from URL", "source", job.InputSource, "compress", compress)
 		if showProgress {
 			importedFiles, err = services.DownloadFromURLWithProgress(job.InputSource, importDir, httpClient, logger, compress, compressionLevel)
@@ -50,16 +65,37 @@ func ExecuteImportStep(job *models.PipelineJob, logger *lib.Logger, httpClient *
 			importedFiles, err = services.DownloadFromURL(job.InputSource, importDir, httpClient, logger, false, compress, compressionLevel)
 		}
 
-	case models.InputTypeCRTDL:
-		logger.Info("Extracting data from TORCH using CRTDL", "source", job.InputSource, "compress", compress)
-		importedFiles, err = executeTORCHExtraction(job, importDir, httpClient, logger, showProgress, compress, compressionLevel)
+	case models.StepTorchImport:
+		// TORCH import requires CRTDL or TORCH URL
+		switch job.InputType {
+		case models.InputTypeCRTDL:
+			// Validate CRTDL source
+			if err := services.ValidateImportSource(job.InputSource, models.InputTypeCRTDL); err != nil {
+				updatedJob := failImportStep(job, err, models.ErrorTypeNonTransient, 0)
+				lib.LogStepFailed(logger, string(currentStep), job.JobID, err, false)
+				return &updatedJob, err
+			}
 
-	case models.InputTypeTORCHURL:
-		logger.Info("Downloading from TORCH result URL", "source", job.InputSource, "compress", compress)
-		importedFiles, err = executeTORCHDownload(job, importDir, httpClient, logger, showProgress, compress, compressionLevel)
+			logger.Info("Extracting data from TORCH using CRTDL", "source", job.InputSource, "compress", compress)
+			importedFiles, err = executeTORCHExtraction(job, importDir, httpClient, logger, showProgress, compress, compressionLevel)
+
+		case models.InputTypeTORCHURL:
+			// Validate TORCH URL
+			if err := services.ValidateImportSource(job.InputSource, models.InputTypeTORCHURL); err != nil {
+				updatedJob := failImportStep(job, err, models.ErrorTypeNonTransient, 0)
+				lib.LogStepFailed(logger, string(currentStep), job.JobID, err, false)
+				return &updatedJob, err
+			}
+
+			logger.Info("Downloading from TORCH result URL", "source", job.InputSource, "compress", compress)
+			importedFiles, err = executeTORCHDownload(job, importDir, httpClient, logger, showProgress, compress, compressionLevel)
+
+		default:
+			err = fmt.Errorf("torch import requires CRTDL file or TORCH URL, got input type: %s", job.InputType)
+		}
 
 	default:
-		err = fmt.Errorf("unsupported input type: %s", job.InputType)
+		err = fmt.Errorf("unsupported import step: %s", currentStep)
 	}
 
 	// Handle errors

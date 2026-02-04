@@ -1,11 +1,13 @@
 package unit
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/pipeline"
 )
@@ -232,4 +234,58 @@ func TestCompleteJob(t *testing.T) {
 
 	assert.Equal(t, models.JobStatusCompleted, updatedJob.Status)
 	assert.Equal(t, "", updatedJob.CurrentStep, "Current step should be cleared")
+}
+
+// TestCreateJob_EmptyInputSource tests CreateJob with empty input source (local_import from config)
+// Covers job.go lines 28-32
+func TestCreateJob_EmptyInputSource(t *testing.T) {
+	tmpDir := t.TempDir()
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	localImportDir := filepath.Join(tmpDir, "local_import")
+
+	config := models.ProjectConfig{
+		JobsDir: jobsDir,
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepLocalImport},
+		},
+		Services: models.ServiceConfig{
+			LocalImport: models.LocalImportConfig{
+				Dir: localImportDir,
+			},
+		},
+	}
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+
+	// Create job with empty input source
+	job, err := pipeline.CreateJob("", config, logger)
+
+	require.NoError(t, err, "CreateJob should succeed with empty input source")
+	assert.NotNil(t, job)
+	assert.Equal(t, models.InputTypeLocal, job.InputType, "Input type should be local")
+	assert.Equal(t, "", job.InputSource, "Input source should be empty")
+	assert.Equal(t, string(models.StepLocalImport), job.CurrentStep, "Current step should be local_import")
+}
+
+// TestCreateJob_NoImportStepEnabled tests CreateJob when no import step is enabled
+// Covers job.go lines 62-63
+func TestCreateJob_NoImportStepEnabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	jobsDir := filepath.Join(tmpDir, "jobs")
+
+	config := models.ProjectConfig{
+		JobsDir: jobsDir,
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepDIMP, models.StepFlattening}, // No import step
+		},
+	}
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+
+	// Create job - should fail because no import step is enabled
+	job, err := pipeline.CreateJob("/some/path", config, logger)
+
+	require.Error(t, err, "CreateJob should fail when no import step is enabled")
+	assert.Nil(t, job)
+	assert.Contains(t, err.Error(), "no import step enabled", "Error should mention no import step")
 }

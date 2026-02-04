@@ -22,9 +22,12 @@ func (j *PipelineJob) Validate() error {
 		return fmt.Errorf("invalid job_id: must be a valid UUID: %w", err)
 	}
 
-	// Validate InputSource is not empty
+	// Validate InputSource is not empty (unless using local_import with config directory)
 	if j.InputSource == "" {
-		return errors.New("input_source is required")
+		// Allow empty InputSource for local_import when config directory is set
+		if j.InputType != InputTypeLocal || j.Config.Services.LocalImport.Dir == "" {
+			return errors.New("input_source is required")
+		}
 	}
 
 	// Validate InputType matches InputSource

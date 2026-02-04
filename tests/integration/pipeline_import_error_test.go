@@ -28,7 +28,7 @@ func TestPipelineImportError_UnreachableURL(t *testing.T) {
 	config := models.ProjectConfig{
 		JobsDir: jobsDir,
 		Pipeline: models.PipelineConfig{
-			EnabledSteps: []models.StepName{models.StepTorchImport, models.StepLocalImport, models.StepHttpImport},
+			EnabledSteps: []models.StepName{models.StepHttpImport}, // HTTP import for URL input
 		},
 		Retry: models.RetryConfig{
 			MaxAttempts:      3,
@@ -93,7 +93,7 @@ func TestPipelineImportError_HTTP404(t *testing.T) {
 	config := models.ProjectConfig{
 		JobsDir: jobsDir,
 		Pipeline: models.PipelineConfig{
-			EnabledSteps: []models.StepName{models.StepTorchImport, models.StepLocalImport, models.StepHttpImport},
+			EnabledSteps: []models.StepName{models.StepHttpImport}, // HTTP import for URL input
 		},
 		Retry: models.RetryConfig{
 			MaxAttempts:      5,
@@ -143,7 +143,7 @@ func TestPipelineImportError_HTTP500WithRetry(t *testing.T) {
 	config := models.ProjectConfig{
 		JobsDir: jobsDir,
 		Pipeline: models.PipelineConfig{
-			EnabledSteps: []models.StepName{models.StepTorchImport, models.StepLocalImport, models.StepHttpImport},
+			EnabledSteps: []models.StepName{models.StepHttpImport}, // HTTP import for URL input
 		},
 		Retry: models.RetryConfig{
 			MaxAttempts:      maxAttempts,
@@ -185,7 +185,7 @@ func TestPipelineImportError_InvalidLocalPath(t *testing.T) {
 	config := models.ProjectConfig{
 		JobsDir: jobsDir,
 		Pipeline: models.PipelineConfig{
-			EnabledSteps: []models.StepName{models.StepTorchImport, models.StepLocalImport, models.StepHttpImport},
+			EnabledSteps: []models.StepName{models.StepLocalImport}, // Local import for directory input
 		},
 		Retry: models.RetryConfig{
 			MaxAttempts:      3,
@@ -229,7 +229,7 @@ func TestPipelineImportError_EmptyDirectory(t *testing.T) {
 	config := models.ProjectConfig{
 		JobsDir: jobsDir,
 		Pipeline: models.PipelineConfig{
-			EnabledSteps: []models.StepName{models.StepTorchImport, models.StepLocalImport, models.StepHttpImport},
+			EnabledSteps: []models.StepName{models.StepLocalImport}, // Local import for directory input
 		},
 		Retry: models.RetryConfig{
 			MaxAttempts:      3,
@@ -268,7 +268,7 @@ func TestPipelineImportError_PathIsFile(t *testing.T) {
 	config := models.ProjectConfig{
 		JobsDir: jobsDir,
 		Pipeline: models.PipelineConfig{
-			EnabledSteps: []models.StepName{models.StepTorchImport, models.StepLocalImport, models.StepHttpImport},
+			EnabledSteps: []models.StepName{models.StepLocalImport}, // Local import for file/directory input
 		},
 		Retry: models.RetryConfig{
 			MaxAttempts:      3,
@@ -311,7 +311,7 @@ func TestPipelineImportError_NetworkTimeout(t *testing.T) {
 	config := models.ProjectConfig{
 		JobsDir: jobsDir,
 		Pipeline: models.PipelineConfig{
-			EnabledSteps: []models.StepName{models.StepTorchImport, models.StepLocalImport, models.StepHttpImport},
+			EnabledSteps: []models.StepName{models.StepHttpImport}, // HTTP import for URL input
 		},
 		Retry: models.RetryConfig{
 			MaxAttempts:      2,
@@ -355,7 +355,7 @@ func TestPipelineImportError_StatePersistence(t *testing.T) {
 	config := models.ProjectConfig{
 		JobsDir: jobsDir,
 		Pipeline: models.PipelineConfig{
-			EnabledSteps: []models.StepName{models.StepTorchImport, models.StepLocalImport, models.StepHttpImport},
+			EnabledSteps: []models.StepName{models.StepHttpImport}, // HTTP import for URL input
 		},
 		Retry: models.RetryConfig{
 			MaxAttempts:      3,
@@ -412,7 +412,7 @@ func TestPipelineImportError_PartialDownloadCleanup(t *testing.T) {
 	config := models.ProjectConfig{
 		JobsDir: jobsDir,
 		Pipeline: models.PipelineConfig{
-			EnabledSteps: []models.StepName{models.StepTorchImport, models.StepLocalImport, models.StepHttpImport},
+			EnabledSteps: []models.StepName{models.StepHttpImport}, // HTTP import for URL input
 		},
 		Retry: models.RetryConfig{
 			MaxAttempts:      2,

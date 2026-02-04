@@ -69,6 +69,18 @@ func (c *HTTPClient) PostJSON(url string, jsonBody []byte) (*http.Response, erro
 	return c.Post(url, "application/json", jsonBody)
 }
 
+// Put performs an HTTP PUT request with retry logic
+func (c *HTTPClient) Put(url string, contentType string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequest("PUT", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", contentType)
+
+	return c.Do(req)
+}
+
 // Do executes an HTTP request with retry logic for transient errors
 func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 	var resp *http.Response

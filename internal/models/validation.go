@@ -159,7 +159,7 @@ func (c *ProjectConfig) Validate() error {
 	for _, step := range c.Pipeline.EnabledSteps {
 		if !c.Services.HasServiceURL(step) {
 			switch step {
-			case StepDIMP, StepCSVConversion, StepParquetConversion:
+			case StepDIMP, StepCSVConversion, StepParquetConversion, StepSend:
 				return fmt.Errorf("service URL required for enabled step '%s'", step)
 			}
 		}
@@ -171,6 +171,13 @@ func (c *ProjectConfig) Validate() error {
 	if c.Pipeline.IsStepEnabled(StepTorchImport) || torchIsConfigured {
 		if err := c.Services.TORCH.Validate(); err != nil {
 			return fmt.Errorf("TORCH config validation failed: %w", err)
+		}
+	}
+
+	// Validate Send config if send step is enabled
+	if c.Pipeline.IsStepEnabled(StepSend) {
+		if err := c.Services.Send.Validate(); err != nil {
+			return fmt.Errorf("send config validation failed: %w", err)
 		}
 	}
 
@@ -283,6 +290,9 @@ func (c *ProjectConfig) ValidateServiceConnectivity() error {
 		case StepDIMP:
 			serviceURL = c.Services.DIMP.URL
 			serviceName = "DIMP"
+		case StepSend:
+			serviceURL = c.Services.Send.ServerURL
+			serviceName = "Send (FHIR transfer server)"
 		case StepCSVConversion:
 			serviceURL = c.Services.CSVConversion.URL
 			serviceName = "CSV Conversion"

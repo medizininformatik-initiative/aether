@@ -834,6 +834,11 @@ func TestGetServiceURL(t *testing.T) {
 			Flattening: models.FlatteningConfig{
 				ServiceURL: "http://flattener.example.com:8000",
 			},
+			Send: models.SendConfig{
+				ServerURL:              "http://fhir.example.com:8080/fhir",
+				ProjectIdentifier:      "TEST-PROJECT",
+				OrganizationIdentifier: "test.org",
+			},
 		},
 	}
 
@@ -848,6 +853,9 @@ func TestGetServiceURL(t *testing.T) {
 
 	// Test Flattening URL
 	assert.Equal(t, "http://flattener.example.com:8000", config.Services.GetServiceURL(models.StepFlattening))
+
+	// Test Send URL
+	assert.Equal(t, "http://fhir.example.com:8080/fhir", config.Services.GetServiceURL(models.StepSend))
 
 	// Test unknown step
 	assert.Equal(t, "", config.Services.GetServiceURL(models.StepLocalImport))
@@ -1227,6 +1235,70 @@ func TestValidateServiceConnectivity_ParquetServiceUnreachable(t *testing.T) {
 	assert.Contains(t, err.Error(), "Parquet Conversion")
 }
 
+// TestValidateServiceConnectivity_SendServiceAvailable verifies connectivity check with Send service available
+func TestValidateServiceConnectivity_SendServiceAvailable(t *testing.T) {
+	sendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer sendServer.Close()
+
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			Send: models.SendConfig{
+				ServerURL:              sendServer.URL,
+				ProjectIdentifier:      "TEST-PROJECT",
+				OrganizationIdentifier: "test.org",
+			},
+		},
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{
+				models.StepLocalImport,
+				models.StepSend,
+			},
+		},
+		Retry: models.RetryConfig{
+			MaxAttempts:      5,
+			InitialBackoffMs: 1000,
+			MaxBackoffMs:     30000,
+		},
+		JobsDir: "/tmp/jobs",
+	}
+
+	// ValidateServiceConnectivity should succeed when Send service is reachable
+	err := config.ValidateServiceConnectivity()
+	assert.NoError(t, err, "Send service should be reachable")
+}
+
+// TestValidateServiceConnectivity_SendServiceUnreachable verifies error when Send service is unreachable
+func TestValidateServiceConnectivity_SendServiceUnreachable(t *testing.T) {
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			Send: models.SendConfig{
+				ServerURL:              "http://localhost:59998", // Unreachable
+				ProjectIdentifier:      "TEST-PROJECT",
+				OrganizationIdentifier: "test.org",
+			},
+		},
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{
+				models.StepLocalImport,
+				models.StepSend,
+			},
+		},
+		Retry: models.RetryConfig{
+			MaxAttempts:      5,
+			InitialBackoffMs: 1000,
+			MaxBackoffMs:     30000,
+		},
+		JobsDir: "/tmp/jobs",
+	}
+
+	// ValidateServiceConnectivity should fail when Send service is unreachable
+	err := config.ValidateServiceConnectivity()
+	assert.Error(t, err, "Should fail when Send service is unreachable")
+	assert.Contains(t, err.Error(), "Send (FHIR transfer server)")
+}
+
 // TestConfigLoading_BundleSplitThreshold verifies bundle_split_threshold_mb is loaded correctly
 func TestConfigLoading_BundleSplitThreshold(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -1427,6 +1499,293 @@ jobs_dir: "` + jobsDir + `"
 
 			assert.True(t, config.Compression.Enabled)
 			assert.Equal(t, level, config.Compression.Level)
+		})
+	}
+}
+
+// TestConfigLoading_SendConfig verifies that send service configuration
+// is properly loaded from YAML config file
+func TestConfigLoading_SendConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	// Mock server for connectivity validation
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mockServer.Close()
+
+	configContent := `
+services:
+  send:
+    server_url: "` + mockServer.URL + `"
+    project_identifier: "MII-TEST-PROJECT"
+    organization_identifier: "test.hospital.de"
+
+pipeline:
+  enabled_steps:
+    - local_import
+    - send
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.Equal(t, mockServer.URL, config.Services.Send.ServerURL)
+	assert.Equal(t, "MII-TEST-PROJECT", config.Services.Send.ProjectIdentifier)
+	assert.Equal(t, "test.hospital.de", config.Services.Send.OrganizationIdentifier)
+
+	// Verify send step is in enabled steps
+	assert.Contains(t, config.Pipeline.EnabledSteps, models.StepSend)
+}
+
+// TestConfigLoading_SendConfigWithBasicAuth verifies that Basic Auth configuration is loaded
+func TestConfigLoading_SendConfigWithBasicAuth(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mockServer.Close()
+
+	configContent := `
+services:
+  send:
+    server_url: "` + mockServer.URL + `"
+    project_identifier: "MII-TEST-PROJECT"
+    organization_identifier: "test.hospital.de"
+    username: "testuser"
+    password: "testpass"
+
+pipeline:
+  enabled_steps:
+    - local_import
+    - send
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.Equal(t, "testuser", config.Services.Send.Username)
+	assert.Equal(t, "testpass", config.Services.Send.Password)
+	assert.Equal(t, models.SendAuthBasic, config.Services.Send.GetAuthType())
+}
+
+// TestConfigLoading_SendConfigWithOAuth2 verifies that OAuth2 configuration is loaded
+func TestConfigLoading_SendConfigWithOAuth2(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mockServer.Close()
+
+	configContent := `
+services:
+  send:
+    server_url: "` + mockServer.URL + `"
+    project_identifier: "MII-TEST-PROJECT"
+    organization_identifier: "test.hospital.de"
+    oauth_issuer_uri: "https://auth.example.com/realms/test"
+    oauth_client_id: "my-client"
+    oauth_client_secret: "my-secret"
+
+pipeline:
+  enabled_steps:
+    - local_import
+    - send
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.Equal(t, "https://auth.example.com/realms/test", config.Services.Send.OAuthIssuerURI)
+	assert.Equal(t, "my-client", config.Services.Send.OAuthClientID)
+	assert.Equal(t, "my-secret", config.Services.Send.OAuthClientSecret)
+	assert.Equal(t, models.SendAuthOAuth2, config.Services.Send.GetAuthType())
+}
+
+// TestConfigLoading_SendConfigNoAuth verifies that no-auth configuration works
+func TestConfigLoading_SendConfigNoAuth(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mockServer.Close()
+
+	configContent := `
+services:
+  send:
+    server_url: "` + mockServer.URL + `"
+    project_identifier: "MII-TEST-PROJECT"
+    organization_identifier: "test.hospital.de"
+
+pipeline:
+  enabled_steps:
+    - local_import
+    - send
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.Empty(t, config.Services.Send.Username)
+	assert.Empty(t, config.Services.Send.Password)
+	assert.Empty(t, config.Services.Send.OAuthIssuerURI)
+	assert.Equal(t, models.SendAuthNone, config.Services.Send.GetAuthType())
+}
+
+// TestSendConfig_ValidateMixedAuth verifies that mixing Basic Auth and OAuth2 is rejected
+func TestSendConfig_ValidateMixedAuth(t *testing.T) {
+	config := models.SendConfig{
+		ServerURL:              "https://example.com/fhir",
+		ProjectIdentifier:      "TEST",
+		OrganizationIdentifier: "test.org",
+		Username:               "user",
+		Password:               "pass",
+		OAuthIssuerURI:         "https://auth.example.com",
+		OAuthClientID:          "client",
+		OAuthClientSecret:      "secret",
+	}
+
+	err := config.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot configure both basic auth and OAuth2")
+}
+
+// TestSendConfig_ValidateIncompleteBasicAuth verifies partial Basic Auth is rejected
+func TestSendConfig_ValidateIncompleteBasicAuth(t *testing.T) {
+	tests := []struct {
+		name     string
+		username string
+		password string
+		errMsg   string
+	}{
+		{
+			name:     "username only",
+			username: "user",
+			password: "",
+			errMsg:   "password is required",
+		},
+		{
+			name:     "password only",
+			username: "",
+			password: "pass",
+			errMsg:   "username is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := models.SendConfig{
+				ServerURL:              "https://example.com/fhir",
+				ProjectIdentifier:      "TEST",
+				OrganizationIdentifier: "test.org",
+				Username:               tt.username,
+				Password:               tt.password,
+			}
+
+			err := config.Validate()
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errMsg)
+		})
+	}
+}
+
+// TestSendConfig_ValidateIncompleteOAuth2 verifies partial OAuth2 config is rejected
+func TestSendConfig_ValidateIncompleteOAuth2(t *testing.T) {
+	tests := []struct {
+		name         string
+		issuerURI    string
+		clientID     string
+		clientSecret string
+		errMsg       string
+	}{
+		{
+			name:         "missing issuer URI",
+			issuerURI:    "",
+			clientID:     "client",
+			clientSecret: "secret",
+			errMsg:       "oauth_issuer_uri is required",
+		},
+		{
+			name:         "missing client ID",
+			issuerURI:    "https://auth.example.com",
+			clientID:     "",
+			clientSecret: "secret",
+			errMsg:       "oauth_client_id is required",
+		},
+		{
+			name:         "missing client secret",
+			issuerURI:    "https://auth.example.com",
+			clientID:     "client",
+			clientSecret: "",
+			errMsg:       "oauth_client_secret is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := models.SendConfig{
+				ServerURL:              "https://example.com/fhir",
+				ProjectIdentifier:      "TEST",
+				OrganizationIdentifier: "test.org",
+				OAuthIssuerURI:         tt.issuerURI,
+				OAuthClientID:          tt.clientID,
+				OAuthClientSecret:      tt.clientSecret,
+			}
+
+			err := config.Validate()
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errMsg)
 		})
 	}
 }

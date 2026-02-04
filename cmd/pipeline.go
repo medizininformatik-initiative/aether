@@ -230,6 +230,23 @@ func executeStep(job *models.PipelineJob, stepName models.StepName, config *mode
 		fmt.Printf("\n✓ Flattening completed\n")
 		return nil
 
+	case models.StepSend:
+		fmt.Println("Starting send step...")
+		if err := pipeline.ExecuteSendStep(job, jobDir, logger); err != nil {
+			failedJob := pipeline.FailJob(job, err.Error())
+			if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
+				logger.Error("Failed to save job state", "error", saveErr)
+			}
+			return fmt.Errorf("send step failed: %w", err)
+		}
+
+		if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
+			return fmt.Errorf("failed to save job state: %w", err)
+		}
+
+		fmt.Printf("\n✓ Send completed\n")
+		return nil
+
 	case models.StepWait:
 		// Execute wait step - creates empty wait directory and pauses pipeline
 		stepIndex := -1

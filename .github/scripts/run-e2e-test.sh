@@ -32,6 +32,7 @@ echo ""
 echo "Running aether E2E test inside Docker network..."
 echo "  TORCH: http://torch-proxy:80 (internal)"
 echo "  DIMP: http://fhir-pseudonymizer:8080 (internal)"
+echo "  Blaze (send target): http://blaze-fhir:8080/fhir (internal)"
 
 # Run aether inside the Docker network where it can resolve internal hostnames
 # Capture output to extract job ID
@@ -103,6 +104,35 @@ if echo "$OUTPUT" | grep -q "Pipeline paused at wait step"; then
         fi
     done
 fi
+
+echo ""
+echo "Verifying send step: checking Blaze FHIR server for transferred resources..."
+
+# Verify DocumentReference was created on the Blaze FHIR server
+SEND_VERIFY=$(docker compose exec -T aether-runner sh -c '
+    DOC_REF_RESPONSE=$(curl --silent --show-error "http://blaze-fhir:8080/fhir/DocumentReference?_summary=count")
+    DOC_REF_COUNT=$(echo "$DOC_REF_RESPONSE" | grep -o "\"total\":[0-9]*" | grep -o "[0-9]*" || echo "0")
+    BINARY_RESPONSE=$(curl --silent --show-error "http://blaze-fhir:8080/fhir/Binary?_summary=count")
+    BINARY_COUNT=$(echo "$BINARY_RESPONSE" | grep -o "\"total\":[0-9]*" | grep -o "[0-9]*" || echo "0")
+
+    echo "DocumentReference count: $DOC_REF_COUNT"
+    echo "Binary count: $BINARY_COUNT"
+
+    if [ "$DOC_REF_COUNT" -lt 1 ]; then
+        echo "FAIL: Expected at least 1 DocumentReference on transfer server"
+        exit 1
+    fi
+    if [ "$BINARY_COUNT" -lt 1 ]; then
+        echo "FAIL: Expected at least 1 Binary on transfer server"
+        exit 1
+    fi
+    echo "PASS: Send step verified successfully"
+') || {
+    echo "$SEND_VERIFY"
+    echo "Send step verification failed"
+    exit 1
+}
+echo "$SEND_VERIFY"
 
 echo ""
 echo "E2E test completed for job: $JOB_ID"

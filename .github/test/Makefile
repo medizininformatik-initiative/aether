@@ -1,7 +1,7 @@
 # Makefile for Aether Test Infrastructure
 # Located in .github/test/
 
-.PHONY: help services start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test flattener-up flattener-down flattener-logs test-with-services download-testdata upload-testdata e2e-test e2e-test-flattening clean-test-data
+.PHONY: help services start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test flattener-up flattener-down flattener-logs blaze-up blaze-down blaze-logs test-with-services download-testdata upload-testdata e2e-test e2e-test-flattening clean-test-data
 
 # Default target
 .DEFAULT_GOAL := help
@@ -32,6 +32,9 @@ help:
 	@echo "  flattener-up      Start fhir-flattener service"
 	@echo "  flattener-down    Stop fhir-flattener service"
 	@echo "  flattener-logs    Show fhir-flattener service logs"
+	@echo "  blaze-up          Start Blaze FHIR server (DSF transfer target)"
+	@echo "  blaze-down        Stop Blaze FHIR server"
+	@echo "  blaze-logs        Show Blaze FHIR server logs"
 	@echo "  test-with-services Run all tests with required services"
 	@echo "  download-testdata Download test data (only if not present)"
 	@echo "  upload-testdata   Upload test data to TORCH (requires services)"
@@ -133,6 +136,23 @@ flattener-down:
 flattener-logs:
 	@echo "Showing fhir-flattener service logs..."
 	cd flattener && docker compose logs -f
+
+## blaze-up: Start Blaze FHIR server (DSF transfer target for send step)
+blaze-up:
+	@echo "Starting Blaze FHIR server..."
+	cd blaze && docker compose up -d
+	@echo "✓ Blaze FHIR server starting (may take up to 60s for healthcheck)"
+
+## blaze-down: Stop Blaze FHIR server
+blaze-down:
+	@echo "Stopping Blaze FHIR server..."
+	cd blaze && docker compose down
+	@echo "✓ Blaze FHIR server stopped"
+
+## blaze-logs: Show Blaze FHIR server logs
+blaze-logs:
+	@echo "Showing Blaze FHIR server logs..."
+	cd blaze && docker compose logs -f
 
 ## dimp-test: Run integration tests with DIMP service
 dimp-test:

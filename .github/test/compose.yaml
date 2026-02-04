@@ -7,6 +7,7 @@ include:
   - torch/compose.yaml
   - dimp/compose.yaml
   - flattener/compose.yaml
+  - blaze/compose.yaml
 
 services:
   # E2E test runner - runs aether inside the Docker network
@@ -27,3 +28,4 @@ services:
       - torch-proxy
       - fhir-pseudonymizer
       - fhir-flattener
+      - blaze-fhir

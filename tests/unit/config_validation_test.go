@@ -357,8 +357,8 @@ func TestProjectConfig_Validate(t *testing.T) {
 	}
 }
 
-// TestSendConfig_Validate tests validation of SendConfig struct
-func TestSendConfig_Validate(t *testing.T) {
+// TestSendConfig_TransferLoad_Validate tests validation of transfer_load mode SendConfig
+func TestSendConfig_TransferLoad_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
 		config  models.SendConfig
@@ -366,50 +366,65 @@ func TestSendConfig_Validate(t *testing.T) {
 		errMsg  string
 	}{
 		{
-			name: "Valid config",
+			name: "Valid transfer_load config",
 			config: models.SendConfig{
-				ServerURL:              "https://fhir.example.com/fhir",
-				ProjectIdentifier:      "TEST-PROJECT",
-				OrganizationIdentifier: "test.org",
+				URL:    "https://fhir.example.com/fhir",
+				SendAs: models.SendModeTransferLoad,
+				Transfer: models.TransferConfig{
+					ProjectIdentifier:      "TEST-PROJECT",
+					OrganizationIdentifier: "test.org",
+				},
 			},
 			wantErr: false,
 		},
 		{
-			name: "Missing server_url",
+			name: "Missing URL",
 			config: models.SendConfig{
-				ServerURL:              "",
-				ProjectIdentifier:      "TEST-PROJECT",
-				OrganizationIdentifier: "test.org",
+				URL:    "",
+				SendAs: models.SendModeTransferLoad,
+				Transfer: models.TransferConfig{
+					ProjectIdentifier:      "TEST-PROJECT",
+					OrganizationIdentifier: "test.org",
+				},
 			},
 			wantErr: true,
-			errMsg:  "server_url is required",
+			errMsg:  "url is required",
 		},
 		{
-			name: "Invalid server_url - malformed",
+			name: "Invalid URL - malformed",
 			config: models.SendConfig{
-				ServerURL:              "://not-a-valid-url",
-				ProjectIdentifier:      "TEST-PROJECT",
-				OrganizationIdentifier: "test.org",
+				URL:    "://not-a-valid-url",
+				SendAs: models.SendModeTransferLoad,
+				Transfer: models.TransferConfig{
+					ProjectIdentifier:      "TEST-PROJECT",
+					OrganizationIdentifier: "test.org",
+				},
 			},
 			wantErr: true,
-			errMsg:  "invalid send server_url",
+			errMsg:  "invalid send url",
 		},
 		{
-			name: "Invalid server_url - wrong scheme (ftp)",
+			name: "Invalid URL - wrong scheme (ftp)",
 			config: models.SendConfig{
-				ServerURL:              "ftp://fhir.example.com/fhir",
-				ProjectIdentifier:      "TEST-PROJECT",
-				OrganizationIdentifier: "test.org",
+				URL:    "ftp://fhir.example.com/fhir",
+				SendAs: models.SendModeTransferLoad,
+				Transfer: models.TransferConfig{
+					ProjectIdentifier:      "TEST-PROJECT",
+					OrganizationIdentifier: "test.org",
+				},
 			},
 			wantErr: true,
 			errMsg:  "must use http or https scheme",
 		},
 		{
-			name: "Invalid server_url - wrong scheme (empty)",
+			name: "Invalid URL - empty scheme",
 			config: models.SendConfig{
-				ServerURL:              "fhir.example.com/fhir",
-				ProjectIdentifier:      "TEST-PROJECT",
-				OrganizationIdentifier: "test.org",
+				URL:    "fhir.example.com/fhir",
+				SendAs: models.SendModeTransferLoad,
+				Transfer: models.TransferConfig{
+					ProjectIdentifier:      "TEST-PROJECT",
+					OrganizationIdentifier: "test.org",
+				},
 			},
 			wantErr: true,
 			errMsg:  "must use http or https scheme",
@@ -417,9 +432,12 @@ func TestSendConfig_Validate(t *testing.T) {
 		{
 			name: "Missing project_identifier",
 			config: models.SendConfig{
-				ServerURL:              "https://fhir.example.com/fhir",
-				ProjectIdentifier:      "",
-				OrganizationIdentifier: "test.org",
+				URL:    "https://fhir.example.com/fhir",
+				SendAs: models.SendModeTransferLoad,
+				Transfer: models.TransferConfig{
+					ProjectIdentifier:      "",
+					OrganizationIdentifier: "test.org",
+				},
 			},
 			wantErr: true,
 			errMsg:  "project_identifier is required",
@@ -427,19 +445,25 @@ func TestSendConfig_Validate(t *testing.T) {
 		{
 			name: "Missing organization_identifier",
 			config: models.SendConfig{
-				ServerURL:              "https://fhir.example.com/fhir",
-				ProjectIdentifier:      "TEST-PROJECT",
-				OrganizationIdentifier: "",
+				URL:    "https://fhir.example.com/fhir",
+				SendAs: models.SendModeTransferLoad,
+				Transfer: models.TransferConfig{
+					ProjectIdentifier:      "TEST-PROJECT",
+					OrganizationIdentifier: "",
+				},
 			},
 			wantErr: true,
 			errMsg:  "organization_identifier is required",
 		},
 		{
-			name: "Valid config with http scheme",
+			name: "Valid transfer_load config with http scheme",
 			config: models.SendConfig{
-				ServerURL:              "http://localhost:8080/fhir",
-				ProjectIdentifier:      "TEST-PROJECT",
-				OrganizationIdentifier: "test.org",
+				URL:    "http://localhost:8080/fhir",
+				SendAs: models.SendModeTransferLoad,
+				Transfer: models.TransferConfig{
+					ProjectIdentifier:      "TEST-PROJECT",
+					OrganizationIdentifier: "test.org",
+				},
 			},
 			wantErr: false,
 		},
@@ -459,7 +483,259 @@ func TestSendConfig_Validate(t *testing.T) {
 	}
 }
 
-// TestProjectConfig_Validate_SendStep tests validation of ProjectConfig with send step
+// TestSendConfig_DirectResourceLoad_Validate tests validation of direct_resource_load mode SendConfig
+func TestSendConfig_DirectResourceLoad_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  models.SendConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "Valid direct_resource_load config",
+			config: models.SendConfig{
+				URL:       "https://fhir.example.com",
+				SendAs:    models.SendModeDirectResourceLoad,
+				BatchSize: 100,
+			},
+			wantErr: false,
+		},
+		{
+			name: "Valid direct_resource_load config with auth",
+			config: models.SendConfig{
+				URL:       "http://localhost:8080/fhir",
+				SendAs:    models.SendModeDirectResourceLoad,
+				BatchSize: 50,
+				Auth: models.AuthConfig{
+					Username: "user",
+					Password: "pass",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Invalid URL - malformed",
+			config: models.SendConfig{
+				URL:       "://not-a-valid-url",
+				SendAs:    models.SendModeDirectResourceLoad,
+				BatchSize: 100,
+			},
+			wantErr: true,
+			errMsg:  "invalid send url",
+		},
+		{
+			name: "Invalid URL - wrong scheme (ftp)",
+			config: models.SendConfig{
+				URL:       "ftp://fhir.example.com",
+				SendAs:    models.SendModeDirectResourceLoad,
+				BatchSize: 100,
+			},
+			wantErr: true,
+			errMsg:  "must use http or https scheme",
+		},
+		{
+			name: "Invalid URL - empty scheme",
+			config: models.SendConfig{
+				URL:       "fhir.example.com",
+				SendAs:    models.SendModeDirectResourceLoad,
+				BatchSize: 100,
+			},
+			wantErr: true,
+			errMsg:  "must use http or https scheme",
+		},
+		{
+			name: "Invalid batch_size - negative",
+			config: models.SendConfig{
+				URL:       "https://fhir.example.com",
+				SendAs:    models.SendModeDirectResourceLoad,
+				BatchSize: -1,
+			},
+			wantErr: true,
+			errMsg:  "batch_size must be >= 0",
+		},
+		{
+			name: "Invalid batch_size - too large",
+			config: models.SendConfig{
+				URL:       "https://fhir.example.com",
+				SendAs:    models.SendModeDirectResourceLoad,
+				BatchSize: 1001,
+			},
+			wantErr: true,
+			errMsg:  "batch_size must be <= 1000",
+		},
+		{
+			name: "Valid batch_size at maximum",
+			config: models.SendConfig{
+				URL:       "https://fhir.example.com",
+				SendAs:    models.SendModeDirectResourceLoad,
+				BatchSize: 1000,
+			},
+			wantErr: false,
+		},
+		{
+			name: "Valid batch_size zero (uses default)",
+			config: models.SendConfig{
+				URL:       "https://fhir.example.com",
+				SendAs:    models.SendModeDirectResourceLoad,
+				BatchSize: 0,
+			},
+			wantErr: false,
+		},
+		{
+			name: "Missing send_as mode",
+			config: models.SendConfig{
+				URL: "https://fhir.example.com",
+			},
+			wantErr: true,
+			errMsg:  "send_as is required",
+		},
+		{
+			name: "Invalid send_as mode",
+			config: models.SendConfig{
+				URL:    "https://fhir.example.com",
+				SendAs: "invalid_mode",
+			},
+			wantErr: true,
+			errMsg:  "invalid send send_as",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestSendConfig_GetAuthType tests the GetAuthType method
+func TestSendConfig_GetAuthType(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   models.SendConfig
+		expected models.SendAuthType
+	}{
+		{
+			name:     "Empty config returns None",
+			config:   models.SendConfig{},
+			expected: models.SendAuthNone,
+		},
+		{
+			name: "Basic Auth configured",
+			config: models.SendConfig{
+				URL:    "https://example.com",
+				SendAs: models.SendModeDirectResourceLoad,
+				Auth: models.AuthConfig{
+					Username: "user",
+					Password: "pass",
+				},
+			},
+			expected: models.SendAuthBasic,
+		},
+		{
+			name: "OAuth2 configured",
+			config: models.SendConfig{
+				URL:    "https://example.com",
+				SendAs: models.SendModeDirectResourceLoad,
+				Auth: models.AuthConfig{
+					OAuthIssuerURI:    "https://auth.example.com",
+					OAuthClientID:     "client",
+					OAuthClientSecret: "secret",
+				},
+			},
+			expected: models.SendAuthOAuth2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.config.GetAuthType()
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// TestSendConfig_IsConfigured tests the IsConfigured method
+func TestSendConfig_IsConfigured(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   models.SendConfig
+		expected bool
+	}{
+		{
+			name:     "Empty config - not configured",
+			config:   models.SendConfig{},
+			expected: false,
+		},
+		{
+			name: "URL set - configured",
+			config: models.SendConfig{
+				URL:    "https://fhir.example.com",
+				SendAs: models.SendModeTransferLoad,
+			},
+			expected: true,
+		},
+		{
+			name: "URL empty - not configured",
+			config: models.SendConfig{
+				URL:    "",
+				SendAs: models.SendModeDirectResourceLoad,
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.config.IsConfigured()
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// TestSendConfig_GetBatchSize tests the GetBatchSize method
+func TestSendConfig_GetBatchSize(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   models.SendConfig
+		expected int
+	}{
+		{
+			name:     "Zero batch size returns default (100)",
+			config:   models.SendConfig{BatchSize: 0},
+			expected: 100,
+		},
+		{
+			name:     "Negative batch size returns default (100)",
+			config:   models.SendConfig{BatchSize: -5},
+			expected: 100,
+		},
+		{
+			name:     "Positive batch size is returned",
+			config:   models.SendConfig{BatchSize: 50},
+			expected: 50,
+		},
+		{
+			name:     "Maximum batch size",
+			config:   models.SendConfig{BatchSize: 1000},
+			expected: 1000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.config.GetBatchSize()
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestProjectConfig_Validate_SendStep(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -468,16 +744,19 @@ func TestProjectConfig_Validate_SendStep(t *testing.T) {
 		errMsg  string
 	}{
 		{
-			name: "Valid config with send step",
+			name: "Valid config with send step (transfer_load)",
 			config: models.ProjectConfig{
 				Pipeline: models.PipelineConfig{
 					EnabledSteps: []models.StepName{models.StepLocalImport, models.StepSend},
 				},
 				Services: models.ServiceConfig{
 					Send: models.SendConfig{
-						ServerURL:              "https://fhir.example.com/fhir",
-						ProjectIdentifier:      "TEST-PROJECT",
-						OrganizationIdentifier: "test.org",
+						URL:    "https://fhir.example.com/fhir",
+						SendAs: models.SendModeTransferLoad,
+						Transfer: models.TransferConfig{
+							ProjectIdentifier:      "TEST-PROJECT",
+							OrganizationIdentifier: "test.org",
+						},
 					},
 				},
 				Retry: models.RetryConfig{
@@ -490,16 +769,19 @@ func TestProjectConfig_Validate_SendStep(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "Send step enabled but missing server_url",
+			name: "Send step enabled but missing url",
 			config: models.ProjectConfig{
 				Pipeline: models.PipelineConfig{
 					EnabledSteps: []models.StepName{models.StepLocalImport, models.StepSend},
 				},
 				Services: models.ServiceConfig{
 					Send: models.SendConfig{
-						ServerURL:              "",
-						ProjectIdentifier:      "TEST-PROJECT",
-						OrganizationIdentifier: "test.org",
+						URL:    "",
+						SendAs: models.SendModeTransferLoad,
+						Transfer: models.TransferConfig{
+							ProjectIdentifier:      "TEST-PROJECT",
+							OrganizationIdentifier: "test.org",
+						},
 					},
 				},
 				Retry: models.RetryConfig{
@@ -520,9 +802,12 @@ func TestProjectConfig_Validate_SendStep(t *testing.T) {
 				},
 				Services: models.ServiceConfig{
 					Send: models.SendConfig{
-						ServerURL:              "https://fhir.example.com/fhir",
-						ProjectIdentifier:      "",
-						OrganizationIdentifier: "test.org",
+						URL:    "https://fhir.example.com/fhir",
+						SendAs: models.SendModeTransferLoad,
+						Transfer: models.TransferConfig{
+							ProjectIdentifier:      "",
+							OrganizationIdentifier: "test.org",
+						},
 					},
 				},
 				Retry: models.RetryConfig{
@@ -543,9 +828,12 @@ func TestProjectConfig_Validate_SendStep(t *testing.T) {
 				},
 				Services: models.ServiceConfig{
 					Send: models.SendConfig{
-						ServerURL:              "https://fhir.example.com/fhir",
-						ProjectIdentifier:      "TEST-PROJECT",
-						OrganizationIdentifier: "",
+						URL:    "https://fhir.example.com/fhir",
+						SendAs: models.SendModeTransferLoad,
+						Transfer: models.TransferConfig{
+							ProjectIdentifier:      "TEST-PROJECT",
+							OrganizationIdentifier: "",
+						},
 					},
 				},
 				Retry: models.RetryConfig{
@@ -566,9 +854,12 @@ func TestProjectConfig_Validate_SendStep(t *testing.T) {
 				},
 				Services: models.ServiceConfig{
 					Send: models.SendConfig{
-						ServerURL:              "ftp://fhir.example.com/fhir",
-						ProjectIdentifier:      "TEST-PROJECT",
-						OrganizationIdentifier: "test.org",
+						URL:    "ftp://fhir.example.com/fhir",
+						SendAs: models.SendModeTransferLoad,
+						Transfer: models.TransferConfig{
+							ProjectIdentifier:      "TEST-PROJECT",
+							OrganizationIdentifier: "test.org",
+						},
 					},
 				},
 				Retry: models.RetryConfig{

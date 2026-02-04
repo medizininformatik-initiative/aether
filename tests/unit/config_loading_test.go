@@ -835,9 +835,12 @@ func TestGetServiceURL(t *testing.T) {
 				ServiceURL: "http://flattener.example.com:8000",
 			},
 			Send: models.SendConfig{
-				ServerURL:              "http://fhir.example.com:8080/fhir",
-				ProjectIdentifier:      "TEST-PROJECT",
-				OrganizationIdentifier: "test.org",
+				URL:    "http://fhir.example.com:8080/fhir",
+				SendAs: models.SendModeTransferLoad,
+				Transfer: models.TransferConfig{
+					ProjectIdentifier:      "TEST-PROJECT",
+					OrganizationIdentifier: "test.org",
+				},
 			},
 		},
 	}
@@ -1245,9 +1248,12 @@ func TestValidateServiceConnectivity_SendServiceAvailable(t *testing.T) {
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			Send: models.SendConfig{
-				ServerURL:              sendServer.URL,
-				ProjectIdentifier:      "TEST-PROJECT",
-				OrganizationIdentifier: "test.org",
+				URL:    sendServer.URL,
+				SendAs: models.SendModeTransferLoad,
+				Transfer: models.TransferConfig{
+					ProjectIdentifier:      "TEST-PROJECT",
+					OrganizationIdentifier: "test.org",
+				},
 			},
 		},
 		Pipeline: models.PipelineConfig{
@@ -1274,9 +1280,12 @@ func TestValidateServiceConnectivity_SendServiceUnreachable(t *testing.T) {
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			Send: models.SendConfig{
-				ServerURL:              "http://localhost:59998", // Unreachable
-				ProjectIdentifier:      "TEST-PROJECT",
-				OrganizationIdentifier: "test.org",
+				URL:    "http://localhost:59998", // Unreachable
+				SendAs: models.SendModeTransferLoad,
+				Transfer: models.TransferConfig{
+					ProjectIdentifier:      "TEST-PROJECT",
+					OrganizationIdentifier: "test.org",
+				},
 			},
 		},
 		Pipeline: models.PipelineConfig{
@@ -1296,7 +1305,7 @@ func TestValidateServiceConnectivity_SendServiceUnreachable(t *testing.T) {
 	// ValidateServiceConnectivity should fail when Send service is unreachable
 	err := config.ValidateServiceConnectivity()
 	assert.Error(t, err, "Should fail when Send service is unreachable")
-	assert.Contains(t, err.Error(), "Send (FHIR transfer server)")
+	assert.Contains(t, err.Error(), "Send")
 }
 
 // TestConfigLoading_BundleSplitThreshold verifies bundle_split_threshold_mb is loaded correctly
@@ -1520,9 +1529,11 @@ func TestConfigLoading_SendConfig(t *testing.T) {
 	configContent := `
 services:
   send:
-    server_url: "` + mockServer.URL + `"
-    project_identifier: "MII-TEST-PROJECT"
-    organization_identifier: "test.hospital.de"
+    url: "` + mockServer.URL + `"
+    send_as: "transfer_load"
+    transfer:
+      project_identifier: "MII-TEST-PROJECT"
+      organization_identifier: "test.hospital.de"
 
 pipeline:
   enabled_steps:
@@ -1542,9 +1553,9 @@ jobs_dir: "` + jobsDir + `"
 	config, err := services.LoadConfig(configFile)
 	require.NoError(t, err, "Config should load without error")
 
-	assert.Equal(t, mockServer.URL, config.Services.Send.ServerURL)
-	assert.Equal(t, "MII-TEST-PROJECT", config.Services.Send.ProjectIdentifier)
-	assert.Equal(t, "test.hospital.de", config.Services.Send.OrganizationIdentifier)
+	assert.Equal(t, mockServer.URL, config.Services.Send.URL)
+	assert.Equal(t, "MII-TEST-PROJECT", config.Services.Send.Transfer.ProjectIdentifier)
+	assert.Equal(t, "test.hospital.de", config.Services.Send.Transfer.OrganizationIdentifier)
 
 	// Verify send step is in enabled steps
 	assert.Contains(t, config.Pipeline.EnabledSteps, models.StepSend)
@@ -1565,11 +1576,14 @@ func TestConfigLoading_SendConfigWithBasicAuth(t *testing.T) {
 	configContent := `
 services:
   send:
-    server_url: "` + mockServer.URL + `"
-    project_identifier: "MII-TEST-PROJECT"
-    organization_identifier: "test.hospital.de"
-    username: "testuser"
-    password: "testpass"
+    url: "` + mockServer.URL + `"
+    send_as: "transfer_load"
+    auth:
+      username: "testuser"
+      password: "testpass"
+    transfer:
+      project_identifier: "MII-TEST-PROJECT"
+      organization_identifier: "test.hospital.de"
 
 pipeline:
   enabled_steps:
@@ -1589,8 +1603,8 @@ jobs_dir: "` + jobsDir + `"
 	config, err := services.LoadConfig(configFile)
 	require.NoError(t, err, "Config should load without error")
 
-	assert.Equal(t, "testuser", config.Services.Send.Username)
-	assert.Equal(t, "testpass", config.Services.Send.Password)
+	assert.Equal(t, "testuser", config.Services.Send.Auth.Username)
+	assert.Equal(t, "testpass", config.Services.Send.Auth.Password)
 	assert.Equal(t, models.SendAuthBasic, config.Services.Send.GetAuthType())
 }
 
@@ -1609,12 +1623,15 @@ func TestConfigLoading_SendConfigWithOAuth2(t *testing.T) {
 	configContent := `
 services:
   send:
-    server_url: "` + mockServer.URL + `"
-    project_identifier: "MII-TEST-PROJECT"
-    organization_identifier: "test.hospital.de"
-    oauth_issuer_uri: "https://auth.example.com/realms/test"
-    oauth_client_id: "my-client"
-    oauth_client_secret: "my-secret"
+    url: "` + mockServer.URL + `"
+    send_as: "transfer_load"
+    auth:
+      oauth_issuer_uri: "https://auth.example.com/realms/test"
+      oauth_client_id: "my-client"
+      oauth_client_secret: "my-secret"
+    transfer:
+      project_identifier: "MII-TEST-PROJECT"
+      organization_identifier: "test.hospital.de"
 
 pipeline:
   enabled_steps:
@@ -1634,9 +1651,9 @@ jobs_dir: "` + jobsDir + `"
 	config, err := services.LoadConfig(configFile)
 	require.NoError(t, err, "Config should load without error")
 
-	assert.Equal(t, "https://auth.example.com/realms/test", config.Services.Send.OAuthIssuerURI)
-	assert.Equal(t, "my-client", config.Services.Send.OAuthClientID)
-	assert.Equal(t, "my-secret", config.Services.Send.OAuthClientSecret)
+	assert.Equal(t, "https://auth.example.com/realms/test", config.Services.Send.Auth.OAuthIssuerURI)
+	assert.Equal(t, "my-client", config.Services.Send.Auth.OAuthClientID)
+	assert.Equal(t, "my-secret", config.Services.Send.Auth.OAuthClientSecret)
 	assert.Equal(t, models.SendAuthOAuth2, config.Services.Send.GetAuthType())
 }
 
@@ -1655,9 +1672,11 @@ func TestConfigLoading_SendConfigNoAuth(t *testing.T) {
 	configContent := `
 services:
   send:
-    server_url: "` + mockServer.URL + `"
-    project_identifier: "MII-TEST-PROJECT"
-    organization_identifier: "test.hospital.de"
+    url: "` + mockServer.URL + `"
+    send_as: "transfer_load"
+    transfer:
+      project_identifier: "MII-TEST-PROJECT"
+      organization_identifier: "test.hospital.de"
 
 pipeline:
   enabled_steps:
@@ -1677,23 +1696,28 @@ jobs_dir: "` + jobsDir + `"
 	config, err := services.LoadConfig(configFile)
 	require.NoError(t, err, "Config should load without error")
 
-	assert.Empty(t, config.Services.Send.Username)
-	assert.Empty(t, config.Services.Send.Password)
-	assert.Empty(t, config.Services.Send.OAuthIssuerURI)
+	assert.Empty(t, config.Services.Send.Auth.Username)
+	assert.Empty(t, config.Services.Send.Auth.Password)
+	assert.Empty(t, config.Services.Send.Auth.OAuthIssuerURI)
 	assert.Equal(t, models.SendAuthNone, config.Services.Send.GetAuthType())
 }
 
 // TestSendConfig_ValidateMixedAuth verifies that mixing Basic Auth and OAuth2 is rejected
 func TestSendConfig_ValidateMixedAuth(t *testing.T) {
 	config := models.SendConfig{
-		ServerURL:              "https://example.com/fhir",
-		ProjectIdentifier:      "TEST",
-		OrganizationIdentifier: "test.org",
-		Username:               "user",
-		Password:               "pass",
-		OAuthIssuerURI:         "https://auth.example.com",
-		OAuthClientID:          "client",
-		OAuthClientSecret:      "secret",
+		URL:    "https://example.com/fhir",
+		SendAs: models.SendModeTransferLoad,
+		Auth: models.AuthConfig{
+			Username:          "user",
+			Password:          "pass",
+			OAuthIssuerURI:    "https://auth.example.com",
+			OAuthClientID:     "client",
+			OAuthClientSecret: "secret",
+		},
+		Transfer: models.TransferConfig{
+			ProjectIdentifier:      "TEST",
+			OrganizationIdentifier: "test.org",
+		},
 	}
 
 	err := config.Validate()
@@ -1726,11 +1750,16 @@ func TestSendConfig_ValidateIncompleteBasicAuth(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := models.SendConfig{
-				ServerURL:              "https://example.com/fhir",
-				ProjectIdentifier:      "TEST",
-				OrganizationIdentifier: "test.org",
-				Username:               tt.username,
-				Password:               tt.password,
+				URL:    "https://example.com/fhir",
+				SendAs: models.SendModeTransferLoad,
+				Auth: models.AuthConfig{
+					Username: tt.username,
+					Password: tt.password,
+				},
+				Transfer: models.TransferConfig{
+					ProjectIdentifier:      "TEST",
+					OrganizationIdentifier: "test.org",
+				},
 			}
 
 			err := config.Validate()
@@ -1775,12 +1804,17 @@ func TestSendConfig_ValidateIncompleteOAuth2(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := models.SendConfig{
-				ServerURL:              "https://example.com/fhir",
-				ProjectIdentifier:      "TEST",
-				OrganizationIdentifier: "test.org",
-				OAuthIssuerURI:         tt.issuerURI,
-				OAuthClientID:          tt.clientID,
-				OAuthClientSecret:      tt.clientSecret,
+				URL:    "https://example.com/fhir",
+				SendAs: models.SendModeTransferLoad,
+				Auth: models.AuthConfig{
+					OAuthIssuerURI:    tt.issuerURI,
+					OAuthClientID:     tt.clientID,
+					OAuthClientSecret: tt.clientSecret,
+				},
+				Transfer: models.TransferConfig{
+					ProjectIdentifier:      "TEST",
+					OrganizationIdentifier: "test.org",
+				},
 			}
 
 			err := config.Validate()

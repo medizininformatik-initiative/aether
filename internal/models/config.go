@@ -71,81 +71,140 @@ type TORCHConfig struct {
 	MaxPollingIntervalSeconds int    `yaml:"max_polling_interval_seconds" json:"max_polling_interval_seconds"`
 }
 
-// SendConfig contains DSF transfer server settings for the send step
-type SendConfig struct {
-	ServerURL              string `yaml:"server_url" json:"server_url" mapstructure:"server_url"`
-	ProjectIdentifier      string `yaml:"project_identifier" json:"project_identifier" mapstructure:"project_identifier"`
-	OrganizationIdentifier string `yaml:"organization_identifier" json:"organization_identifier" mapstructure:"organization_identifier"`
-	// Authentication - Basic Auth (optional)
+// SendMode defines the mode for sending data
+type SendMode string
+
+const (
+	// SendModeDirectResourceLoad sends NDJSON directly to a FHIR server using transaction bundles
+	SendModeDirectResourceLoad SendMode = "direct_resource_load"
+	// SendModeTransferLoad prepares and sends to a transfer FHIR server using Binary/DocumentReference
+	SendModeTransferLoad SendMode = "transfer_load"
+)
+
+// AuthConfig holds unified authentication settings for send step
+type AuthConfig struct {
+	// Basic Auth
 	Username string `yaml:"username" json:"username" mapstructure:"username"`
 	Password string `yaml:"password" json:"password" mapstructure:"password"`
-	// Authentication - OAuth2 Client Credentials (optional)
+	// OAuth2 Client Credentials
 	OAuthIssuerURI    string `yaml:"oauth_issuer_uri" json:"oauth_issuer_uri" mapstructure:"oauth_issuer_uri"`
 	OAuthClientID     string `yaml:"oauth_client_id" json:"oauth_client_id" mapstructure:"oauth_client_id"`
 	OAuthClientSecret string `yaml:"oauth_client_secret" json:"oauth_client_secret" mapstructure:"oauth_client_secret"`
 }
 
+// TransferConfig holds settings specific to transfer_load mode
+type TransferConfig struct {
+	ProjectIdentifier      string `yaml:"project_identifier" json:"project_identifier" mapstructure:"project_identifier"`
+	OrganizationIdentifier string `yaml:"organization_identifier" json:"organization_identifier" mapstructure:"organization_identifier"`
+}
+
+// SendConfig contains settings for the send step
+type SendConfig struct {
+	// URL is the FHIR server base URL (required)
+	URL string `yaml:"url" json:"url" mapstructure:"url"`
+	// SendAs determines the send mode: "direct_resource_load" or "transfer_load"
+	SendAs SendMode `yaml:"send_as" json:"send_as" mapstructure:"send_as"`
+	// BatchSize is the number of resources per transaction bundle (only for direct_resource_load, default: 100)
+	BatchSize int `yaml:"batch_size" json:"batch_size" mapstructure:"batch_size"`
+	// Auth holds authentication settings (unified for all modes)
+	Auth AuthConfig `yaml:"auth" json:"auth" mapstructure:"auth"`
+	// Transfer holds settings specific to transfer_load mode
+	Transfer TransferConfig `yaml:"transfer" json:"transfer" mapstructure:"transfer"`
+}
+
 // Validate checks if SendConfig has all required fields
 func (c *SendConfig) Validate() error {
-	if c.ServerURL == "" {
-		return fmt.Errorf("send server_url is required")
+	if c.URL == "" {
+		return fmt.Errorf("send url is required")
 	}
 
-	parsedURL, err := url.Parse(c.ServerURL)
+	parsedURL, err := url.Parse(c.URL)
 	if err != nil {
-		return fmt.Errorf("invalid send server_url: %w", err)
+		return fmt.Errorf("invalid send url: %w", err)
 	}
 
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("invalid send server_url: must use http or https scheme, got '%s'", parsedURL.Scheme)
+		return fmt.Errorf("invalid send url: must use http or https scheme, got '%s'", parsedURL.Scheme)
 	}
 
-	if c.ProjectIdentifier == "" {
-		return fmt.Errorf("send project_identifier is required")
+	// Validate send_as mode
+	if c.SendAs == "" {
+		return fmt.Errorf("send send_as is required (must be 'direct_resource_load' or 'transfer_load')")
 	}
 
-	if c.OrganizationIdentifier == "" {
-		return fmt.Errorf("send organization_identifier is required")
+	if c.SendAs != SendModeDirectResourceLoad && c.SendAs != SendModeTransferLoad {
+		return fmt.Errorf("invalid send send_as: must be 'direct_resource_load' or 'transfer_load', got '%s'", c.SendAs)
 	}
 
-	// Validate authentication configuration
-	if err := c.validateAuth(); err != nil {
-		return err
+	// Mode-specific validation
+	switch c.SendAs {
+	case SendModeDirectResourceLoad:
+		return c.validateDirectResourceLoad()
+	case SendModeTransferLoad:
+		return c.validateTransferLoad()
 	}
 
 	return nil
 }
 
+// validateDirectResourceLoad validates direct_resource_load mode settings
+func (c *SendConfig) validateDirectResourceLoad() error {
+	if c.BatchSize < 0 {
+		return fmt.Errorf("send batch_size must be >= 0, got %d", c.BatchSize)
+	}
+
+	if c.BatchSize > 1000 {
+		return fmt.Errorf("send batch_size must be <= 1000 (FHIR server limit), got %d", c.BatchSize)
+	}
+
+	// Validate auth
+	return c.validateAuth()
+}
+
+// validateTransferLoad validates transfer_load mode settings
+func (c *SendConfig) validateTransferLoad() error {
+	if c.Transfer.ProjectIdentifier == "" {
+		return fmt.Errorf("send transfer.project_identifier is required for transfer_load mode")
+	}
+
+	if c.Transfer.OrganizationIdentifier == "" {
+		return fmt.Errorf("send transfer.organization_identifier is required for transfer_load mode")
+	}
+
+	// Validate auth
+	return c.validateAuth()
+}
+
 // validateAuth checks that authentication configuration is consistent
 func (c *SendConfig) validateAuth() error {
-	hasBasicAuth := c.Username != "" || c.Password != ""
-	hasOAuth2 := c.OAuthIssuerURI != "" || c.OAuthClientID != "" || c.OAuthClientSecret != ""
+	hasBasicAuth := c.Auth.Username != "" || c.Auth.Password != ""
+	hasOAuth2 := c.Auth.OAuthIssuerURI != "" || c.Auth.OAuthClientID != "" || c.Auth.OAuthClientSecret != ""
 
 	// Cannot mix both auth methods
 	if hasBasicAuth && hasOAuth2 {
-		return fmt.Errorf("send: cannot configure both basic auth and OAuth2; use one or the other")
+		return fmt.Errorf("send auth: cannot configure both basic auth and OAuth2; use one or the other")
 	}
 
 	// If using Basic Auth, both username and password must be set
 	if hasBasicAuth {
-		if c.Username == "" {
-			return fmt.Errorf("send: username is required when using basic auth")
+		if c.Auth.Username == "" {
+			return fmt.Errorf("send auth: username is required when using basic auth")
 		}
-		if c.Password == "" {
-			return fmt.Errorf("send: password is required when using basic auth")
+		if c.Auth.Password == "" {
+			return fmt.Errorf("send auth: password is required when using basic auth")
 		}
 	}
 
 	// If using OAuth2, all three fields must be set
 	if hasOAuth2 {
-		if c.OAuthIssuerURI == "" {
-			return fmt.Errorf("send: oauth_issuer_uri is required when using OAuth2")
+		if c.Auth.OAuthIssuerURI == "" {
+			return fmt.Errorf("send auth: oauth_issuer_uri is required when using OAuth2")
 		}
-		if c.OAuthClientID == "" {
-			return fmt.Errorf("send: oauth_client_id is required when using OAuth2")
+		if c.Auth.OAuthClientID == "" {
+			return fmt.Errorf("send auth: oauth_client_id is required when using OAuth2")
 		}
-		if c.OAuthClientSecret == "" {
-			return fmt.Errorf("send: oauth_client_secret is required when using OAuth2")
+		if c.Auth.OAuthClientSecret == "" {
+			return fmt.Errorf("send auth: oauth_client_secret is required when using OAuth2")
 		}
 	}
 
@@ -166,13 +225,26 @@ const (
 
 // GetAuthType returns the authentication type based on configuration
 func (c *SendConfig) GetAuthType() SendAuthType {
-	if c.Username != "" && c.Password != "" {
+	if c.Auth.Username != "" && c.Auth.Password != "" {
 		return SendAuthBasic
 	}
-	if c.OAuthIssuerURI != "" && c.OAuthClientID != "" && c.OAuthClientSecret != "" {
+	if c.Auth.OAuthIssuerURI != "" && c.Auth.OAuthClientID != "" && c.Auth.OAuthClientSecret != "" {
 		return SendAuthOAuth2
 	}
 	return SendAuthNone
+}
+
+// IsConfigured returns true if the send step has minimum configuration
+func (c *SendConfig) IsConfigured() bool {
+	return c.URL != ""
+}
+
+// GetBatchSize returns the batch size for direct_resource_load mode, with a default of 100
+func (c *SendConfig) GetBatchSize() int {
+	if c.BatchSize <= 0 {
+		return 100 // default
+	}
+	return c.BatchSize
 }
 
 // PipelineConfig defines which steps are enabled and their execution order
@@ -294,7 +366,7 @@ func (c *ServiceConfig) HasServiceURL(step StepName) bool {
 	case StepFlattening:
 		return c.Flattening.ServiceURL != ""
 	case StepSend:
-		return c.Send.ServerURL != ""
+		return c.Send.IsConfigured()
 	default:
 		return true // Import and validation don't require external services
 	}
@@ -312,7 +384,7 @@ func (c *ServiceConfig) GetServiceURL(step StepName) string {
 	case StepFlattening:
 		return c.Flattening.ServiceURL
 	case StepSend:
-		return c.Send.ServerURL
+		return c.Send.URL
 	default:
 		return ""
 	}

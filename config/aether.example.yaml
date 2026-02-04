@@ -67,33 +67,43 @@ services:
     # Default: 30m (30 minutes)
     timeout: 30m
 
-  # DSF Transfer Server (send step)
-  # Prepares and sends FHIR Binary + DocumentReference resources to a FHIR transfer server
-  # for DSF-based data transfer. Each pipeline output file is zipped, base64-encoded,
-  # and wrapped in a Binary resource. A DocumentReference links all Binary resources.
-  # Leave server_url empty to skip the send step.
+  # Send Step Configuration
+  # Supports two modes determined by the 'send_as' setting:
+  # - direct_resource_load: Sends NDJSON directly to a FHIR server using transaction bundles
+  # - transfer_load: Prepares and sends to a transfer FHIR server using Binary/DocumentReference
   send:
-    # FHIR transfer server URL (must accept transaction Bundles)
-    server_url: "https://dsf-transfer.example.com/fhir"
+    # Send mode (required)
+    # - "direct_resource_load": Upload FHIR resources directly to a FHIR server
+    # - "transfer_load": Package files for DSF-based transfer (Binary/DocumentReference)
+    send_as: "transfer_load"
 
-    # MII project identifier (used in DocumentReference.masterIdentifier)
-    project_identifier: "MII-PROJECT"
+    # FHIR server base URL (required)
+    url: "https://fhir-server.example.com/fhir"
 
-    # DSF organization identifier (used in DocumentReference.author)
-    organization_identifier: "your-org.example.de"
+    # Number of resources per transaction bundle (only for direct_resource_load mode)
+    # Default: 100, Max: 1000
+    batch_size: 100
 
-    # Authentication (optional) - choose ONE method or leave both empty for no auth
-    #
-    # Option 1: Basic Auth
-    # Use environment variables to avoid storing credentials in config files:
-    # username: "${FHIR_USER}"
-    # password: "${FHIR_PASSWORD}"
-    #
-    # Option 2: OAuth2 Client Credentials (Keycloak-compatible)
-    # Use environment variables to avoid storing credentials in config files:
-    # oauth_issuer_uri: "${FHIR_OAUTH_ISSUER_URI}"
-    # oauth_client_id: "${FHIR_OAUTH_CLIENT_ID}"
-    # oauth_client_secret: "${FHIR_OAUTH_CLIENT_SECRET}"
+    # Authentication (optional) - choose ONE method or leave both empty
+    auth:
+      # Option 1: Basic Auth
+      # Use environment variables to avoid storing credentials in config files:
+      # username: "${FHIR_USER}"
+      # password: "${FHIR_PASSWORD}"
+
+      # Option 2: OAuth2 Client Credentials (Keycloak-compatible)
+      # Use environment variables to avoid storing credentials in config files:
+      # oauth_issuer_uri: "${FHIR_OAUTH_ISSUER_URI}"
+      # oauth_client_id: "${FHIR_OAUTH_CLIENT_ID}"
+      # oauth_client_secret: "${FHIR_OAUTH_CLIENT_SECRET}"
+
+    # Transfer settings (only for transfer_load mode)
+    transfer:
+      # MII project identifier (used in DocumentReference.masterIdentifier)
+      project_identifier: "MII-PROJECT"
+
+      # Organization identifier (used in DocumentReference.author)
+      organization_identifier: "your-org.example.de"
 
   # Local Import Configuration
   # Default directory for local FHIR NDJSON file imports
@@ -125,9 +135,10 @@ pipeline:
   #   - DEPRECATED: directory as positional argument (shows warning)
   #
   # Send step:
-  #   Use 'send' as a final step to upload data to a DSF transfer FHIR server.
-  #   Each output file is zipped, base64-encoded, and wrapped in a FHIR Binary.
-  #   A DocumentReference links all Binaries. Everything is POSTed as a transaction Bundle.
+  #   Use 'send' as a final step to upload data to a destination server.
+  #   Mode is determined by 'services.send.send_as':
+  #   - direct_resource_load: Sends NDJSON directly to FHIR server using transaction bundles
+  #   - transfer_load: Zips files, wraps in Binary/DocumentReference, POSTs to transfer server
   #
   # Wait step:
   #   Use 'wait' to pause the pipeline for inspection or manual modification.

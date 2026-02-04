@@ -80,6 +80,7 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 	stepIndex := getStepIndexInEnabledSteps(job.Config.Pipeline.EnabledSteps, stepName)
 	inputDir := services.GetStepInputDir(jobsBaseDir, jobID, job.Config.Pipeline.EnabledSteps, stepIndex)
 	outputDir := filepath.Join(jobDir, "csv")
+	viewDefDir := filepath.Join(jobDir, "viewdefinitions")
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
@@ -123,6 +124,7 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 	flattenerClient := services.NewFlattenerClient(job.Config.Services.Flattening, logger)
 	viewDefBuilder := services.NewViewDefinitionBuilder(lookupTables)
 	csvWriter := services.NewCSVWriter(outputDir)
+	viewDefWriter := services.NewViewDefinitionWriter(viewDefDir)
 
 	attributeGroups := services.GetAttributeGroups(crtdl)
 	fmt.Printf("Processing %d attribute group(s)...\n\n", len(attributeGroups))
@@ -144,6 +146,15 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 				"error", err)
 			fmt.Printf("  ⚠ %s (skipped: %v)\n", group.Name, err)
 			continue
+		}
+
+		// Save ViewDefinition to disk for debugging/auditing (before flattener call)
+		viewDefFilename := services.BuildViewDefinitionFilename(group.Name)
+		if err := viewDefWriter.WriteViewDefinition(viewDefFilename, *viewDef); err != nil {
+			logger.Warn("Failed to save ViewDefinition, continuing",
+				"group_name", group.Name,
+				"filename", viewDefFilename,
+				"error", err)
 		}
 
 		// Filter resources by profile URL

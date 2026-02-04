@@ -756,6 +756,62 @@ func TestLoadResourcesFromFile_ScannerError(t *testing.T) {
 	assert.Len(t, result, 1)
 }
 
+// TestExecuteFlatteningStep_ViewDefinitionWriteError tests line 153-158
+// When ViewDefinition write fails, it should log warning and continue
+func TestExecuteFlatteningStep_ViewDefinitionWriteError(t *testing.T) {
+	// Skip on systems where we can't reliably test permission errors
+	if os.Getuid() == 0 {
+		t.Skip("Cannot test permission errors as root")
+	}
+
+	// Create mock flattener server that returns valid CSV data
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/fhir/ViewDefinition/$run" {
+			w.Header().Set("Content-Type", "text/csv")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("1\n"))
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	jobID := "test-viewdef-write-error"
+	jobDir := filepath.Join(tempDir, "jobs", jobID)
+	inputDir := filepath.Join(jobDir, "import")
+	viewDefDir := filepath.Join(jobDir, "viewdefinitions")
+	csvDir := filepath.Join(jobDir, "csv")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+	require.NoError(t, os.MkdirAll(csvDir, 0755))
+
+	// Create viewdefinitions as a file instead of directory to cause MkdirAll to fail
+	require.NoError(t, os.WriteFile(viewDefDir, []byte("not a directory"), 0644))
+
+	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	writeTestCRTDL(t, crtdlPath, "Patient", "https://example.com/Patient")
+
+	lookupPath := filepath.Join(tempDir, "lookup.json")
+	writeTestLookupTable(t, lookupPath, "https://example.com/Patient", "Patient")
+
+	// Create input NDJSON file with matching profile
+	ndjsonContent := `{"resourceType":"Patient","id":"1","meta":{"profile":["https://example.com/Patient"]}}`
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte(ndjsonContent), 0644))
+
+	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
+	logger := createFlatteningTestLogger()
+
+	// Should complete successfully even though ViewDefinition write fails
+	// (non-fatal error, logged as warning and continues)
+	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	require.NoError(t, err)
+
+	// Verify CSV file was created despite ViewDefinition write failure
+	csvFiles, err := filepath.Glob(filepath.Join(csvDir, "*.csv"))
+	require.NoError(t, err)
+	assert.Len(t, csvFiles, 1)
+}
+
 // TestExecuteFlatteningStep_CSVWriteError tests line 176-180
 // When CSV writing fails, the step should return an error
 func TestExecuteFlatteningStep_CSVWriteError(t *testing.T) {

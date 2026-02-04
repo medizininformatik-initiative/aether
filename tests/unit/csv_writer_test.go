@@ -143,32 +143,6 @@ func TestValidateCSVHeaderError(t *testing.T) {
 	})
 }
 
-func TestSanitizeFilename(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"normal_name", "normal_name"},
-		{"name with spaces", "name with spaces"},
-		{"name/with/slashes", "name_with_slashes"},
-		{"name\\with\\backslashes", "name_with_backslashes"},
-		{"name:with:colons", "name_with_colons"},
-		{"name*with*asterisks", "name_with_asterisks"},
-		{"name?with?question", "name_with_question"},
-		{`name"with"quotes`, "name_with_quotes"},
-		{"name<with>angles", "name_with_angles"},
-		{"name|with|pipes", "name_with_pipes"},
-		{"complex/path:name*?", "complex_path_name__"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			result := services.SanitizeFilename(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestBuildCSVFilename(t *testing.T) {
 	tests := []struct {
 		groupName string

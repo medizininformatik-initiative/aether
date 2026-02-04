@@ -81,3 +81,24 @@ compression:
 # Directory to store job state and data
 # Can be absolute or relative path
 jobs_dir: "./jobs"
+
+# CRTDL Preprocessing Configuration
+# Allows enriching CRTDL documents with additional attributes
+crtdl_preprocessing:
+  enabled: true
+  enrichments:
+    # Example: Add attributes to an existing group (no create_if_not_exists = enrich only)
+    - group_reference: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient"
+      # create_if_not_exists omitted = don't create new group, just enrich existing
+      attributes_to_add:
+        - attribute_ref: "Patient.identifier:PseudonymisierterIdentifier"
+          must_have: false
+    # Example: Create a new group if it doesn't exist
+    # - group_reference: "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung"
+    #   create_if_not_exists:
+    #     group_name: "Encounter"  # required when creating
+    #   attributes_to_add:
+    #     - attribute_ref: "Encounter.class"
+    #       must_have: false
+    #     - attribute_ref: "Encounter.status"
+    #       must_have: false

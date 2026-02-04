@@ -2,6 +2,7 @@ package lib
 
 import (
 	"os"
+	"strings"
 	"time"
 )
 
@@ -38,4 +39,20 @@ func GetFileSize(path string) int64 {
 		return 0
 	}
 	return info.Size()
+}
+
+// SanitizeFilename removes or replaces characters that are invalid in filenames
+func SanitizeFilename(name string) string {
+	replacer := strings.NewReplacer(
+		"/", "_",
+		"\\", "_",
+		":", "_",
+		"*", "_",
+		"?", "_",
+		"\"", "_",
+		"<", "_",
+		">", "_",
+		"|", "_",
+	)
+	return replacer.Replace(name)
 }

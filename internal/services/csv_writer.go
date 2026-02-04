@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
@@ -87,28 +88,9 @@ func (w *CSVWriter) WriteCSVDirect(filename string, data string) error {
 	return nil
 }
 
-// SanitizeFilename removes or replaces characters that are invalid in filenames
-func SanitizeFilename(name string) string {
-	// Replace characters that are typically problematic in filenames
-	replacer := strings.NewReplacer(
-		"/", "_",
-		"\\", "_",
-		":", "_",
-		"*", "_",
-		"?", "_",
-		"\"", "_",
-		"<", "_",
-		">", "_",
-		"|", "_",
-	)
-	return replacer.Replace(name)
-}
-
 // BuildCSVFilename creates a CSV filename from an attribute group name
 func BuildCSVFilename(groupName string) string {
-	// Sanitize the group name and add .csv extension
-	sanitized := SanitizeFilename(groupName)
-	return sanitized + ".csv"
+	return lib.SanitizeFilename(groupName) + ".csv"
 }
 
 // ExtractHeaderFromViewDefinition extracts column names from a ViewDefinition

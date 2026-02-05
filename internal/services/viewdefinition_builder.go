@@ -125,10 +125,12 @@ func (b *ViewDefinitionBuilder) buildAttributeSelect(lookup *models.LookupTable,
 func (b *ViewDefinitionBuilder) resolveWithChildren(lookup *models.LookupTable, element *models.LookupElement) []models.SelectClause {
 	// Check if element has root-level forEach/forEachOrNull
 	hasRootForEach := element.ViewDefinition.ForEach != "" || element.ViewDefinition.ForEachOrNull != ""
+	// Check if element has Column at viewDefinition level (common for leaf elements)
+	hasRootColumn := len(element.ViewDefinition.Column) > 0
 
 	if len(element.Children) == 0 {
-		// No children - convert viewDefSnippet to SelectClause if it has root forEach
-		if hasRootForEach {
+		// No children - convert viewDefSnippet to SelectClause if it has root forEach or Column
+		if hasRootForEach || hasRootColumn {
 			return []models.SelectClause{viewDefSnippetToSelectClause(element.ViewDefinition)}
 		}
 		return element.ViewDefinition.Select
@@ -282,10 +284,12 @@ func cloneSelectClause(sel models.SelectClause) models.SelectClause {
 // viewDefSnippetToSelectClause converts a ViewDefSnippet into a SelectClause.
 // This handles the case where forEach/forEachOrNull is at the viewDefinition level
 // in the lookup JSON, rather than inside a select clause.
+// Also supports Column at the viewDefinition level (for leaf elements in hierarchies).
 func viewDefSnippetToSelectClause(snippet models.ViewDefSnippet) models.SelectClause {
 	return models.SelectClause{
 		ForEach:       snippet.ForEach,
 		ForEachOrNull: snippet.ForEachOrNull,
+		Column:        snippet.Column,
 		Select:        snippet.Select,
 	}
 }

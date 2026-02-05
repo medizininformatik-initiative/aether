@@ -77,9 +77,10 @@ type LookupElement struct {
 // ViewDefSnippet represents the viewDefinition snippet within a lookup element
 // This contains partial ViewDefinition data that will be merged into the final ViewDefinition
 type ViewDefSnippet struct {
-	ForEach       string         `json:"forEach,omitempty"`       // ForEach expression at viewDefinition level
-	ForEachOrNull string         `json:"forEachOrNull,omitempty"` // ForEachOrNull expression at viewDefinition level
-	Select        []SelectClause `json:"select,omitempty"`        // Select clauses for this element
+	ForEach       string             `json:"forEach,omitempty"`       // ForEach expression at viewDefinition level
+	ForEachOrNull string             `json:"forEachOrNull,omitempty"` // ForEachOrNull expression at viewDefinition level
+	Column        []ColumnDefinition `json:"column,omitempty"`        // Column definitions at viewDefinition level (for leaf elements)
+	Select        []SelectClause     `json:"select,omitempty"`        // Select clauses for this element
 }
 
 // ViewDefinition represents a complete SQL-on-FHIR ViewDefinition

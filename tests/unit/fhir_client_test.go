@@ -824,3 +824,290 @@ func TestFHIRClient_UploadNDJSON_BytesReader(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, stats.ResourcesUploaded)
 }
+
+func TestNewFHIRClientWithParams(t *testing.T) {
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	auth := models.AuthConfig{
+		Username: "user",
+		Password: "pass",
+	}
+
+	// Test with valid batch size
+	client := services.NewFHIRClientWithParams("http://localhost:8080", 50, auth, httpClient, logger)
+	assert.NotNil(t, client)
+
+	// Test with zero batch size (should default to 100)
+	clientDefault := services.NewFHIRClientWithParams("http://localhost:8080", 0, auth, httpClient, logger)
+	assert.NotNil(t, clientDefault)
+
+	// Test with negative batch size (should default to 100)
+	clientNegative := services.NewFHIRClientWithParams("http://localhost:8080", -1, auth, httpClient, logger)
+	assert.NotNil(t, clientNegative)
+}
+
+func TestFHIRClient_UploadNDJSON_OAuth2Auth(t *testing.T) {
+	// Clear the OAuth2 cache before the test
+	services.ClearOAuth2TokenCache()
+
+	// Create a mock OAuth2 server
+	oauthServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"access_token":"test-token","token_type":"Bearer","expires_in":3600}`))
+	}))
+	defer oauthServer.Close()
+
+	var receivedAuthHeader string
+	fhirServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedAuthHeader = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer fhirServer.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	config := models.SendConfig{
+		SendAs:    models.SendModeDirectResourceLoad,
+		URL:       fhirServer.URL,
+		BatchSize: 100,
+		Auth: models.AuthConfig{
+			OAuthIssuerURI:    oauthServer.URL,
+			OAuthClientID:     "test-client",
+			OAuthClientSecret: "test-secret",
+		},
+	}
+	client := services.NewFHIRClient(config, httpClient, logger)
+
+	reader := strings.NewReader(`{"resourceType":"Patient","id":"1"}`)
+
+	_, err := client.UploadNDJSON("test.ndjson", reader)
+	require.NoError(t, err)
+	assert.Equal(t, "Bearer test-token", receivedAuthHeader)
+}
+
+func TestFHIRClient_UploadNDJSON_OAuth2AuthError(t *testing.T) {
+	// Clear the OAuth2 cache before the test
+	services.ClearOAuth2TokenCache()
+
+	// Create a mock OAuth2 server that returns an error
+	oauthServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"invalid_client"}`))
+	}))
+	defer oauthServer.Close()
+
+	fhirServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("FHIR server should not be called when OAuth2 fails")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer fhirServer.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	config := models.SendConfig{
+		SendAs:    models.SendModeDirectResourceLoad,
+		URL:       fhirServer.URL,
+		BatchSize: 100,
+		Auth: models.AuthConfig{
+			OAuthIssuerURI:    oauthServer.URL,
+			OAuthClientID:     "test-client",
+			OAuthClientSecret: "test-secret",
+		},
+	}
+	client := services.NewFHIRClient(config, httpClient, logger)
+
+	reader := strings.NewReader(`{"resourceType":"Patient","id":"1"}`)
+
+	_, err := client.UploadNDJSON("test.ndjson", reader)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "OAuth2")
+}
+
+func TestFHIRClient_UploadNDJSON_UnwrapCollectionBundle(t *testing.T) {
+	var receivedBundle map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &receivedBundle)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	config := models.SendConfig{
+		SendAs:    models.SendModeDirectResourceLoad,
+		URL:       server.URL,
+		BatchSize: 100,
+	}
+	client := services.NewFHIRClient(config, httpClient, logger)
+
+	// A collection Bundle should be unwrapped, extracting its entries
+	collectionBundle := `{"resourceType":"Bundle","type":"collection","entry":[{"resource":{"resourceType":"Patient","id":"p1"}},{"resource":{"resourceType":"Observation","id":"o1"}}]}`
+	reader := strings.NewReader(collectionBundle)
+
+	stats, err := client.UploadNDJSON("test.ndjson", reader)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.ResourcesUploaded) // Bundle counts as 1 resource read
+
+	// But the transaction bundle should contain the extracted resources
+	entries := receivedBundle["entry"].([]any)
+	assert.Len(t, entries, 2) // Two entries from the collection bundle
+
+	// Verify both resources were extracted
+	entry1 := entries[0].(map[string]any)
+	resource1 := entry1["resource"].(map[string]any)
+	assert.Equal(t, "Patient", resource1["resourceType"])
+
+	entry2 := entries[1].(map[string]any)
+	resource2 := entry2["resource"].(map[string]any)
+	assert.Equal(t, "Observation", resource2["resourceType"])
+}
+
+func TestFHIRClient_UploadNDJSON_UnwrapSearchsetBundle(t *testing.T) {
+	var receivedBundle map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &receivedBundle)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	config := models.SendConfig{
+		SendAs:    models.SendModeDirectResourceLoad,
+		URL:       server.URL,
+		BatchSize: 100,
+	}
+	client := services.NewFHIRClient(config, httpClient, logger)
+
+	// A searchset Bundle should also be unwrapped
+	searchsetBundle := `{"resourceType":"Bundle","type":"searchset","entry":[{"resource":{"resourceType":"Condition","id":"c1"}}]}`
+	reader := strings.NewReader(searchsetBundle)
+
+	stats, err := client.UploadNDJSON("test.ndjson", reader)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.ResourcesUploaded)
+
+	entries := receivedBundle["entry"].([]any)
+	assert.Len(t, entries, 1)
+
+	entry := entries[0].(map[string]any)
+	resource := entry["resource"].(map[string]any)
+	assert.Equal(t, "Condition", resource["resourceType"])
+	assert.Equal(t, "c1", resource["id"])
+}
+
+func TestFHIRClient_UploadNDJSON_UnwrapTransactionBundle(t *testing.T) {
+	var receivedBundle map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &receivedBundle)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	config := models.SendConfig{
+		SendAs:    models.SendModeDirectResourceLoad,
+		URL:       server.URL,
+		BatchSize: 100,
+	}
+	client := services.NewFHIRClient(config, httpClient, logger)
+
+	// A transaction Bundle (like TORCH outputs) should be unwrapped
+	transactionBundle := `{"resourceType":"Bundle","type":"transaction","entry":[{"resource":{"resourceType":"Patient","id":"p1"}},{"resource":{"resourceType":"Condition","id":"c1"}}]}`
+	reader := strings.NewReader(transactionBundle)
+
+	stats, err := client.UploadNDJSON("test.ndjson", reader)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.ResourcesUploaded) // Bundle counts as 1 resource read
+
+	// The transaction bundle should contain the extracted resources
+	entries := receivedBundle["entry"].([]any)
+	assert.Len(t, entries, 2) // Two entries from the transaction bundle
+
+	// Verify both resources were extracted
+	entry1 := entries[0].(map[string]any)
+	resource1 := entry1["resource"].(map[string]any)
+	assert.Equal(t, "Patient", resource1["resourceType"])
+
+	entry2 := entries[1].(map[string]any)
+	resource2 := entry2["resource"].(map[string]any)
+	assert.Equal(t, "Condition", resource2["resourceType"])
+}
+
+func TestFHIRClient_UploadNDJSON_DocumentBundleNotUnwrapped(t *testing.T) {
+	var receivedBundle map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &receivedBundle)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	config := models.SendConfig{
+		SendAs:    models.SendModeDirectResourceLoad,
+		URL:       server.URL,
+		BatchSize: 100,
+	}
+	client := services.NewFHIRClient(config, httpClient, logger)
+
+	// A document Bundle should NOT be unwrapped - it's treated as a single resource
+	documentBundle := `{"resourceType":"Bundle","type":"document","id":"doc1","entry":[{"resource":{"resourceType":"Composition"}}]}`
+	reader := strings.NewReader(documentBundle)
+
+	stats, err := client.UploadNDJSON("test.ndjson", reader)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.ResourcesUploaded)
+
+	entries := receivedBundle["entry"].([]any)
+	assert.Len(t, entries, 1) // Document bundle is kept as one entry
+
+	entry := entries[0].(map[string]any)
+	resource := entry["resource"].(map[string]any)
+	assert.Equal(t, "Bundle", resource["resourceType"])
+	assert.Equal(t, "document", resource["type"])
+}
+
+func TestFHIRClient_UploadNDJSON_CollectionBundleWithEmptyEntries(t *testing.T) {
+	var receivedBundle map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &receivedBundle)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	config := models.SendConfig{
+		SendAs:    models.SendModeDirectResourceLoad,
+		URL:       server.URL,
+		BatchSize: 100,
+	}
+	client := services.NewFHIRClient(config, httpClient, logger)
+
+	// A collection Bundle with no entries - should result in empty transaction
+	emptyCollectionBundle := `{"resourceType":"Bundle","type":"collection","entry":[]}`
+	// Also include a regular resource to ensure we get a request
+	ndjsonContent := emptyCollectionBundle + "\n" + `{"resourceType":"Patient","id":"p1"}`
+	reader := strings.NewReader(ndjsonContent)
+
+	stats, err := client.UploadNDJSON("test.ndjson", reader)
+	require.NoError(t, err)
+	assert.Equal(t, 2, stats.ResourcesUploaded)
+
+	entries := receivedBundle["entry"].([]any)
+	// Only the Patient resource should be in the transaction (empty bundle has no entries to extract)
+	assert.Len(t, entries, 1)
+}

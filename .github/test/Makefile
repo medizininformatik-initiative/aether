@@ -1,7 +1,7 @@
 # Makefile for Aether Test Infrastructure
 # Located in .github/test/
 
-.PHONY: help services start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test flattener-up flattener-down flattener-logs blaze-up blaze-down blaze-logs test-with-services download-testdata upload-testdata e2e-test e2e-test-flattening clean-test-data
+.PHONY: help services start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test flattener-up flattener-down flattener-logs blaze-up blaze-down blaze-logs test-with-services download-testdata upload-testdata e2e-test e2e-test-flattening e2e-test-direct-load clean-test-data
 
 # Default target
 .DEFAULT_GOAL := help
@@ -40,6 +40,7 @@ help:
 	@echo "  upload-testdata   Upload test data to TORCH (requires services)"
 	@echo "  e2e-test          Run end-to-end test (downloads, uploads, runs pipeline)"
 	@echo "  e2e-test-flattening Run flattening E2E test with pre-staged example data"
+	@echo "  e2e-test-direct-load Run direct resource load E2E test (torch → send)"
 	@echo "  clean-test-data   Clean test data and temporary files"
 
 ## services: Alias for help
@@ -221,6 +222,19 @@ e2e-test-flattening:
 	@echo "Running flattening E2E test script..."
 	@../scripts/run-flattening-e2e-test.sh
 	@echo "✓ Flattening E2E test complete"
+
+## e2e-test-direct-load: Run direct resource load E2E test (torch → send)
+e2e-test-direct-load: download-testdata
+	@echo "Running direct resource load E2E test..."
+	@if ! docker compose ps | grep -q "Up"; then \
+		echo "Starting all services..."; \
+		docker compose up --wait; \
+	fi
+	@echo "Uploading test data..."
+	@cd .. && ./scripts/upload-testdata.sh
+	@echo "Running direct load E2E test script..."
+	../scripts/run-direct-load-e2e-test.sh
+	@echo "✓ Direct resource load E2E test complete"
 
 ## clean-test-data: Clean test data and temporary files
 clean-test-data:

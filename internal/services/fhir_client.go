@@ -126,6 +126,11 @@ func (c *FHIRClient) UploadNDJSON(filePath string, reader io.Reader) (*FHIRUploa
 func (c *FHIRClient) sendBatch(resources []json.RawMessage) error {
 	bundle := c.createTransactionBundle(resources)
 
+	// Skip sending if no entries (e.g., empty bundles were unwrapped)
+	if bundle == nil {
+		return nil
+	}
+
 	jsonData, err := json.Marshal(bundle)
 	if err != nil {
 		return fmt.Errorf("failed to marshal bundle: %w", err)
@@ -198,9 +203,10 @@ func (c *FHIRClient) addAuthHeader(req *http.Request) error {
 }
 
 // createTransactionBundle creates a FHIR transaction Bundle from raw resources.
-// It unwraps collection/searchset Bundles, extracting their entries as individual resources.
+// It unwraps collection/searchset/transaction Bundles, extracting their entries as individual resources.
+// Returns nil if there are no entries to include (e.g., empty bundles).
 func (c *FHIRClient) createTransactionBundle(resources []json.RawMessage) map[string]any {
-	var entries []map[string]any
+	entries := make([]map[string]any, 0)
 
 	for _, resourceRaw := range resources {
 		// Parse resource to get resourceType and id
@@ -219,10 +225,11 @@ func (c *FHIRClient) createTransactionBundle(resources []json.RawMessage) map[st
 
 		resourceType, _ := resource["resourceType"].(string)
 
-		// Unwrap collection/searchset Bundles - extract entries as individual resources
+		// Unwrap collection/searchset/transaction Bundles - extract entries as individual resources
+		// Transaction bundles from TORCH should be unwrapped since we create our own transaction
 		if resourceType == "Bundle" {
 			bundleType, _ := resource["type"].(string)
-			if bundleType == "collection" || bundleType == "searchset" {
+			if bundleType == "collection" || bundleType == "searchset" || bundleType == "transaction" {
 				// Extract entries from the Bundle
 				if bundleEntries, ok := resource["entry"].([]any); ok {
 					for _, entryAny := range bundleEntries {
@@ -238,8 +245,13 @@ func (c *FHIRClient) createTransactionBundle(resources []json.RawMessage) map[st
 			}
 		}
 
-		// Non-Bundle or non-unwrappable Bundle type (e.g., transaction, document)
+		// Non-Bundle or non-unwrappable Bundle type (e.g., document, message)
 		entries = append(entries, c.createEntryFromResource(resource))
+	}
+
+	// Return nil if no entries to send (e.g., empty bundles were unwrapped)
+	if len(entries) == 0 {
+		return nil
 	}
 
 	return map[string]any{

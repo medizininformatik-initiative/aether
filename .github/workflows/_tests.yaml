@@ -175,6 +175,111 @@ jobs:
         if: always()
         run: docker compose -f .github/test/compose.yaml down -v
 
+  e2e-test-direct-load:
+    name: E2E Direct Resource Load Tests
+    runs-on: ubuntu-24.04
+    needs: [detect-changes, test]
+    if: needs.detect-changes.outputs.code == 'true'
+    timeout-minutes: 20
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install Blazectl
+        env:
+          # renovate: datasource=github-release-attachments depName=samply/blazectl
+          BLAZECTL_VERSION: v1.3.0
+          BLAZECTL_CHECKSUM: 2e75ddfb9b35d0e78b5dda4d7ae4d08c45037729f5a45affd59ddb7252b75aba
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/scripts/install-blazectl.sh
+
+      - name: Download test data
+        working-directory: .github/test
+        run: ../scripts/download-testdata.sh
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pre-pull Docker images with retries
+        working-directory: .github/test
+        run: |
+          echo "Extracting image list from docker compose configuration..."
+          docker compose config --images | while read -r image; do
+            echo "Pulling $image..."
+            retry_count=0
+            max_retries=3
+            until docker pull "$image"; do
+              retry_count=$((retry_count + 1))
+              if [ $retry_count -ge $max_retries ]; then
+                echo "Failed to pull $image after $max_retries attempts"
+                exit 1
+              fi
+              echo "Retry $retry_count/$max_retries failed, waiting 10 seconds..."
+              sleep 10
+            done
+            echo "Successfully pulled $image"
+          done
+
+      - name: Start Docker services
+        working-directory: .github/test
+        run: docker compose up --wait --timeout 300
+
+      - name: Fix torch output directory permissions
+        run: |
+          docker compose -f .github/test/compose.yaml exec -T --user=root torch chown -R 1001:1001 /app/output
+
+      - name: Upload test data to torch-hds
+        working-directory: .github/test
+        run: ../scripts/upload-testdata.sh
+
+      - name: Set up Go
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
+        with:
+          go-version: '1.25.6'
+          cache: true
+
+      - name: Build aether
+        run: make build
+
+      - name: Run direct resource load E2E test
+        working-directory: .github/test
+        run: ../scripts/run-direct-load-e2e-test.sh
+
+      - name: Upload E2E job outputs
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: e2e-direct-load-outputs-${{ github.run_id }}
+          path: .github/test/jobs/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Capture service logs on failure
+        if: failure()
+        run: |
+          docker compose -f .github/test/compose.yaml logs > docker-logs-direct-load.txt
+
+      - name: Upload service logs
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: docker-logs-direct-load-${{ github.run_id }}
+          path: docker-logs-direct-load.txt
+          retention-days: 7
+
+      - name: Cleanup Docker services
+        if: always()
+        run: docker compose -f .github/test/compose.yaml down -v
+
   e2e-test-flattening:
     name: E2E Flattening Tests
     runs-on: ubuntu-24.04
@@ -251,7 +356,7 @@ jobs:
   test-status:
     name: Test Status
     runs-on: ubuntu-24.04
-    needs: [detect-changes, e2e-test, e2e-test-flattening]
+    needs: [detect-changes, e2e-test, e2e-test-direct-load, e2e-test-flattening]
     if: always()
     timeout-minutes: 5
     steps:
@@ -263,22 +368,28 @@ jobs:
       - name: Check test results
         run: |
           echo "E2E Tests Result: ${{ needs.e2e-test.result }}"
+          echo "E2E Direct Load Tests Result: ${{ needs.e2e-test-direct-load.result }}"
           echo "E2E Flattening Tests Result: ${{ needs.e2e-test-flattening.result }}"
           echo "Code Changed: ${{ needs.detect-changes.outputs.code }}"
 
-          # Pass if both e2e tests succeeded or were skipped (docs-only changes)
+          # Pass if all e2e tests succeeded or were skipped (docs-only changes)
           E2E_OK=false
+          DIRECT_OK=false
           FLAT_OK=false
 
           if [[ "${{ needs.e2e-test.result }}" == "success" ]] || [[ "${{ needs.e2e-test.result }}" == "skipped" ]]; then
             E2E_OK=true
           fi
 
+          if [[ "${{ needs.e2e-test-direct-load.result }}" == "success" ]] || [[ "${{ needs.e2e-test-direct-load.result }}" == "skipped" ]]; then
+            DIRECT_OK=true
+          fi
+
           if [[ "${{ needs.e2e-test-flattening.result }}" == "success" ]] || [[ "${{ needs.e2e-test-flattening.result }}" == "skipped" ]]; then
             FLAT_OK=true
           fi
 
-          if [[ "$E2E_OK" == "true" ]] && [[ "$FLAT_OK" == "true" ]]; then
+          if [[ "$E2E_OK" == "true" ]] && [[ "$DIRECT_OK" == "true" ]] && [[ "$FLAT_OK" == "true" ]]; then
             echo "Tests passed or were not required"
             exit 0
           else

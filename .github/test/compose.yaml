@@ -19,6 +19,7 @@ services:
     volumes:
       - ./aether.yaml:/app/aether.yaml:ro
       - ./aether-flattening.yaml:/app/aether-flattening.yaml:ro
+      - ./aether-direct-load.yaml:/app/aether-direct-load.yaml:ro
       - ./torch/queries:/app/torch/queries:ro
       - ./example-flattening:/app/example-flattening:ro
       - ./jobs:/app/jobs

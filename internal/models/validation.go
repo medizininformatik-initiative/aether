@@ -294,8 +294,8 @@ func (c *ProjectConfig) ValidateServiceConnectivity() error {
 			serviceURL = c.Services.DIMP.URL
 			serviceName = "DIMP"
 		case StepSend:
-			serviceURL = c.Services.Send.ServerURL
-			serviceName = "Send (FHIR transfer server)"
+			serviceURL = c.Services.GetServiceURL(StepSend)
+			serviceName = "Send"
 		case StepCSVConversion:
 			serviceURL = c.Services.CSVConversion.URL
 			serviceName = "CSV Conversion"

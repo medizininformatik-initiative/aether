@@ -88,16 +88,20 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 				Timeout:    viper.GetDuration("services.flattening.timeout"),
 			},
 			Send: models.SendConfig{
-				ServerURL:              ExpandEnvVars(viper.GetString("services.send.server_url")),
-				ProjectIdentifier:      ExpandEnvVars(viper.GetString("services.send.project_identifier")),
-				OrganizationIdentifier: ExpandEnvVars(viper.GetString("services.send.organization_identifier")),
-				// Basic Auth
-				Username: ExpandEnvVars(viper.GetString("services.send.username")),
-				Password: ExpandEnvVars(viper.GetString("services.send.password")),
-				// OAuth2 Client Credentials
-				OAuthIssuerURI:    ExpandEnvVars(viper.GetString("services.send.oauth_issuer_uri")),
-				OAuthClientID:     ExpandEnvVars(viper.GetString("services.send.oauth_client_id")),
-				OAuthClientSecret: ExpandEnvVars(viper.GetString("services.send.oauth_client_secret")),
+				URL:       ExpandEnvVars(viper.GetString("services.send.url")),
+				SendAs:    models.SendMode(viper.GetString("services.send.send_as")),
+				BatchSize: viper.GetInt("services.send.batch_size"),
+				Auth: models.AuthConfig{
+					Username:          ExpandEnvVars(viper.GetString("services.send.auth.username")),
+					Password:          ExpandEnvVars(viper.GetString("services.send.auth.password")),
+					OAuthIssuerURI:    ExpandEnvVars(viper.GetString("services.send.auth.oauth_issuer_uri")),
+					OAuthClientID:     ExpandEnvVars(viper.GetString("services.send.auth.oauth_client_id")),
+					OAuthClientSecret: ExpandEnvVars(viper.GetString("services.send.auth.oauth_client_secret")),
+				},
+				Transfer: models.TransferConfig{
+					ProjectIdentifier:      ExpandEnvVars(viper.GetString("services.send.transfer.project_identifier")),
+					OrganizationIdentifier: ExpandEnvVars(viper.GetString("services.send.transfer.organization_identifier")),
+				},
 			},
 			LocalImport: models.LocalImportConfig{
 				Dir: ExpandEnvVars(viper.GetString("services.local_import.dir")),
@@ -186,6 +190,10 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 		}
 		if len(config.Services.Flattening.Formats) == 0 {
 			config.Services.Flattening.Formats = []string{"csv"}
+		}
+		// Apply Send batch size default if not set
+		if config.Services.Send.BatchSize == 0 {
+			config.Services.Send.BatchSize = 100
 		}
 	}
 

@@ -9,11 +9,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,103 +20,16 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
-// oauth2TokenCache stores cached OAuth2 tokens to avoid fetching a new token for every request.
-// Thread-safe for concurrent access.
-var oauth2TokenCache = struct {
-	sync.RWMutex
-	token     string
-	expiresAt time.Time
-}{}
+// ClearOAuth2TokenCacheForTesting clears the OAuth2 token cache - exported for testing
+func ClearOAuth2TokenCacheForTesting() {
+	services.ClearOAuth2TokenCache()
+}
 
 // buildBasicAuthHeader returns the Authorization header value for Basic auth.
 func buildBasicAuthHeader(username, password string) string {
 	credentials := username + ":" + password
 	encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
 	return "Basic " + encoded
-}
-
-// oauth2TokenResponse represents the response from an OAuth2 token endpoint
-type oauth2TokenResponse struct {
-	AccessToken string `json:"access_token"`
-	ExpiresIn   int    `json:"expires_in"` // Token lifetime in seconds
-	TokenType   string `json:"token_type"`
-}
-
-// fetchOAuth2Token retrieves an access token using the OAuth2 client credentials flow.
-// Uses the Keycloak standard token endpoint: {issuer_uri}/protocol/openid-connect/token
-func fetchOAuth2Token(issuerURI, clientID, clientSecret string, httpClient *services.HTTPClient) (string, error) {
-	// Check cache first
-	oauth2TokenCache.RLock()
-	if oauth2TokenCache.token != "" && time.Now().Before(oauth2TokenCache.expiresAt) {
-		token := oauth2TokenCache.token
-		oauth2TokenCache.RUnlock()
-		return token, nil
-	}
-	oauth2TokenCache.RUnlock()
-
-	// Build token endpoint URL (Keycloak standard path)
-	tokenURL := strings.TrimSuffix(issuerURI, "/") + "/protocol/openid-connect/token"
-
-	// Build request body
-	data := url.Values{}
-	data.Set("grant_type", "client_credentials")
-	data.Set("client_id", clientID)
-	data.Set("client_secret", clientSecret)
-
-	// Create request
-	req, err := http.NewRequest("POST", tokenURL, strings.NewReader(data.Encode()))
-	if err != nil {
-		return "", fmt.Errorf("failed to create token request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	// Execute request
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("token request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("token request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var tokenResp oauth2TokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return "", fmt.Errorf("failed to parse token response: %w", err)
-	}
-
-	if tokenResp.AccessToken == "" {
-		return "", fmt.Errorf("token response missing access_token")
-	}
-
-	// Cache the token with a small buffer before expiration (30 seconds)
-	oauth2TokenCache.Lock()
-	oauth2TokenCache.token = tokenResp.AccessToken
-	if tokenResp.ExpiresIn > 30 {
-		oauth2TokenCache.expiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn-30) * time.Second)
-	} else {
-		// Token expires very soon, don't cache
-		oauth2TokenCache.expiresAt = time.Now()
-	}
-	oauth2TokenCache.Unlock()
-
-	return tokenResp.AccessToken, nil
-}
-
-// clearOAuth2TokenCache clears the cached OAuth2 token (useful for testing)
-func clearOAuth2TokenCache() {
-	oauth2TokenCache.Lock()
-	oauth2TokenCache.token = ""
-	oauth2TokenCache.expiresAt = time.Time{}
-	oauth2TokenCache.Unlock()
-}
-
-// ClearOAuth2TokenCacheForTesting clears the OAuth2 token cache - exported for testing
-func ClearOAuth2TokenCacheForTesting() {
-	clearOAuth2TokenCache()
 }
 
 // putWithAuth performs an authenticated HTTP PUT request based on the SendConfig authentication settings.
@@ -130,11 +41,10 @@ func putWithAuth(targetURL, contentType string, body []byte, config models.SendC
 	req.Header.Set("Content-Type", contentType)
 
 	// Add authentication header based on config
-	switch config.GetAuthType() {
-	case models.SendAuthBasic:
-		req.Header.Set("Authorization", buildBasicAuthHeader(config.Username, config.Password))
-	case models.SendAuthOAuth2:
-		token, err := fetchOAuth2Token(config.OAuthIssuerURI, config.OAuthClientID, config.OAuthClientSecret, httpClient)
+	if config.Auth.Username != "" && config.Auth.Password != "" {
+		req.Header.Set("Authorization", buildBasicAuthHeader(config.Auth.Username, config.Auth.Password))
+	} else if config.Auth.OAuthIssuerURI != "" && config.Auth.OAuthClientID != "" && config.Auth.OAuthClientSecret != "" {
+		token, err := services.FetchOAuth2Token(config.Auth.OAuthIssuerURI, config.Auth.OAuthClientID, config.Auth.OAuthClientSecret, httpClient)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get OAuth2 token: %w", err)
 		}
@@ -144,10 +54,10 @@ func putWithAuth(targetURL, contentType string, body []byte, config models.SendC
 	return httpClient.Do(req)
 }
 
-// ExecuteSendStep prepares and sends pipeline output to a DSF transfer FHIR server.
-// For each file in the previous step's output: zips it, base64-encodes it, and wraps it
-// in a FHIR Binary resource. Then creates a DocumentReference linking all Binaries,
-// wraps everything in a FHIR transaction Bundle, and POSTs it to the transfer server.
+// ExecuteSendStep sends pipeline output to the configured destination.
+// Supports two modes:
+// - direct_resource_load: Sends NDJSON files directly to a FHIR server using transaction bundles
+// - transfer_load: Prepares and sends to a transfer FHIR server using Binary/DocumentReference
 func ExecuteSendStep(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
 	stepName := models.StepSend
 
@@ -169,6 +79,30 @@ func ExecuteSendStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 		return err
 	}
 
+	// Route to appropriate send implementation based on send mode
+	sendMode := job.Config.Services.Send.SendAs
+
+	var err error
+	switch sendMode {
+	case models.SendModeDirectResourceLoad:
+		err = executeDirectResourceLoadSend(job, jobDir, step, logger)
+	case models.SendModeTransferLoad:
+		err = executeTransferLoadSend(job, jobDir, step, logger)
+	default:
+		err = fmt.Errorf("unknown send mode: %s", sendMode)
+		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
+		recordStepError(step, err, models.ErrorTypeNonTransient)
+	}
+
+	return err
+}
+
+// executeTransferLoadSend sends files to a transfer FHIR server.
+// For each file: zips it, base64-encodes it, and wraps it in a FHIR Binary resource.
+// Then creates a DocumentReference linking all Binaries and uploads them.
+func executeTransferLoadSend(job *models.PipelineJob, jobDir string, step *models.PipelineStep, logger *lib.Logger) error {
+	stepName := models.StepSend
+
 	// Resolve input directory from previous step
 	jobsBaseDir := filepath.Dir(jobDir)
 	jobID := filepath.Base(jobDir)
@@ -189,7 +123,7 @@ func ExecuteSendStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 		return err
 	}
 
-	fmt.Printf("Preparing %d file(s) for DSF transfer...\n\n", len(files))
+	fmt.Printf("Preparing %d file(s) for transfer...\n\n", len(files))
 
 	var binaryResources []binaryEntry
 	for _, filePath := range files {
@@ -212,7 +146,7 @@ func ExecuteSendStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 	}
 
 	sendConfig := job.Config.Services.Send
-	docRef := buildDocumentReference(binaryResources, sendConfig)
+	docRef := buildDocumentReference(binaryResources, sendConfig.Transfer)
 
 	logger.Debug("Uploading resources individually",
 		"binary_count", len(binaryResources),
@@ -247,12 +181,172 @@ func ExecuteSendStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 	completedAt := time.Now()
 	step.CompletedAt = &completedAt
 
-	logger.Debug("Send step completed",
+	logger.Debug("Transfer load send step completed",
 		"files_sent", len(files),
 		"duration", completedAt.Sub(*step.StartedAt),
 		"job_id", job.JobID)
 
 	return nil
+}
+
+// executeDirectResourceLoadSend uploads NDJSON files to a FHIR server using transaction bundles.
+// Core files (core.ndjson) are loaded first before other NDJSON files to ensure
+// base resources are created before dependent resources.
+func executeDirectResourceLoadSend(job *models.PipelineJob, jobDir string, step *models.PipelineStep, logger *lib.Logger) error {
+	stepName := models.StepSend
+
+	// Resolve input directory from previous step
+	jobsBaseDir := filepath.Dir(jobDir)
+	jobID := filepath.Base(jobDir)
+	stepIndex := getStepIndexInEnabledSteps(job.Config.Pipeline.EnabledSteps, stepName)
+	inputDir := services.GetStepInputDir(jobsBaseDir, jobID, job.Config.Pipeline.EnabledSteps, stepIndex)
+
+	// Find NDJSON files
+	files, err := findNDJSONFiles(inputDir)
+	if err != nil {
+		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
+		recordStepError(step, err, models.ErrorTypeNonTransient)
+		return fmt.Errorf("failed to list NDJSON files in %s: %w", inputDir, err)
+	}
+
+	if len(files) == 0 {
+		err := fmt.Errorf("no NDJSON files found in %s", inputDir)
+		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
+		recordStepError(step, err, models.ErrorTypeNonTransient)
+		return err
+	}
+
+	// Partition files: core files first, then others
+	coreFiles, otherFiles := partitionCoreFiles(files)
+	orderedFiles := append(coreFiles, otherFiles...)
+
+	logger.Debug("FHIR send file ordering",
+		"core_files", len(coreFiles),
+		"other_files", len(otherFiles),
+		"total_files", len(orderedFiles))
+
+	// Create HTTP client
+	httpClient := services.DefaultHTTPClient()
+
+	// Create FHIR client
+	fhirClient := services.NewFHIRClient(job.Config.Services.Send, httpClient, logger)
+
+	fhirURL := job.Config.Services.Send.URL
+	fmt.Printf("Uploading %d NDJSON file(s) to FHIR server: %s\n\n", len(orderedFiles), fhirURL)
+
+	if len(coreFiles) > 0 {
+		fmt.Printf("Processing core files first (%d file(s)):\n", len(coreFiles))
+	}
+
+	filesProcessed := 0
+	totalResources := 0
+
+	for i, filePath := range orderedFiles {
+		// Print separator between core and other files
+		if i == len(coreFiles) && len(coreFiles) > 0 && len(otherFiles) > 0 {
+			fmt.Printf("\nProcessing other files (%d file(s)):\n", len(otherFiles))
+		}
+
+		// Open file (handles both compressed and uncompressed)
+		reader, err := lib.OpenFileForReading(filePath)
+		if err != nil {
+			lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
+			recordStepError(step, err, models.ErrorTypeNonTransient)
+			return fmt.Errorf("failed to open %s: %w", filepath.Base(filePath), err)
+		}
+
+		// Upload file
+		stats, err := fhirClient.UploadNDJSON(filePath, reader)
+		if closeErr := reader.Close(); closeErr != nil {
+			logger.Warn("Failed to close file reader", "error", closeErr)
+		}
+
+		if err != nil {
+			lib.LogStepFailed(logger, string(stepName), job.JobID, err, isFHIRErrorRetryable(err))
+			recordStepError(step, err, classifyFHIRError(err))
+			return fmt.Errorf("failed to upload %s: %w", filepath.Base(filePath), err)
+		}
+
+		filesProcessed++
+		totalResources += stats.ResourcesUploaded
+
+		fmt.Printf("  ✓ %s (%d resources, %d batches)\n",
+			filepath.Base(filePath), stats.ResourcesUploaded, stats.BatchesSent)
+	}
+
+	step.Status = models.StepStatusCompleted
+	step.FilesProcessed = filesProcessed
+	completedAt := time.Now()
+	step.CompletedAt = &completedAt
+
+	duration := completedAt.Sub(*step.StartedAt)
+
+	logger.Debug("Direct resource load send step completed",
+		"files_processed", filesProcessed,
+		"resources_uploaded", totalResources,
+		"duration", duration,
+		"fhir_url", fhirURL,
+		"job_id", job.JobID)
+
+	fmt.Printf("\n✓ Uploaded %d resources from %d files to FHIR server\n", totalResources, filesProcessed)
+
+	return nil
+}
+
+// findNDJSONFiles finds all NDJSON files in a directory (both .ndjson and .ndjson.zst)
+func findNDJSONFiles(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	var files []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if strings.HasSuffix(name, ".ndjson") || strings.HasSuffix(name, ".ndjson.zst") {
+			files = append(files, filepath.Join(dir, name))
+		}
+	}
+
+	return files, nil
+}
+
+// partitionCoreFiles separates core.ndjson files from other NDJSON files
+// Core files must be loaded first to establish base resources
+func partitionCoreFiles(files []string) (coreFiles, otherFiles []string) {
+	for _, file := range files {
+		baseName := filepath.Base(file)
+		// Match core.ndjson or core.ndjson.zst
+		if baseName == "core.ndjson" || baseName == "core.ndjson.zst" {
+			coreFiles = append(coreFiles, file)
+		} else {
+			otherFiles = append(otherFiles, file)
+		}
+	}
+	return coreFiles, otherFiles
+}
+
+// isFHIRErrorRetryable checks if a FHIR error should be retried
+func isFHIRErrorRetryable(err error) bool {
+	if fhirErr, ok := err.(*services.FHIRError); ok {
+		return fhirErr.IsRetryable()
+	}
+	return lib.IsNetworkError(err)
+}
+
+// classifyFHIRError classifies a FHIR error as transient or non-transient
+func classifyFHIRError(err error) models.ErrorType {
+	if fhirErr, ok := err.(*services.FHIRError); ok {
+		return fhirErr.ErrorType
+	}
+	if lib.IsNetworkError(err) {
+		return models.ErrorTypeTransient
+	}
+	return models.ErrorTypeNonTransient
 }
 
 // binaryEntry holds a FHIR Binary resource and its metadata
@@ -340,7 +434,7 @@ func zipSingleFile(filePath string) ([]byte, error) {
 }
 
 // buildDocumentReference creates a FHIR DocumentReference linking all Binary resources.
-func buildDocumentReference(binaries []binaryEntry, config models.SendConfig) map[string]any {
+func buildDocumentReference(binaries []binaryEntry, config models.TransferConfig) map[string]any {
 	content := make([]map[string]any, len(binaries))
 	for i, b := range binaries {
 		content[i] = map[string]any{
@@ -376,7 +470,7 @@ func buildDocumentReference(binaries []binaryEntry, config models.SendConfig) ma
 
 // uploadBinary PUTs a single Binary resource to the FHIR server.
 func uploadBinary(binary binaryEntry, config models.SendConfig, httpClient *services.HTTPClient, logger *lib.Logger) error {
-	targetURL := fmt.Sprintf("%s/Binary/%s", strings.TrimSuffix(config.ServerURL, "/"), binary.id)
+	targetURL := fmt.Sprintf("%s/Binary/%s", strings.TrimSuffix(config.URL, "/"), binary.id)
 	jsonData, err := json.Marshal(binary.resource)
 	if err != nil {
 		return fmt.Errorf("failed to marshal Binary: %w", err)
@@ -409,7 +503,7 @@ func uploadBinary(binary binaryEntry, config models.SendConfig, httpClient *serv
 // uploadDocumentReference PUTs the DocumentReference to the FHIR server.
 func uploadDocumentReference(docRef map[string]any, config models.SendConfig, httpClient *services.HTTPClient, logger *lib.Logger) error {
 	id, _ := docRef["id"].(string)
-	targetURL := fmt.Sprintf("%s/DocumentReference/%s", strings.TrimSuffix(config.ServerURL, "/"), id)
+	targetURL := fmt.Sprintf("%s/DocumentReference/%s", strings.TrimSuffix(config.URL, "/"), id)
 	jsonData, err := json.Marshal(docRef)
 	if err != nil {
 		return fmt.Errorf("failed to marshal DocumentReference: %w", err)

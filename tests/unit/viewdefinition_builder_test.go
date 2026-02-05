@@ -1476,3 +1476,157 @@ func TestBuildViewDefinitionWithRealLookupStructure(t *testing.T) {
 		assert.Contains(t, columnNames, "recorded_date")
 	})
 }
+
+// TestIssue142EmbedChildrenIntoParents tests the exact scenario from GitHub issue #142:
+// When a CRTDL references an element that has a parent AND children (a 3-level hierarchy),
+// the children should be resolved first, embedded into the element, then wrapped in parent context.
+// Specifically: column definitions at the viewDefinition level (not inside select) should be supported.
+func TestIssue142EmbedChildrenIntoParents(t *testing.T) {
+	t.Run("child with column at viewDefinition level embedded in parent", func(t *testing.T) {
+		// Exact structure from issue #142
+		lookupTables := []models.LookupTable{
+			{
+				URL:          "https://www.medizininformatik-initiative.de/fhir/core/modul-diagnose/StructureDefinition/Diagnose",
+				ResourceType: "Condition",
+				Elements: map[string]models.LookupElement{
+					"Condition.code": {
+						Children: []string{
+							"Condition.code.coding:sct",
+							"Condition.code.coding:icd10-gm",
+							"Condition.code.coding:alpha-id",
+							"Condition.code.coding:orphanet",
+						},
+						ViewDefinition: models.ViewDefSnippet{
+							ForEachOrNull: "code",
+							Select:        []models.SelectClause{},
+						},
+					},
+					"Condition.code.coding:icd10-gm": {
+						Parent:   "Condition.code",
+						Children: []string{"Condition.code.coding:icd10-gm.system", "Condition.code.coding:icd10-gm.code"},
+						ViewDefinition: models.ViewDefSnippet{
+							ForEachOrNull: "coding.where(system = 'http://fhir.de/CodeSystem/bfarm/icd-10-gm')",
+							Select:        []models.SelectClause{},
+						},
+					},
+					"Condition.code.coding:icd10-gm.system": {
+						Parent: "Condition.code.coding:icd10-gm",
+						ViewDefinition: models.ViewDefSnippet{
+							// Column at viewDefinition level (not inside select) - this is the key scenario
+							Column: []models.ColumnDefinition{
+								{Name: "Condition_code_codingicd10gm_system", Path: "system", Type: "string"},
+							},
+						},
+					},
+					"Condition.code.coding:icd10-gm.code": {
+						Parent: "Condition.code.coding:icd10-gm",
+						ViewDefinition: models.ViewDefSnippet{
+							// Column at viewDefinition level
+							Column: []models.ColumnDefinition{
+								{Name: "Condition_code_codingicd10gm_code", Path: "code", Type: "code"},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		// CRTDL references only the middle-tier element
+		group := models.AttributeGroup{
+			Name:           "Diagnosis",
+			GroupReference: "https://www.medizininformatik-initiative.de/fhir/core/modul-diagnose/StructureDefinition/Diagnose",
+			Attributes: []models.Attribute{
+				{AttributeRef: "Condition.code.coding:icd10-gm"},
+			},
+		}
+
+		builder := services.NewViewDefinitionBuilder(lookupTables)
+		viewDef, err := builder.BuildViewDefinition(group)
+
+		require.NoError(t, err)
+		require.NotNil(t, viewDef)
+
+		// Expected structure (from issue #142):
+		// {
+		//   "select": [
+		//     { "column": [id, patient] },
+		//     {
+		//       "forEachOrNull": "code",
+		//       "select": [
+		//         {
+		//           "forEachOrNull": "coding.where(system = '...')",
+		//           "select": [
+		//             { "column": [system] },
+		//             { "column": [code] }
+		//           ]
+		//         }
+		//       ]
+		//     }
+		//   ]
+		// }
+
+		// Find the outer forEachOrNull: "code" wrapper (from parent)
+		var codeSelectClause *models.SelectClause
+		for i, sel := range viewDef.Select {
+			if sel.ForEachOrNull == "code" {
+				codeSelectClause = &viewDef.Select[i]
+				break
+			}
+		}
+		require.NotNil(t, codeSelectClause, "Should have forEachOrNull: 'code' wrapper from parent")
+
+		// Inside should have the icd10-gm forEachOrNull
+		var icd10gmSelectClause *models.SelectClause
+		for i, sel := range codeSelectClause.Select {
+			if sel.ForEachOrNull == "coding.where(system = 'http://fhir.de/CodeSystem/bfarm/icd-10-gm')" {
+				icd10gmSelectClause = &codeSelectClause.Select[i]
+				break
+			}
+		}
+		require.NotNil(t, icd10gmSelectClause, "Should have forEachOrNull for icd10-gm inside code wrapper")
+
+		// Inside icd10-gm should have the children's columns
+		columnNames := services.ExtractColumnNames(*viewDef)
+		assert.Contains(t, columnNames, "id")
+		assert.Contains(t, columnNames, "patient")
+		assert.Contains(t, columnNames, "Condition_code_codingicd10gm_system")
+		assert.Contains(t, columnNames, "Condition_code_codingicd10gm_code")
+	})
+
+	t.Run("element with column at viewDefinition level resolves correctly", func(t *testing.T) {
+		// Test that Column at viewDefinition level (no Select, no children) works
+		lookupTables := []models.LookupTable{
+			{
+				URL:          "https://example.com/Patient",
+				ResourceType: "Patient",
+				Elements: map[string]models.LookupElement{
+					"Patient.birthDate": {
+						ViewDefinition: models.ViewDefSnippet{
+							Column: []models.ColumnDefinition{
+								{Name: "birth_date", Path: "birthDate", Type: "date"},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		group := models.AttributeGroup{
+			Name:           "Patients",
+			GroupReference: "https://example.com/Patient",
+			Attributes: []models.Attribute{
+				{AttributeRef: "Patient.birthDate"},
+			},
+		}
+
+		builder := services.NewViewDefinitionBuilder(lookupTables)
+		viewDef, err := builder.BuildViewDefinition(group)
+
+		require.NoError(t, err)
+		require.NotNil(t, viewDef)
+
+		columnNames := services.ExtractColumnNames(*viewDef)
+		assert.Contains(t, columnNames, "id")
+		assert.Contains(t, columnNames, "birth_date")
+	})
+}

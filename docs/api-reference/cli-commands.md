@@ -1,299 +1,210 @@
 # CLI Commands
 
-Complete reference for all Aether CLI commands and options.
+Reference for Aether CLI commands.
 
 ## Global Options
-
-All commands support these options:
 
 ```bash
 aether [global-options] <command> [command-options]
 ```
 
-**Global Options:**
-- `--config, -c FILE` - Path to aether.yaml configuration file
-- `--jobs-dir DIR` - Override jobs directory
-- `--help, -h` - Show command help
-- `--version, -v` - Show Aether version
-- `--debug` - Enable debug logging
+- `--config FILE` - Path to configuration file (default: ./aether.yaml)
+- `--verbose, -v` - Enable verbose logging
+- `--help, -h` - Show help
+- `--version` - Show version
 
-## Commands
+## Pipeline Commands
 
 ### aether pipeline start
 
-Start a new pipeline execution.
+Start a new pipeline job.
 
-**Syntax:**
 ```bash
-aether pipeline start [options] <input>
+aether pipeline start [crtdl-file] [options]
 ```
 
 **Arguments:**
-- `<input>` - Path to FHIR directory or CRTDL query file
+- `[crtdl-file]` - Path to CRTDL query file (required if torch or flattening enabled)
 
 **Options:**
-- `--config, -c FILE` - Configuration file (default: aether.yaml)
-- `--jobs-dir DIR` - Override jobs directory
-- `--steps STEP1,STEP2` - Override enabled steps
+- `--no-progress` - Disable progress indicators
+- `--dir PATH` - Directory for local import (overrides config)
 
 **Examples:**
 ```bash
-# Start from local FHIR files
-aether pipeline start /data/fhir/
+# TORCH extraction with CRTDL
+aether pipeline start query.crtdl
 
-# Start from CRTDL query
-aether pipeline start my_cohort.crtdl
+# Local import with CRTDL for flattening
+aether pipeline start query.crtdl --dir /path/to/data
 
-# Override configuration
-aether pipeline start --config prod.yaml query.crtdl
+# Local import without CRTDL (uses config directory)
+aether pipeline start
 
-# Run specific steps only
-aether pipeline start --steps import,dimp /data/fhir/
+# Local import with directory override
+aether pipeline start --dir /path/to/data
+
+# HTTP download
+aether pipeline start https://example.com/fhir/data.ndjson
+
+# Disable progress bars
+aether pipeline start query.crtdl --no-progress
 ```
 
 ### aether pipeline status
 
-Check the status of a running or completed pipeline.
+Check pipeline job status.
 
-**Syntax:**
 ```bash
-aether pipeline status [options] <job-id>
+aether pipeline status <job-id>
 ```
 
-**Arguments:**
-- `<job-id>` - Job identifier
+**Output:**
+- Job ID and status
+- Current step
+- Progress per step (files, bytes)
+- Error messages if failed
 
-**Options:**
-- `--json` - Output as JSON
-- `--jobs-dir DIR` - Override jobs directory
-
-**Examples:**
+**Example:**
 ```bash
-# Check job status
-aether pipeline status abc123
-
-# Get JSON output for scripting
-aether pipeline status --json abc123
+aether pipeline status abc-123-def
 ```
 
 ### aether pipeline continue
 
-Resume a failed pipeline from where it stopped.
+Resume a paused or failed pipeline.
 
-**Syntax:**
 ```bash
-aether pipeline continue [options] <job-id>
+aether pipeline continue <job-id>
 ```
 
-**Arguments:**
-- `<job-id>` - Job identifier of failed pipeline
-
-**Options:**
-- `--config, -c FILE` - Configuration file
-- `--jobs-dir DIR` - Override jobs directory
+**Use cases:**
+- Resume after terminal close
+- Continue after fixing errors
+- Resume from wait step after placing files in wait directory
 
 **Examples:**
 ```bash
 # Resume failed job
-aether pipeline continue abc123
+aether pipeline continue abc-123-def
 
-# Resume with specific configuration
-aether pipeline continue --config prod.yaml abc123
+# Resume from wait step (after placing files)
+aether pipeline continue abc-123-def
 ```
+
+## Job Commands
 
 ### aether job list
 
-List all jobs.
+List all pipeline jobs.
 
-**Syntax:**
 ```bash
-aether job list [options]
-```
-
-**Options:**
-- `--jobs-dir DIR` - Override jobs directory
-- `--status STATUS` - Filter by status (running, completed, failed)
-- `--json` - Output as JSON
-- `--limit N` - Show last N jobs (default: 10)
-
-**Examples:**
-```bash
-# List all jobs
 aether job list
-
-# Show failed jobs only
-aether job list --status failed
-
-# Get as JSON for scripting
-aether job list --json
 ```
 
-### aether job logs
+**Output columns:**
+- JOB ID - Full UUID
+- STATUS - completed/in_progress/failed/pending
+- STEP - Current step
+- FILES - Total files processed
+- AGE - Time since creation
 
-View logs for a specific job.
+**Status symbols:**
+- `✓` - Completed
+- `→` - In progress
+- `✗` - Failed
+- `○` - Pending
 
-**Syntax:**
+**Example:**
 ```bash
-aether job logs [options] <job-id>
+aether job list
 ```
 
-**Arguments:**
-- `<job-id>` - Job identifier
+### aether job run
+
+Execute a specific pipeline step manually.
+
+```bash
+aether job run <job-id> --step <step-name>
+```
 
 **Options:**
-- `--jobs-dir DIR` - Override jobs directory
-- `--follow, -f` - Stream logs continuously
-- `--step STEP` - Show logs for specific step only
-- `--errors-only` - Show only error lines
+- `--step` - Step to execute (required)
+
+**Valid steps:** `torch`, `local_import`, `http_import`, `dimp`, `validation`, `csv_conversion`, `parquet_conversion`
 
 **Examples:**
 ```bash
-# View job logs
-aether job logs abc123
+# Run DIMP step manually
+aether job run abc-123-def --step dimp
 
-# Stream logs as they happen
-aether job logs --follow abc123
-
-# View only DIMP step logs
-aether job logs --step dimp abc123
-
-# Show only errors
-aether job logs --errors-only abc123
+# Run import step manually
+aether job run abc-123-def --step local_import
 ```
 
-### aether job delete
-
-Delete a completed job and its data.
-
-**Syntax:**
-```bash
-aether job delete [options] <job-id>
-```
-
-**Arguments:**
-- `<job-id>` - Job identifier
-
-**Options:**
-- `--jobs-dir DIR` - Override jobs directory
-- `--force, -f` - Skip confirmation prompt
-
-**Examples:**
-```bash
-# Delete job (with confirmation)
-aether job delete abc123
-
-# Force delete without confirmation
-aether job delete --force abc123
-```
+## Other Commands
 
 ### aether completion
 
 Generate shell completion scripts.
 
-**Syntax:**
 ```bash
 aether completion <shell>
 ```
 
-**Arguments:**
-- `<shell>` - Shell type: bash, zsh, fish, powershell
+**Shells:** `bash`, `zsh`, `fish`, `powershell`
 
 **Examples:**
 ```bash
 # Generate bash completions
-aether completion bash
+aether completion bash > /etc/bash_completion.d/aether
 
-# Install for zsh
-aether completion zsh | sudo tee /etc/zsh/completions/_aether
-
-# Install for bash
-aether completion bash | sudo tee /etc/bash_completion.d/aether
+# Generate zsh completions
+aether completion zsh > "${fpath[1]}/_aether"
 ```
 
 ### aether version
 
-Show Aether version and build information.
+Show version information.
 
-**Syntax:**
 ```bash
 aether version
-```
-
-**Output:**
-```
-Aether v1.0.0
-Build: abc123def456
-Go: 1.21.0
 ```
 
 ### aether help
 
 Show help information.
 
-**Syntax:**
 ```bash
 aether help [command]
 ```
 
-**Arguments:**
-- `[command]` - Optional specific command to show help for
-
 **Examples:**
 ```bash
-# Show general help
 aether help
-
-# Show help for specific command
+aether help pipeline
 aether help pipeline start
 ```
 
-## Exit Codes
+## Configuration Loading
 
-- `0` - Success
-- `1` - General error
-- `2` - Configuration error
-- `3` - Invalid input
-- `4` - Service unavailable
-- `5` - Pipeline failed (retryable)
-- `6` - Pipeline failed (fatal)
-
-## Output Formats
-
-### Default (Human-Readable)
-
-```
-Job: abc123
-Status: running
-Steps: torch, import, dimp
-Progress: 45%
-Elapsed: 2m 30s
-ETA: 3m 15s
-```
-
-### JSON Format
-
-```json
-{
-  "job_id": "abc123",
-  "status": "running",
-  "steps": ["torch", "import", "dimp"],
-  "progress": 0.45,
-  "elapsed_seconds": 150,
-  "eta_seconds": 195
-}
-```
+Aether loads configuration in this order:
+1. `--config` flag
+2. `./aether.yaml` (current directory)
+3. `~/.config/aether/aether.yaml` (user config)
 
 ## Environment Variables
 
-- `AETHER_CONFIG` - Default configuration file path
-- `AETHER_JOBS_DIR` - Default jobs directory
-- `AETHER_LOG_LEVEL` - Logging level (debug, info, warn, error)
-- `TORCH_USERNAME` - TORCH username
-- `TORCH_PASSWORD` - TORCH password
-- `DIMP_URL` - DIMP service URL
+Configuration values support environment variable substitution:
+
+```yaml
+services:
+  torch:
+    username: "${TORCH_USERNAME}"
+    password: "${TORCH_PASSWORD}"
+```
 
 ## Next Steps
 
-- [Configuration Reference](./config-reference.md) - Configuration file options
-- [Pipeline Steps](../guides/pipeline-steps.md) - Pipeline architecture
-- [Troubleshooting](../getting-started/installation.md) - Common issues
+- [Configuration Reference](./config-reference.md) - All configuration options
+- [Pipeline Steps](../guides/pipeline-steps.md) - Step details

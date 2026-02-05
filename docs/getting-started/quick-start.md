@@ -4,7 +4,7 @@ Get Aether running in 5 minutes.
 
 ## 1. Create Configuration
 
-Create a file named `aether.yaml` in your working directory:
+Create `aether.yaml` in your working directory:
 
 ```yaml
 services:
@@ -24,7 +24,7 @@ pipeline:
 jobs_dir: "./jobs"
 ```
 
-Replace the URLs and credentials with your actual server details.
+Replace URLs and credentials with your actual server details.
 
 ## 2. Run a Pipeline
 
@@ -37,7 +37,9 @@ Aether will:
 2. Wait for extraction to complete
 3. Download the FHIR data
 4. Pseudonymize it via DIMP
-5. Save results in the `jobs` folder
+5. Save results in `jobs/<job-id>/pseudonymized/`
+
+Output files use `.ndjson.zst` extension (zstd compressed).
 
 ## 3. Check Progress
 
@@ -51,13 +53,39 @@ aether pipeline status <job-id>
 
 ## 4. Resume if Needed
 
-If a pipeline fails, resume it:
+If a pipeline fails or pauses, resume it:
 
 ```bash
 aether pipeline continue <job-id>
 ```
 
+## Alternative: Local Import
+
+Process local FHIR files instead of TORCH extraction:
+
+```yaml
+services:
+  local_import:
+    dir: "/path/to/fhir/data"
+  dimp:
+    url: "http://your-dimp-server:32861/fhir"
+
+pipeline:
+  enabled_steps:
+    - local_import
+    - dimp
+```
+
+```bash
+# Use config directory
+aether pipeline start
+
+# Or override with --dir flag
+aether pipeline start --dir /other/path
+```
+
 ## Next Steps
 
 - [Configuration](./configuration.md) - All configuration options
-- [TORCH Integration](../guides/torch-integration.md) - More about TORCH
+- [Pipeline Steps](../guides/pipeline-steps.md) - Available steps
+- [CLI Commands](../api-reference/cli-commands.md) - Command reference

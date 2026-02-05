@@ -1,6 +1,6 @@
 # Configuration
 
-Aether uses a YAML file for configuration. Create `aether.yaml` in your working directory.
+Aether uses a YAML configuration file. Create `aether.yaml` in your working directory.
 
 ## Basic Configuration
 
@@ -22,60 +22,134 @@ pipeline:
 jobs_dir: "./jobs"
 ```
 
-## Configuration Options
+## Service Configuration
 
-### TORCH Settings
+### TORCH
 
 ```yaml
 services:
   torch:
-    base_url: "https://your-torch-server.org"  # TORCH server URL
-    username: "your-username"                   # Your username
-    password: "your-password"                   # Your password
-    extraction_timeout_minutes: 30              # How long to wait (default: 30)
-    polling_interval_seconds: 5                 # Check interval (default: 5)
+    base_url: "https://your-torch-server.org"
+    username: "your-username"
+    password: "your-password"
+    extraction_timeout_minutes: 30
+    polling_interval_seconds: 5
 ```
 
-### DIMP Settings
+### DIMP
 
 ```yaml
 services:
   dimp:
-    url: "http://your-dimp-server:32861/fhir"  # DIMP service URL
-    bundle_split_threshold_mb: 10               # Split large files (default: 10)
+    url: "http://your-dimp-server:32861/fhir"
+    bundle_split_threshold_mb: 10  # Auto-split large bundles
 ```
 
-### Flattening Settings
-
-The flattening service transforms FHIR NDJSON data into CSV files. It requires a CRTDL file as input.
+### Flattening
 
 ```yaml
 services:
   flattening:
-    service_url: "http://fhir-flattener:8000"   # fhir-flattener service URL
-    lookup_path: "/path/to/flatten-lookup.json" # Element-to-ViewDefinition mappings
+    service_url: "http://fhir-flattener:8000"
+    lookup_path: "/path/to/flatten-lookup.json"
     formats:
-      - csv                                     # Output format (only csv supported)
-    timeout: 30m                                # Request timeout (default: 30m)
+      - csv
+    timeout: 30m
 ```
 
-### Pipeline Settings
+### Send
+
+**Direct to FHIR server:**
+```yaml
+services:
+  send:
+    send_as: "direct_resource_load"
+    url: "https://fhir-server.example.com/fhir"
+    batch_size: 100
+    auth:
+      username: "${FHIR_USER}"
+      password: "${FHIR_PASSWORD}"
+```
+
+**DSF transfer:**
+```yaml
+services:
+  send:
+    send_as: "transfer_load"
+    url: "https://transfer-server.example.com/fhir"
+    auth:
+      oauth_issuer_uri: "${OAUTH_ISSUER}"
+      oauth_client_id: "${OAUTH_CLIENT_ID}"
+      oauth_client_secret: "${OAUTH_CLIENT_SECRET}"
+    transfer:
+      project_identifier: "MII-PROJECT"
+      organization_identifier: "your-org.example.de"
+```
+
+### Local Import
+
+```yaml
+services:
+  local_import:
+    dir: "/path/to/fhir/data"  # Override with --dir flag
+```
+
+## Pipeline Steps
 
 ```yaml
 pipeline:
   enabled_steps:
-    - torch       # Extract from TORCH
-    - dimp        # Pseudonymize the data
-    - flattening  # Transform to CSV (requires CRTDL input)
+    - torch         # OR local_import OR http_import
+    - dimp          # Pseudonymization
+    - wait          # Pause for inspection (optional)
+    - flattening    # FHIR to CSV (requires CRTDL)
+    - send          # Upload to destination
 ```
 
-### Jobs Directory
+### Step Placement Rules
+
+**Wait steps:**
+- Can be placed between any two steps
+- Cannot be the first step (needs previous step output)
+- Cannot be consecutive (redundant)
+- Multiple wait steps are supported at different points in the pipeline
+
+**Processing steps (dimp, flattening):**
+- Should only appear once in the pipeline
+- Multiple instances are not supported (output directories would be overwritten)
+
+**Import steps (torch, local_import, http_import):**
+- Must be first
+- Only one import step allowed
+
+## Compression
 
 ```yaml
-jobs_dir: "./jobs"  # Where to store job data and results
+compression:
+  enabled: true        # default: true
+  level: "default"     # fastest, default, better, best
+```
+
+Output files use `.ndjson.zst` extension when enabled.
+
+## Environment Variables
+
+Use environment variables for sensitive data:
+
+```yaml
+services:
+  torch:
+    username: "${TORCH_USERNAME}"
+    password: "${TORCH_PASSWORD}"
+```
+
+```bash
+export TORCH_USERNAME="researcher"
+export TORCH_PASSWORD="secret"
 ```
 
 ## Next Steps
 
 - [Quick Start](./quick-start.md) - Run your first pipeline
-- [TORCH Integration](../guides/torch-integration.md) - Learn more about TORCH
+- [Pipeline Steps](../guides/pipeline-steps.md) - Step details
+- [Configuration Reference](../api-reference/config-reference.md) - All options

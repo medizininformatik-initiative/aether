@@ -1,491 +1,370 @@
 # Configuration Reference
 
-Comprehensive reference for all Aether configuration options.
+Complete reference for all Aether configuration options.
 
-For an introduction, see [Configuration Guide](../getting-started/configuration.md).
-
-## Complete Configuration Schema
+## Configuration Schema
 
 ```yaml
-# Service endpoints
 services:
-  dimp:
-    url: string                 # DIMP pseudonymization service URL
-    bundle_split_threshold_mb: integer # Bundle size threshold (1-100, default: 10)
-  csv_conversion:
-    url: string                 # CSV conversion service URL (future)
-  parquet_conversion:
-    url: string                 # Parquet conversion service URL (future)
   torch:
-    base_url: string            # TORCH FHIR server URL
-    username: string            # TORCH username
-    password: string            # TORCH password
-    extraction_timeout_minutes: integer # Timeout for extractions (default: 30)
-    polling_interval_seconds: integer # Initial poll interval (default: 5)
-    max_polling_interval_seconds: integer # Max poll interval (default: 30)
+    base_url: string
+    username: string
+    password: string
+    extraction_timeout_minutes: integer  # default: 30
+    polling_interval_seconds: integer    # default: 5
+    max_polling_interval_seconds: integer # default: 30
 
-# Pipeline configuration
+  dimp:
+    url: string
+    bundle_split_threshold_mb: integer   # 1-100, default: 10
+
+  flattening:
+    service_url: string
+    lookup_path: string
+    formats: [string]                    # ["csv"]
+    timeout: duration                    # default: 30m
+
+  send:
+    send_as: string                      # "direct_resource_load" or "transfer_load"
+    url: string
+    batch_size: integer                  # 1-1000, default: 100
+    auth:
+      username: string
+      password: string
+      oauth_issuer_uri: string
+      oauth_client_id: string
+      oauth_client_secret: string
+    transfer:
+      project_identifier: string
+      organization_identifier: string
+
+  local_import:
+    dir: string
+
 pipeline:
-  enabled_steps:
-    - string                    # List of steps: torch, import, dimp, validation, csv_conversion, parquet_conversion
+  enabled_steps: [string]
 
-# Retry strategy
 retry:
-  max_attempts: integer         # Max retry attempts (1-10, default: 5)
-  initial_backoff_ms: integer   # Initial backoff in milliseconds (default: 1000)
-  max_backoff_ms: integer       # Maximum backoff in milliseconds (default: 30000)
+  max_attempts: integer                  # 1-10, default: 5
+  initial_backoff_ms: integer            # default: 1000
+  max_backoff_ms: integer                # default: 30000
 
-# Compression settings
 compression:
-  enabled: boolean              # Enable zstd compression (default: true)
-  level: string                 # Compression level: fastest, default, better, best
+  enabled: boolean                       # default: true
+  level: string                          # fastest, default, better, best
 
-# Job configuration
-jobs_dir: string                # Directory for job state and data (default: ./jobs)
+jobs_dir: string                         # default: ./jobs
 ```
 
-## Service Options
+## Services
 
-### DIMP Configuration
+### TORCH
 
-**Key**: `services.dimp`
-**Type**: Object
-**Required**: Yes (if DIMP step enabled)
-**Default**: None
+TORCH server for FHIR data extraction.
 
-Configuration for DIMP de-identification service.
+```yaml
+services:
+  torch:
+    base_url: "https://torch.example.org"
+    username: "${TORCH_USER}"
+    password: "${TORCH_PASSWORD}"
+    extraction_timeout_minutes: 30
+    polling_interval_seconds: 5
+    max_polling_interval_seconds: 30
+```
 
-**Nested Options:**
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `base_url` | string | - | TORCH server URL (required if torch step enabled) |
+| `username` | string | - | Authentication username |
+| `password` | string | - | Authentication password |
+| `extraction_timeout_minutes` | int | 30 | Max wait time for extraction |
+| `polling_interval_seconds` | int | 5 | Initial status check interval |
+| `max_polling_interval_seconds` | int | 30 | Max interval (exponential backoff cap) |
 
-- `url` (String): DIMP service endpoint
-- `bundle_split_threshold_mb` (Integer): Auto-split large bundles (1-100 MB, default: 10)
+### DIMP
+
+DIMP pseudonymization service.
 
 ```yaml
 services:
   dimp:
-    url: "http://localhost:32861/fhir"
+    url: "http://dimp:32861/fhir"
     bundle_split_threshold_mb: 10
 ```
 
-For production:
-```yaml
-services:
-  dimp:
-    url: "https://dimp.prod.healthcare.org/api/fhir"
-    bundle_split_threshold_mb: 50
-```
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `url` | string | - | DIMP service URL (required if dimp step enabled) |
+| `bundle_split_threshold_mb` | int | 10 | Split Bundles larger than this (1-100 MB) |
 
-### CSV Conversion URL
+### Flattening
 
-**Key**: `services.csv_conversion_url`
-**Type**: String (URL)
-**Required**: No
-**Default**: None
-**Status**: Placeholder for future feature
-
-Endpoint for CSV conversion service.
+fhir-flattener service for FHIR to CSV transformation.
 
 ```yaml
 services:
-  csv_conversion_url: "http://localhost:9000/convert/csv"
+  flattening:
+    service_url: "http://fhir-flattener:8000"
+    lookup_path: "/config/flatten-lookup.json"
+    formats:
+      - csv
+    timeout: 30m
 ```
 
-### Parquet Conversion URL
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `service_url` | string | - | fhir-flattener service URL |
+| `lookup_path` | string | - | Path to lookup table file |
+| `formats` | []string | ["csv"] | Output formats |
+| `timeout` | duration | 30m | Request timeout |
 
-**Key**: `services.parquet_conversion_url`
-**Type**: String (URL)
-**Required**: No
-**Default**: None
-**Status**: Placeholder for future feature
+### Send
 
-Endpoint for Parquet conversion service.
+Destination server for uploading processed data.
+
+#### Direct Resource Load
+
+Upload FHIR resources directly to a FHIR server.
 
 ```yaml
 services:
-  parquet_conversion_url: "http://localhost:9000/convert/parquet"
+  send:
+    send_as: "direct_resource_load"
+    url: "https://fhir-server.example.com/fhir"
+    batch_size: 100
+    auth:
+      username: "${FHIR_USER}"
+      password: "${FHIR_PASSWORD}"
 ```
 
-### TORCH Configuration
+#### Transfer Load
 
-**Key**: `services.torch`
-**Type**: Object
-**Required**: Yes (if TORCH step enabled)
-**Default**: None
-
-TORCH FHIR server connection details.
-
-**Nested Options:**
-
-- `base_url` (String): TORCH server URL
-- `username` (String): TORCH username
-- `password` (String): TORCH password
+Package files for DSF-based transfer.
 
 ```yaml
 services:
-  torch:
-    base_url: "https://torch.hospital.org"
-    username: "researcher-name"
-    password: "secure-password"
+  send:
+    send_as: "transfer_load"
+    url: "https://transfer.example.com/fhir"
+    auth:
+      oauth_issuer_uri: "${OAUTH_ISSUER}"
+      oauth_client_id: "${OAUTH_CLIENT}"
+      oauth_client_secret: "${OAUTH_SECRET}"
+    transfer:
+      project_identifier: "MII-PROJECT"
+      organization_identifier: "your-org.example.de"
 ```
 
-**Security**: Use environment variables for sensitive credentials:
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `send_as` | string | - | `direct_resource_load` or `transfer_load` |
+| `url` | string | - | FHIR server base URL |
+| `batch_size` | int | 100 | Resources per transaction (direct mode, 1-1000) |
 
-```bash
-export TORCH_USERNAME="researcher"
-export TORCH_PASSWORD="secret"
-```
+**Authentication (choose one):**
 
-Then in config:
+| Option | Description |
+|--------|-------------|
+| `auth.username` + `auth.password` | Basic authentication |
+| `auth.oauth_issuer_uri` + `oauth_client_id` + `oauth_client_secret` | OAuth2 client credentials |
+
+**Transfer settings (transfer_load mode only):**
+
+| Option | Description |
+|--------|-------------|
+| `transfer.project_identifier` | MII project identifier |
+| `transfer.organization_identifier` | Organization identifier |
+
+### Local Import
+
+Default directory for local FHIR imports.
+
 ```yaml
 services:
-  torch:
-    base_url: "https://torch.hospital.org"
-    username: "${TORCH_USERNAME}"
-    password: "${TORCH_PASSWORD}"
+  local_import:
+    dir: "/data/fhir"
 ```
 
-## Pipeline Options
+| Option | Type | Description |
+|--------|------|-------------|
+| `dir` | string | Default import directory (overridable with `--dir` flag) |
 
-### Enabled Steps
-
-**Key**: `pipeline.enabled_steps`
-**Type**: Array of strings
-**Required**: Yes
-**Default**: None
-
-List of pipeline steps to execute in order.
+## Pipeline
 
 ```yaml
 pipeline:
   enabled_steps:
-    - torch      # Optional: Extract from TORCH
-    - import     # Required: Import FHIR data
-    - dimp       # Optional: Pseudonymization
-```
-
-**Available Steps** (must be in order):
-- `torch` - Extract from TORCH server
-- `import` - Parse and validate FHIR data
-- `dimp` - Pseudonymization via DIMP
-- `validation` - Data quality validation (placeholder)
-- `csv_conversion` - Convert to CSV (placeholder)
-- `parquet_conversion` - Convert to Parquet (placeholder)
-
-**Valid Sequences**:
-```yaml
-# Option A: Local files + DIMP
-- import
-- dimp
-
-# Option B: TORCH + DIMP
-- torch
-- import
-- dimp
-
-# Option C: Full pipeline
-- torch
-- import
-- dimp
-- validation
-- csv_conversion
-```
-
-## Retry Options
-
-### Max Attempts
-
-**Key**: `retry.max_attempts`
-**Type**: Integer
-**Range**: 1-10
-**Default**: 5
-
-Maximum number of automatic retry attempts for transient errors.
-
-```yaml
-retry:
-  max_attempts: 3  # Fewer retries for fast-fail
-```
-
-Higher values = more resilience but longer wait times.
-
-### Initial Backoff
-
-**Key**: `retry.initial_backoff_ms`
-**Type**: Integer (milliseconds)
-**Range**: 100-5000
-**Default**: 1000 (1 second)
-
-Initial wait time before first retry.
-
-```yaml
-retry:
-  initial_backoff_ms: 500  # Start with 500ms
-```
-
-### Max Backoff
-
-**Key**: `retry.max_backoff_ms`
-**Type**: Integer (milliseconds)
-**Range**: 1000-60000
-**Default**: 30000 (30 seconds)
-
-Maximum wait time between retries.
-
-```yaml
-retry:
-  max_backoff_ms: 10000  # Cap at 10 seconds
-```
-
-**Exponential Backoff Formula**:
-```
-wait_time = min(initial * (2 ^ attempt), max_backoff)
-```
-
-Example with defaults:
-- Attempt 1: 1s
-- Attempt 2: 2s
-- Attempt 3: 4s
-- Attempt 4: 8s
-- Attempt 5: 16s
-- Attempt 6+: 30s (capped)
-
-## Compression Options
-
-Aether uses zstd compression for FHIR NDJSON files, reducing disk usage and improving file transfer speeds. Compression is enabled by default.
-
-### Compression Enabled
-
-**Key**: `compression.enabled`
-**Type**: Boolean
-**Default**: `true`
-
-Enable or disable zstd compression for pipeline output files.
-
-```yaml
-compression:
-  enabled: true   # Compressed files use .ndjson.zst extension
-```
-
-When enabled:
-- Output files use `.ndjson.zst` extension
-- Typical compression ratio: 4-7x depending on level
-- Transparent decompression when reading files
-
-When disabled:
-- Output files use plain `.ndjson` extension
-- Useful for debugging or compatibility with tools that don't support zstd
-
-### Compression Level
-
-**Key**: `compression.level`
-**Type**: String
-**Default**: `"default"`
-**Valid Values**: `fastest`, `default`, `better`, `best`
-
-Controls the trade-off between compression speed and ratio.
-
-```yaml
-compression:
-  level: "default"  # Balanced speed and compression
-```
-
-**Level Comparison**:
-
-| Level     | Speed      | Ratio  | Use Case                          |
-|-----------|------------|--------|-----------------------------------|
-| `fastest` | ~500 MB/s  | ~3-4x  | Large datasets, CPU-constrained   |
-| `default` | ~200 MB/s  | ~4-5x  | Balanced (recommended)            |
-| `better`  | ~100 MB/s  | ~5-6x  | Storage-constrained environments  |
-| `best`    | ~50 MB/s   | ~6-7x  | Archival, maximum compression     |
-
-**Backward Compatibility**: Aether automatically detects and reads both compressed (`.ndjson.zst`) and uncompressed (`.ndjson`) files, regardless of the compression setting. This allows processing of data from older pipeline runs or external sources.
-
-## Job Options
-
-### Jobs Directory
-
-**Key**: `jobs.jobs_dir`
-**Type**: String (directory path)
-**Default**: `./jobs`
-
-Directory for storing job state and data.
-
-```yaml
-jobs:
-  jobs_dir: "./jobs"
-```
-
-For network storage:
-```yaml
-jobs:
-  jobs_dir: "/mnt/shared/aether/jobs"
-```
-
-**Requirements**:
-- Must be writable by Aether process
-- Sufficient disk space for processed data
-- Should be backed up regularly
-
-## Complete Example Configurations
-
-### Development Setup
-
-```yaml
-# aether.yaml - local development
-services:
-  dimp_url: "http://localhost:8083/fhir"
-
-pipeline:
-  enabled_steps:
-    - import
+    - local_import
     - dimp
-
-retry:
-  max_attempts: 3
-  initial_backoff_ms: 500
-  max_backoff_ms: 5000
-
-jobs:
-  jobs_dir: "./jobs"
+    - flattening
 ```
 
-### Production TORCH + DIMP
+**Available steps:**
+
+| Step | Description |
+|------|-------------|
+| `torch` | Import via TORCH (requires CRTDL) |
+| `local_import` | Import from local directory |
+| `http_import` | Import from HTTP URL |
+| `dimp` | Pseudonymize via DIMP |
+| `wait` | Pause for manual inspection |
+| `flattening` | Transform to CSV (requires CRTDL) |
+| `send` | Upload to destination server |
+| `validation` | Validate FHIR data (placeholder) |
+| `csv_conversion` | Convert to CSV (placeholder) |
+| `parquet_conversion` | Convert to Parquet (placeholder) |
+
+**Rules:**
+- One import step must be first (torch, local_import, or http_import)
+- Wait step cannot be first or consecutive
+- Flattening requires CRTDL input
+
+## Retry
 
 ```yaml
-# aether.yaml - production
-services:
-  torch:
-    base_url: "https://torch.prod.healthcare.org"
-    username: "${TORCH_USERNAME}"
-    password: "${TORCH_PASSWORD}"
-  dimp_url: "https://dimp.prod.healthcare.org/api/fhir"
-
-pipeline:
-  enabled_steps:
-    - torch
-    - import
-    - dimp
-
 retry:
   max_attempts: 5
   initial_backoff_ms: 1000
   max_backoff_ms: 30000
-
-jobs:
-  jobs_dir: "/data/aether/jobs"
 ```
 
-### Local Files Only
+| Option | Type | Default | Range | Description |
+|--------|------|---------|-------|-------------|
+| `max_attempts` | int | 5 | 1-10 | Max retry attempts for transient errors |
+| `initial_backoff_ms` | int | 1000 | - | Initial backoff delay |
+| `max_backoff_ms` | int | 30000 | - | Max backoff delay |
+
+Exponential backoff: `wait = min(initial * 2^attempt, max)`
+
+## Compression
 
 ```yaml
-# aether.yaml - local processing
-pipeline:
-  enabled_steps:
-    - import
-
-jobs:
-  jobs_dir: "./output"
+compression:
+  enabled: true
+  level: "default"
 ```
 
-### High-Volume Processing
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | true | Enable zstd compression |
+| `level` | string | "default" | Compression level |
+
+**Compression levels:**
+
+| Level | Speed | Ratio | Use Case |
+|-------|-------|-------|----------|
+| `fastest` | ~500 MB/s | ~3-4x | Large datasets, CPU-constrained |
+| `default` | ~200 MB/s | ~4-5x | Balanced (recommended) |
+| `better` | ~100 MB/s | ~5-6x | Storage-constrained |
+| `best` | ~50 MB/s | ~6-7x | Archival |
+
+Output files use `.ndjson.zst` extension when enabled. Aether auto-detects and reads both compressed and uncompressed files.
+
+## Jobs Directory
 
 ```yaml
-# aether.yaml - optimized for large datasets
-services:
-  dimp_url: "http://dimp-cluster:8083/fhir"
-
-pipeline:
-  enabled_steps:
-    - import
-    - dimp
-
-retry:
-  max_attempts: 3
-  initial_backoff_ms: 2000
-  max_backoff_ms: 10000
-
-jobs:
-  jobs_dir: "/mnt/fast-storage/jobs"
+jobs_dir: "./jobs"
 ```
 
-## Environment Variable References
+Directory for job state and data files.
 
-Configuration supports environment variable substitution:
+## Environment Variables
+
+All string values support environment variable substitution:
 
 ```yaml
 services:
   torch:
-    base_url: "${TORCH_BASE_URL}"
     username: "${TORCH_USERNAME}"
     password: "${TORCH_PASSWORD}"
-  dimp_url: "${DIMP_URL}"
-
-jobs:
-  jobs_dir: "${AETHER_DATA_DIR}/jobs"
+  send:
+    url: "${FHIR_SERVER_URL}"
 ```
 
-Set environment variables:
-```bash
-export TORCH_BASE_URL="https://torch.hospital.org"
-export TORCH_USERNAME="researcher"
-export TORCH_PASSWORD="secret"
-export DIMP_URL="http://localhost:8083/fhir"
-export AETHER_DATA_DIR="/data/aether"
-```
+## Example Configurations
 
-## Configuration Validation
+### TORCH + DIMP
 
-Aether validates configuration on startup:
-
-```bash
-# Validate configuration without running
-aether validate-config aether.yaml
-```
-
-**Common Validation Errors**:
-- Missing required services for enabled steps
-- Invalid directory paths
-- Invalid retry values
-- Malformed YAML
-
-## Troubleshooting
-
-### Config file not found
-
-```
-Error: configuration file not found: aether.yaml
-```
-
-Solution: Ensure `aether.yaml` exists in the working directory or specify path:
-```bash
-aether pipeline start --config /etc/aether/config.yaml query.crtdl
-```
-
-### Service unreachable
-
-```
-Error: DIMP service unreachable: connection refused
-```
-
-Solution: Verify service URL and connectivity:
-```bash
-curl http://localhost:8083/fhir/
-```
-
-### Validation failed
-
-```
-Error: configuration validation failed: DIMP URL required for enabled step 'dimp'
-```
-
-Solution: Add required service configuration:
 ```yaml
 services:
-  dimp_url: "http://localhost:8083/fhir"
+  torch:
+    base_url: "https://torch.hospital.org"
+    username: "${TORCH_USER}"
+    password: "${TORCH_PASS}"
+  dimp:
+    url: "http://dimp:32861/fhir"
+
+pipeline:
+  enabled_steps:
+    - torch
+    - dimp
+
+jobs_dir: "./jobs"
+```
+
+### Local Import with Flattening
+
+```yaml
+services:
+  local_import:
+    dir: "/data/fhir"
+  dimp:
+    url: "http://dimp:32861/fhir"
+  flattening:
+    service_url: "http://fhir-flattener:8000"
+    lookup_path: "/config/lookup.json"
+
+pipeline:
+  enabled_steps:
+    - local_import
+    - dimp
+    - flattening
+
+compression:
+  enabled: true
+  level: "default"
+
+jobs_dir: "./jobs"
+```
+
+### Full Pipeline with Send
+
+```yaml
+services:
+  torch:
+    base_url: "https://torch.hospital.org"
+    username: "${TORCH_USER}"
+    password: "${TORCH_PASS}"
+  dimp:
+    url: "http://dimp:32861/fhir"
+  send:
+    send_as: "transfer_load"
+    url: "https://transfer.mii.de/fhir"
+    auth:
+      oauth_issuer_uri: "${OAUTH_ISSUER}"
+      oauth_client_id: "${OAUTH_CLIENT}"
+      oauth_client_secret: "${OAUTH_SECRET}"
+    transfer:
+      project_identifier: "MII-PROJECT"
+      organization_identifier: "hospital.example.de"
+
+pipeline:
+  enabled_steps:
+    - torch
+    - dimp
+    - send
+
+retry:
+  max_attempts: 5
+
+compression:
+  enabled: true
+
+jobs_dir: "/data/aether/jobs"
 ```
 
 ## Next Steps
 
-- [Configuration Guide](../getting-started/configuration.md) - Configuration introduction
 - [CLI Commands](./cli-commands.md) - Command reference
-- [Getting Started](../getting-started/quick-start.md) - Quick start guide
+- [Pipeline Steps](../guides/pipeline-steps.md) - Step details

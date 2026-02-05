@@ -62,7 +62,20 @@ export default defineConfig({
           items: [
             { text: 'TORCH Integration', link: '/guides/torch-integration' },
             { text: 'DIMP', link: '/guides/dimp' },
-            { text: 'Pipeline Steps', link: '/guides/pipeline-steps' }
+            {
+              text: 'Pipeline Steps',
+              link: '/guides/pipeline-steps',
+              collapsed: true,
+              items: [
+                { text: 'TORCH Import', link: '/guides/steps/torch-import' },
+                { text: 'Local Import', link: '/guides/steps/local-import' },
+                { text: 'HTTP Import', link: '/guides/steps/http-import' },
+                { text: 'DIMP', link: '/guides/steps/dimp' },
+                { text: 'Flattening', link: '/guides/steps/flattening' },
+                { text: 'Wait', link: '/guides/steps/wait' },
+                { text: 'Send', link: '/guides/steps/send' }
+              ]
+            }
           ]
         },
         {

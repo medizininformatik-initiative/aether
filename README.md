@@ -4,7 +4,7 @@
 
 # Aether
 
-A command-line tool for processing FHIR healthcare data through TORCH extraction and DIMP pseudonymization.
+A command-line tool for processing FHIR healthcare data through configurable pipeline steps.
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)](https://go.dev/)
@@ -18,12 +18,12 @@ A command-line tool for processing FHIR healthcare data through TORCH extraction
 Aether helps you:
 1. **Extract** patient data from a TORCH server using CRTDL query files
 2. **Pseudonymize** the data using a DIMP service to protect patient privacy
+3. **Flatten** FHIR data to CSV using SQL-on-FHIR ViewDefinitions
+4. **Send** processed data to FHIR servers or DSF transfer systems
 
 ## Installation
 
-Aether is available as binary for Linux, macOS and Windows.
-
-For Linux and macOS, an install script is provided. It downloads the binary and verifies GitHub attestations using the GitHub CLI tool (if installed):
+For Linux and macOS:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/medizininformatik-initiative/aether/main/install.sh | sh
@@ -39,7 +39,7 @@ aether --help
 
 ## Configuration
 
-Create a file named `aether.yaml` in your working directory:
+Create `aether.yaml` in your working directory:
 
 ```yaml
 services:
@@ -59,8 +59,6 @@ pipeline:
 jobs_dir: "./jobs"
 ```
 
-Replace the URLs and credentials with your actual server details.
-
 ## Usage
 
 ### Run a Pipeline
@@ -69,26 +67,14 @@ Replace the URLs and credentials with your actual server details.
 aether pipeline start your-query.crtdl
 ```
 
-This will:
-1. Send your CRTDL query to TORCH
-2. Wait for extraction to complete
-3. Download the FHIR data
-4. Send it to DIMP for pseudonymization
-5. Save the results in the `jobs` folder
-
 ### Check Status
 
 ```bash
-# List all jobs
 aether job list
-
-# Check a specific job
 aether pipeline status <job-id>
 ```
 
-### Resume a Failed Pipeline
-
-If something goes wrong, you can resume:
+### Resume a Pipeline
 
 ```bash
 aether pipeline continue <job-id>
@@ -98,6 +84,7 @@ aether pipeline continue <job-id>
 
 - [Full Documentation](https://medizininformatik-initiative.github.io/aether/)
 - [Configuration Options](https://medizininformatik-initiative.github.io/aether/getting-started/configuration)
+- [Pipeline Steps](https://medizininformatik-initiative.github.io/aether/guides/pipeline-steps)
 
 ## License
 

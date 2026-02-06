@@ -64,7 +64,7 @@ jobs:
           for file in release/*; do
             if [ -f "$file" ]; then
               echo "Signing $file..."
-              cosign sign-blob --yes "$file" --output-signature "${file}.sig"
+              cosign sign-blob --yes "$file" --bundle "${file}.bundle"
             fi
           done
 
@@ -72,7 +72,7 @@ jobs:
         run: |
           cd release
           for file in *; do
-            if [ -f "$file" ] && [ "${file##*.}" != "sig" ]; then
+            if [ -f "$file" ] && [ "${file##*.}" != "bundle" ]; then
               sha256sum "$file" > "${file}.sha256"
             fi
           done
@@ -80,13 +80,13 @@ jobs:
       - name: Generate in-toto attestations
         run: |
           for file in release/*; do
-            if [ -f "$file" ] && [ "${file##*.}" != "sig" ] && [ "${file##*.}" != "sha256" ]; then
+            if [ -f "$file" ] && [ "${file##*.}" != "bundle" ] && [ "${file##*.}" != "sha256" ]; then
               filename=$(basename "$file")
               echo "Creating attestation for $filename..."
               cosign attest-blob --yes \
                 --predicate <(echo "{\"name\": \"$filename\"}") \
                 --type intoto \
-                "$file" > "${file}.intoto.jsonl"
+                "$file" --bundle "${file}.att.bundle"
             fi
           done
 
@@ -95,9 +95,9 @@ jobs:
         with:
           name: signatures-checksums
           path: |
-            release/*.sig
+            release/*.bundle
+            release/*.att.bundle
             release/*.sha256
-            release/*.intoto.jsonl
           retention-days: 1
 
   sbom:

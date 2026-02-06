@@ -5,7 +5,7 @@
 # Project metadata
 PROJECT_NAME := aether
 BINARY_NAME := aether
-VERSION := $(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "1.0.0")
+VERSION := $(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "dev")
 BUILD_DIR := bin
 MAIN_PATH := cmd/aether/main.go
 
@@ -19,7 +19,7 @@ GOMOD := $(GOCMD) mod
 GOFMT := $(GOCMD) fmt
 
 # Build flags
-LDFLAGS := -ldflags "-X main.Version=$(VERSION)"
+LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 
 # Platforms
 PLATFORMS := linux darwin

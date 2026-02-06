@@ -914,3 +914,273 @@ func TestProjectConfig_Validate_SendStep(t *testing.T) {
 		})
 	}
 }
+
+// TestSendConfig_ValidateS3Upload tests validation of s3_upload mode SendConfig
+func TestSendConfig_ValidateS3Upload(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  models.SendConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "Valid s3_upload config - all fields",
+			config: models.SendConfig{
+				SendAs: models.SendModeS3Upload,
+				S3: models.S3Config{
+					Region:          "eu-central-1",
+					Bucket:          "my-bucket",
+					AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+					SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+					Timeout:         30 * 60 * 1e9,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Valid s3_upload config with custom endpoint",
+			config: models.SendConfig{
+				SendAs: models.SendModeS3Upload,
+				S3: models.S3Config{
+					Endpoint:        "http://localhost:9000",
+					Region:          "us-east-1",
+					Bucket:          "test-bucket",
+					AccessKeyID:     "minioadmin",
+					SecretAccessKey: "minioadmin",
+					UsePathStyle:    true,
+					Timeout:         10 * 60 * 1e9,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "S3 upload does not require URL field",
+			config: models.SendConfig{
+				URL:    "",
+				SendAs: models.SendModeS3Upload,
+				S3: models.S3Config{
+					Region:          "eu-central-1",
+					Bucket:          "my-bucket",
+					AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+					SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+					Timeout:         30 * 60 * 1e9,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Missing bucket",
+			config: models.SendConfig{
+				SendAs: models.SendModeS3Upload,
+				S3: models.S3Config{
+					Region:          "eu-central-1",
+					Bucket:          "",
+					AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+					SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+					Timeout:         30 * 60 * 1e9,
+				},
+			},
+			wantErr: true,
+			errMsg:  "s3 bucket is required",
+		},
+		{
+			name: "Missing region",
+			config: models.SendConfig{
+				SendAs: models.SendModeS3Upload,
+				S3: models.S3Config{
+					Region:          "",
+					Bucket:          "my-bucket",
+					AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+					SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+					Timeout:         30 * 60 * 1e9,
+				},
+			},
+			wantErr: true,
+			errMsg:  "s3 region is required",
+		},
+		{
+			name: "Missing access_key_id",
+			config: models.SendConfig{
+				SendAs: models.SendModeS3Upload,
+				S3: models.S3Config{
+					Region:          "eu-central-1",
+					Bucket:          "my-bucket",
+					AccessKeyID:     "",
+					SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+					Timeout:         30 * 60 * 1e9,
+				},
+			},
+			wantErr: true,
+			errMsg:  "s3 access_key_id is required",
+		},
+		{
+			name: "Missing secret_access_key",
+			config: models.SendConfig{
+				SendAs: models.SendModeS3Upload,
+				S3: models.S3Config{
+					Region:          "eu-central-1",
+					Bucket:          "my-bucket",
+					AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+					SecretAccessKey: "",
+					Timeout:         30 * 60 * 1e9,
+				},
+			},
+			wantErr: true,
+			errMsg:  "s3 secret_access_key is required",
+		},
+		{
+			name: "Invalid endpoint URL scheme",
+			config: models.SendConfig{
+				SendAs: models.SendModeS3Upload,
+				S3: models.S3Config{
+					Endpoint:        "ftp://invalid-endpoint",
+					Region:          "eu-central-1",
+					Bucket:          "my-bucket",
+					AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+					SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+					Timeout:         30 * 60 * 1e9,
+				},
+			},
+			wantErr: true,
+			errMsg:  "must use http or https scheme",
+		},
+		{
+			name: "Valid s3_upload with basic auth for proxy",
+			config: models.SendConfig{
+				SendAs: models.SendModeS3Upload,
+				S3: models.S3Config{
+					Region:          "eu-central-1",
+					Bucket:          "my-bucket",
+					AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+					SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+					Timeout:         30 * 60 * 1e9,
+				},
+				Auth: models.AuthConfig{
+					Username: "proxyuser",
+					Password: "proxypass",
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSendConfig_IsConfigured_S3(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   models.SendConfig
+		expected bool
+	}{
+		{
+			name: "S3 bucket set - configured",
+			config: models.SendConfig{
+				SendAs: models.SendModeS3Upload,
+				S3: models.S3Config{
+					Bucket: "my-bucket",
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "No URL and no S3 bucket - not configured",
+			config: models.SendConfig{
+				SendAs: models.SendModeS3Upload,
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.config.IsConfigured())
+		})
+	}
+}
+
+func TestProjectConfig_Validate_SendStep_S3(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  models.ProjectConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "Valid config with send step (s3_upload)",
+			config: models.ProjectConfig{
+				Pipeline: models.PipelineConfig{
+					EnabledSteps: []models.StepName{models.StepLocalImport, models.StepSend},
+				},
+				Services: models.ServiceConfig{
+					Send: models.SendConfig{
+						SendAs: models.SendModeS3Upload,
+						S3: models.S3Config{
+							Region:          "eu-central-1",
+							Bucket:          "my-bucket",
+							AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+							SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+							Timeout:         30 * 60 * 1e9,
+						},
+					},
+				},
+				Retry: models.RetryConfig{
+					MaxAttempts:      3,
+					InitialBackoffMs: 500,
+					MaxBackoffMs:     5000,
+				},
+				JobsDir: "/tmp/jobs",
+			},
+			wantErr: false,
+		},
+		{
+			name: "S3 send step enabled but missing bucket - fails HasServiceURL",
+			config: models.ProjectConfig{
+				Pipeline: models.PipelineConfig{
+					EnabledSteps: []models.StepName{models.StepLocalImport, models.StepSend},
+				},
+				Services: models.ServiceConfig{
+					Send: models.SendConfig{
+						SendAs: models.SendModeS3Upload,
+						S3: models.S3Config{
+							Region:          "eu-central-1",
+							Bucket:          "",
+							AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+							SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+						},
+					},
+				},
+				Retry: models.RetryConfig{
+					MaxAttempts:      3,
+					InitialBackoffMs: 500,
+					MaxBackoffMs:     5000,
+				},
+				JobsDir: "/tmp/jobs",
+			},
+			wantErr: true,
+			errMsg:  "service URL required for enabled step 'send'",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}

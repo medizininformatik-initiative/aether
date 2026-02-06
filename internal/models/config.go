@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"net/url"
+	"time"
 )
 
 // ProjectConfig is the top-level configuration for the Aether pipeline
@@ -99,6 +100,8 @@ const (
 	SendModeDirectResourceLoad SendMode = "direct_resource_load"
 	// SendModeTransferLoad prepares and sends to a transfer FHIR server using Binary/DocumentReference
 	SendModeTransferLoad SendMode = "transfer_load"
+	// SendModeS3Upload uploads files to an S3-compatible object store
+	SendModeS3Upload SendMode = "s3_upload"
 )
 
 // AuthConfig holds unified authentication settings for send step
@@ -118,6 +121,17 @@ type TransferConfig struct {
 	OrganizationIdentifier string `yaml:"organization_identifier" json:"organization_identifier" mapstructure:"organization_identifier"`
 }
 
+// S3Config holds settings for S3-compatible object store uploads
+type S3Config struct {
+	Endpoint        string        `yaml:"endpoint" json:"endpoint" mapstructure:"endpoint"`
+	Region          string        `yaml:"region" json:"region" mapstructure:"region"`
+	Bucket          string        `yaml:"bucket" json:"bucket" mapstructure:"bucket"`
+	AccessKeyID     string        `yaml:"access_key_id" json:"access_key_id" mapstructure:"access_key_id"`
+	SecretAccessKey string        `yaml:"secret_access_key" json:"secret_access_key" mapstructure:"secret_access_key"`
+	UsePathStyle    bool          `yaml:"use_path_style" json:"use_path_style" mapstructure:"use_path_style"`
+	Timeout         time.Duration `yaml:"timeout" json:"timeout" mapstructure:"timeout"`
+}
+
 // SendConfig contains settings for the send step
 type SendConfig struct {
 	// URL is the FHIR server base URL (required)
@@ -130,30 +144,35 @@ type SendConfig struct {
 	Auth AuthConfig `yaml:"auth" json:"auth" mapstructure:"auth"`
 	// Transfer holds settings specific to transfer_load mode
 	Transfer TransferConfig `yaml:"transfer" json:"transfer" mapstructure:"transfer"`
+	// S3 holds settings for s3_upload mode
+	S3 S3Config `yaml:"s3" json:"s3" mapstructure:"s3"`
 }
 
 // Validate checks if SendConfig has all required fields
 func (c *SendConfig) Validate() error {
-	if c.URL == "" {
-		return fmt.Errorf("send url is required")
-	}
-
-	parsedURL, err := url.Parse(c.URL)
-	if err != nil {
-		return fmt.Errorf("invalid send url: %w", err)
-	}
-
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("invalid send url: must use http or https scheme, got '%s'", parsedURL.Scheme)
-	}
-
 	// Validate send_as mode
 	if c.SendAs == "" {
-		return fmt.Errorf("send send_as is required (must be 'direct_resource_load' or 'transfer_load')")
+		return fmt.Errorf("send send_as is required (must be 'direct_resource_load', 'transfer_load', or 's3_upload')")
 	}
 
-	if c.SendAs != SendModeDirectResourceLoad && c.SendAs != SendModeTransferLoad {
-		return fmt.Errorf("invalid send send_as: must be 'direct_resource_load' or 'transfer_load', got '%s'", c.SendAs)
+	if c.SendAs != SendModeDirectResourceLoad && c.SendAs != SendModeTransferLoad && c.SendAs != SendModeS3Upload {
+		return fmt.Errorf("invalid send send_as: must be 'direct_resource_load', 'transfer_load', or 's3_upload', got '%s'", c.SendAs)
+	}
+
+	// URL is required for FHIR modes, not for S3
+	if c.SendAs != SendModeS3Upload {
+		if c.URL == "" {
+			return fmt.Errorf("send url is required")
+		}
+
+		parsedURL, err := url.Parse(c.URL)
+		if err != nil {
+			return fmt.Errorf("invalid send url: %w", err)
+		}
+
+		if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+			return fmt.Errorf("invalid send url: must use http or https scheme, got '%s'", parsedURL.Scheme)
+		}
 	}
 
 	// Mode-specific validation
@@ -162,6 +181,8 @@ func (c *SendConfig) Validate() error {
 		return c.validateDirectResourceLoad()
 	case SendModeTransferLoad:
 		return c.validateTransferLoad()
+	case SendModeS3Upload:
+		return c.validateS3Upload()
 	}
 
 	return nil
@@ -192,6 +213,36 @@ func (c *SendConfig) validateTransferLoad() error {
 	}
 
 	// Validate auth
+	return c.validateAuth()
+}
+
+// validateS3Upload validates s3_upload mode settings
+func (c *SendConfig) validateS3Upload() error {
+	if c.S3.Bucket == "" {
+		return fmt.Errorf("send s3 bucket is required for s3_upload mode")
+	}
+	if c.S3.Region == "" {
+		return fmt.Errorf("send s3 region is required for s3_upload mode")
+	}
+	if c.S3.AccessKeyID == "" {
+		return fmt.Errorf("send s3 access_key_id is required for s3_upload mode")
+	}
+	if c.S3.SecretAccessKey == "" {
+		return fmt.Errorf("send s3 secret_access_key is required for s3_upload mode")
+	}
+
+	// Validate endpoint URL scheme if provided
+	if c.S3.Endpoint != "" {
+		parsedURL, err := url.Parse(c.S3.Endpoint)
+		if err != nil {
+			return fmt.Errorf("invalid s3 endpoint: %w", err)
+		}
+		if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+			return fmt.Errorf("invalid s3 endpoint: must use http or https scheme, got '%s'", parsedURL.Scheme)
+		}
+	}
+
+	// Auth is optional for S3 (used for proxy auth)
 	return c.validateAuth()
 }
 
@@ -256,7 +307,7 @@ func (c *SendConfig) GetAuthType() SendAuthType {
 
 // IsConfigured returns true if the send step has minimum configuration
 func (c *SendConfig) IsConfigured() bool {
-	return c.URL != ""
+	return c.URL != "" || c.S3.Bucket != ""
 }
 
 // GetBatchSize returns the batch size for direct_resource_load mode, with a default of 100

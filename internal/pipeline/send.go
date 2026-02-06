@@ -3,6 +3,7 @@ package pipeline
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -20,6 +21,23 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
+
+// s3UploaderFactory creates an S3Uploader. Overridable in tests.
+var s3UploaderFactory = func(s3Config models.S3Config, auth models.AuthConfig, logger *lib.Logger) (services.S3Uploader, error) {
+	return services.NewAWSS3Uploader(s3Config, auth, logger)
+}
+
+// SetS3UploaderFactoryForTesting replaces the S3 uploader factory for tests.
+func SetS3UploaderFactoryForTesting(factory func(models.S3Config, models.AuthConfig, *lib.Logger) (services.S3Uploader, error)) {
+	s3UploaderFactory = factory
+}
+
+// ResetS3UploaderFactory restores the default S3 uploader factory.
+func ResetS3UploaderFactory() {
+	s3UploaderFactory = func(s3Config models.S3Config, auth models.AuthConfig, logger *lib.Logger) (services.S3Uploader, error) {
+		return services.NewAWSS3Uploader(s3Config, auth, logger)
+	}
+}
 
 // ClearOAuth2TokenCacheForTesting clears the OAuth2 token cache - exported for testing
 func ClearOAuth2TokenCacheForTesting() {
@@ -89,6 +107,8 @@ func ExecuteSendStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 		err = executeDirectResourceLoadSend(job, jobDir, step, logger)
 	case models.SendModeTransferLoad:
 		err = executeTransferLoadSend(job, jobDir, step, logger)
+	case models.SendModeS3Upload:
+		err = executeS3UploadSend(job, jobDir, step, logger)
 	default:
 		err = fmt.Errorf("unknown send mode: %s", sendMode)
 		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
@@ -552,6 +572,150 @@ func findAllFilesRecursive(dir string) ([]string, error) {
 	return files, err
 }
 
+// executeS3UploadSend uploads files from the input directory to an S3 bucket.
+// Uses an upload manifest for retry resilience — previously uploaded files are skipped.
+func executeS3UploadSend(job *models.PipelineJob, jobDir string, step *models.PipelineStep, logger *lib.Logger) error {
+	stepName := models.StepSend
+
+	// Resolve input directory from previous step
+	jobsBaseDir := filepath.Dir(jobDir)
+	jobID := filepath.Base(jobDir)
+	stepIndex := getStepIndexInEnabledSteps(job.Config.Pipeline.EnabledSteps, stepName)
+	inputDir := services.GetStepInputDir(jobsBaseDir, jobID, job.Config.Pipeline.EnabledSteps, stepIndex)
+
+	files, err := findAllFilesRecursive(inputDir)
+	if err != nil {
+		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
+		recordStepError(step, err, models.ErrorTypeNonTransient)
+		return fmt.Errorf("failed to list input files: %w", err)
+	}
+
+	if len(files) == 0 {
+		err := fmt.Errorf("no files found in %s", inputDir)
+		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
+		recordStepError(step, err, models.ErrorTypeNonTransient)
+		return err
+	}
+
+	s3Config := job.Config.Services.Send.S3
+
+	// Create uploader via factory (allows test injection)
+	uploader, err := s3UploaderFactory(s3Config, job.Config.Services.Send.Auth, logger)
+	if err != nil {
+		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
+		recordStepError(step, err, models.ErrorTypeNonTransient)
+		return fmt.Errorf("failed to create S3 uploader: %w", err)
+	}
+
+	// Load or create upload manifest for retry resilience
+	manifestPath := models.GetUploadManifestPath(jobDir)
+	manifest, err := models.LoadUploadManifest(manifestPath)
+	if err != nil {
+		logger.Warn("Failed to load upload manifest, starting fresh", "error", err)
+	}
+	if manifest == nil {
+		manifest = models.NewUploadManifest(job.JobID, uploader.GetBucket())
+	}
+
+	// Context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), s3Config.Timeout)
+	defer cancel()
+
+	fmt.Printf("Uploading %d file(s) to S3 bucket: %s\n\n", len(files), uploader.GetBucket())
+
+	filesUploaded := 0
+	var totalBytes int64
+
+	for _, filePath := range files {
+		// Skip already-uploaded files (resume support)
+		if manifest.IsFileUploaded(filePath) {
+			logger.Debug("Skipping already-uploaded file", "path", filePath)
+			filesUploaded++
+			continue
+		}
+
+		// Build S3 key: {job-id}/{filename}
+		relPath, err := filepath.Rel(inputDir, filePath)
+		if err != nil {
+			relPath = filepath.Base(filePath)
+		}
+		s3Key := jobID + "/" + relPath
+
+		// Get file size for logging
+		info, err := os.Stat(filePath)
+		if err != nil {
+			lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
+			recordStepError(step, err, models.ErrorTypeNonTransient)
+			_ = models.SaveManifest(manifest, manifestPath)
+			return fmt.Errorf("failed to stat file %s: %w", filepath.Base(filePath), err)
+		}
+		fileSize := info.Size()
+
+		etag, err := uploader.UploadFile(ctx, filePath, s3Key)
+		if err != nil {
+			retryable := isSendErrorRetryable(err)
+			lib.LogStepFailed(logger, string(stepName), job.JobID, err, retryable)
+			recordStepError(step, err, classifySendError(err))
+			// Save manifest before returning so progress is not lost
+			_ = models.SaveManifest(manifest, manifestPath)
+			return fmt.Errorf("failed to upload %s to S3: %w", filepath.Base(filePath), err)
+		}
+
+		manifest.AddUploadedFile(filePath, s3Key, etag, fileSize)
+		filesUploaded++
+		totalBytes += fileSize
+
+		// Save manifest after each successful upload
+		if saveErr := models.SaveManifest(manifest, manifestPath); saveErr != nil {
+			logger.Warn("Failed to save upload manifest", "error", saveErr)
+		}
+
+		fmt.Printf("  ✓ %s → s3://%s/%s (%s)\n",
+			filepath.Base(filePath), uploader.GetBucket(), s3Key, formatSize(fileSize))
+	}
+
+	manifest.MarkCompleted()
+	_ = models.SaveManifest(manifest, manifestPath)
+
+	step.Status = models.StepStatusCompleted
+	step.FilesProcessed = filesUploaded
+	completedAt := time.Now()
+	step.CompletedAt = &completedAt
+
+	duration := completedAt.Sub(*step.StartedAt)
+	fmt.Printf("\n✓ Uploaded %d files (%s) to s3://%s in %s\n",
+		filesUploaded, formatSize(totalBytes), uploader.GetBucket(), duration.Truncate(time.Second))
+
+	logger.Debug("S3 upload send step completed",
+		"files_uploaded", filesUploaded,
+		"total_bytes", totalBytes,
+		"bucket", uploader.GetBucket(),
+		"duration", duration,
+		"job_id", job.JobID)
+
+	return nil
+}
+
+// formatSize formats a byte count as a human-readable size string.
+func formatSize(bytes int64) string {
+	const (
+		KB = 1024
+		MB = 1024 * KB
+		GB = 1024 * MB
+	)
+
+	switch {
+	case bytes >= GB:
+		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(GB))
+	case bytes >= MB:
+		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(MB))
+	case bytes >= KB:
+		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(KB))
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
+}
+
 // SendError represents a failure from the FHIR transfer server.
 type SendError struct {
 	StatusCode int
@@ -568,6 +732,10 @@ func isSendErrorRetryable(err error) bool {
 	if errors.As(err, &sendErr) {
 		return sendErr.ErrorType == models.ErrorTypeTransient
 	}
+	var s3Err *services.S3Error
+	if errors.As(err, &s3Err) {
+		return s3Err.IsRetryable()
+	}
 	return lib.IsNetworkError(err)
 }
 
@@ -575,6 +743,10 @@ func classifySendError(err error) models.ErrorType {
 	var sendErr *SendError
 	if errors.As(err, &sendErr) {
 		return sendErr.ErrorType
+	}
+	var s3Err *services.S3Error
+	if errors.As(err, &s3Err) {
+		return s3Err.ErrorType
 	}
 	if lib.IsNetworkError(err) {
 		return models.ErrorTypeTransient

@@ -120,6 +120,15 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 					ProjectIdentifier:      ExpandEnvVars(viper.GetString("services.send.transfer.project_identifier")),
 					OrganizationIdentifier: ExpandEnvVars(viper.GetString("services.send.transfer.organization_identifier")),
 				},
+				S3: models.S3Config{
+					Endpoint:        ExpandEnvVars(viper.GetString("services.send.s3.endpoint")),
+					Region:          ExpandEnvVars(viper.GetString("services.send.s3.region")),
+					Bucket:          ExpandEnvVars(viper.GetString("services.send.s3.bucket")),
+					AccessKeyID:     ExpandEnvVars(viper.GetString("services.send.s3.access_key_id")),
+					SecretAccessKey: ExpandEnvVars(viper.GetString("services.send.s3.secret_access_key")),
+					UsePathStyle:    viper.GetBool("services.send.s3.use_path_style"),
+					Timeout:         viper.GetDuration("services.send.s3.timeout"),
+				},
 			},
 			LocalImport: models.LocalImportConfig{
 				Dir: ExpandEnvVars(viper.GetString("services.local_import.dir")),
@@ -245,6 +254,13 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 		// Apply Send batch size default if not set
 		if config.Services.Send.BatchSize == 0 {
 			config.Services.Send.BatchSize = 100
+		}
+		// Apply S3 defaults if not set
+		if config.Services.Send.S3.Region == "" {
+			config.Services.Send.S3.Region = "eu-central-1"
+		}
+		if config.Services.Send.S3.Timeout == 0 {
+			config.Services.Send.S3.Timeout = 30 * time.Minute
 		}
 	}
 

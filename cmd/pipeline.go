@@ -34,17 +34,18 @@ Available subcommands:
 
 // pipelineStartCmd represents the pipeline start command
 var pipelineStartCmd = &cobra.Command{
-	Use:   "start [crtdl-file]",
+	Use:   "start [input]",
 	Short: "Start a new pipeline job",
 	Long: `Start a new Data Use Process pipeline job.
 
-Input requirements depend on enabled pipeline steps:
-  • CRTDL file required if: flattening OR torch step is enabled
-  • CRTDL file optional if: only local_import or http_import steps enabled
+Input can be a CRTDL file, local directory, HTTP URL, or TORCH result URL:
+  • CRTDL file: submits extraction to TORCH, then downloads results
+  • TORCH URL: polls an existing extraction and downloads results
+    (auto-detected when URL contains /fhir/extraction/ or /fhir/result/)
+  • HTTP URL: downloads a single NDJSON file directly
+  • Local directory: imports files from disk (via --dir flag or config)
 
-For local imports, specify data directory via:
-  • --dir flag (highest priority)
-  • Config file: services.local_import.dir in aether.yaml
+CRTDL file is required if the flattening step is enabled.
 
 Examples:
   # Extract data using CRTDL query via TORCH
@@ -64,6 +65,9 @@ Examples:
 
   # Download from HTTP URL
   aether pipeline start https://example.com/fhir/Patient.ndjson
+
+  # Direct TORCH URL (skip extraction, poll and download results)
+  aether pipeline start "https://torch.example.com/fhir/extraction/result-123"
 
   # Start without progress indicators
   aether pipeline start query.crtdl --no-progress`,

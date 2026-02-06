@@ -54,13 +54,61 @@ services:
     polling_interval_seconds: 10     # Default is 5
 ```
 
-### Reusing Previous Extractions
+### Direct TORCH URL Import
 
-If you already have a TORCH result URL:
+If you already have a TORCH extraction or result URL, you can pass it directly to skip the CRTDL submission step:
 
 ```bash
-aether pipeline start http://torch-server/fhir/result/abc123
+aether pipeline start "https://torch.example.com/fhir/extraction/result-123"
 ```
 
-This skips the extraction and downloads directly.
+Aether auto-detects TORCH URLs by looking for `/fhir/extraction/` or `/fhir/result/` in the URL (case-sensitive). When a TORCH URL is provided, Aether:
+
+1. **Skips extraction submission** — does not send a CRTDL query
+2. **Polls the URL** — sends GET requests with exponential backoff until the extraction is complete (HTTP 200) or times out
+3. **Downloads all result files** — fetches multiple NDJSON files from the extraction result
+
+This is useful when:
+- Reusing results from a previous extraction
+- Sharing extraction URLs between team members
+- Resuming a download from a known TORCH endpoint
+
+#### URL patterns
+
+URLs must contain one of these path segments to be recognized as TORCH URLs:
+
+- `/fhir/extraction/` — e.g., `https://torch.example.com/fhir/extraction/result-123`
+- `/fhir/result/` — e.g., `https://torch.example.com/fhir/result/abc-xyz`
+
+All other HTTP(S) URLs are treated as plain [HTTP imports](./steps/http-import.md) (single-file download, no polling).
+
+#### Configuration
+
+TORCH URL imports still require TORCH configuration for authentication:
+
+```yaml
+services:
+  torch:
+    base_url: "https://your-torch-server.org"
+    username: "your-username"
+    password: "your-password"
+
+pipeline:
+  enabled_steps:
+    - torch
+    - dimp
+```
+
+The `extraction_timeout_minutes` and polling interval settings also apply.
+
+#### Comparison: CRTDL vs TORCH URL vs HTTP
+
+| | CRTDL | TORCH URL | HTTP URL |
+|---|---|---|---|
+| Input example | `query.crtdl` | `https://torch/fhir/result/123` | `https://example.com/data.ndjson` |
+| Submits extraction | Yes | No | No |
+| Polls for completion | Yes | Yes | No |
+| Downloads multiple files | Yes | Yes | No (single file) |
+| Requires TORCH auth | Yes | Yes | No |
+| First pipeline step | `torch` | `torch` | `http_import` |
 

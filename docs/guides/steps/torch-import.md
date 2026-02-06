@@ -1,12 +1,18 @@
 # TORCH Import
 
-Extracts patient data from a TORCH server using CRTDL queries.
+Extracts patient data from a TORCH server. Supports two modes: CRTDL-based extraction and direct TORCH URL import.
 
 ## What it does
 
+**CRTDL mode** (submit + poll + download):
 - Sends CRTDL query to TORCH
 - Polls for extraction completion
 - Downloads FHIR NDJSON data
+
+**Direct URL mode** (poll + download):
+- Polls an existing TORCH extraction/result URL
+- Downloads FHIR NDJSON data when ready
+- Skips the extraction submission step
 
 ## Configuration
 
@@ -27,9 +33,19 @@ pipeline:
 
 ## Usage
 
+### With CRTDL file
+
 ```bash
 aether pipeline start query.crtdl
 ```
+
+### With TORCH URL
+
+```bash
+aether pipeline start "https://torch.example.com/fhir/extraction/result-123"
+```
+
+URLs containing `/fhir/extraction/` or `/fhir/result/` are automatically recognized as TORCH URLs. See the [TORCH Integration guide](../torch-integration.md#direct-torch-url-import) for details.
 
 ## Configuration Options
 

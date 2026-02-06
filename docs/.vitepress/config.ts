@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitepress'
 
-const version = process.env.VITE_LATEST_RELEASE || 'v0.1.0'
+const version = process.env.VITE_LATEST_RELEASE || 'dev'
 
 export default defineConfig({
   title: 'Aether',

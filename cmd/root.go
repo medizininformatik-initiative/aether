@@ -16,6 +16,9 @@ var (
 	// Global flags
 	cfgFile string
 	verbose bool
+
+	// version is set via SetVersion before Execute
+	version = "dev"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -60,7 +63,13 @@ Configuration:
 For more information:
   Documentation: https://github.com/medizininformatik-initiative/aether
   Report issues: https://github.com/medizininformatik-initiative/aether/issues`,
-	Version: "1.0.0",
+	Version: version,
+}
+
+// SetVersion sets the version displayed by --version. Call before Execute.
+func SetVersion(v string) {
+	version = v
+	rootCmd.Version = v
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

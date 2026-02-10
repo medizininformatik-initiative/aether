@@ -23,7 +23,7 @@ func TestExecuteImportStep_UnsupportedStep(t *testing.T) {
 		InitialBackoffMs: 500,
 		MaxBackoffMs:     5000,
 	}
-	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, models.TLSConfig{}, logger)
 
 	// Create a job with an unsupported step (not an import step)
 	job := &models.PipelineJob{
@@ -64,7 +64,7 @@ func TestExecuteImportStep_LocalImportMissingDir(t *testing.T) {
 		InitialBackoffMs: 500,
 		MaxBackoffMs:     5000,
 	}
-	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, models.TLSConfig{}, logger)
 
 	// Create a job with local_import step but non-existent directory
 	job := &models.PipelineJob{
@@ -119,7 +119,7 @@ func TestExecuteImportStep_HttpImportValidationFailure(t *testing.T) {
 		InitialBackoffMs: 500,
 		MaxBackoffMs:     5000,
 	}
-	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, models.TLSConfig{}, logger)
 
 	// Create a job with http_import step but invalid (non-HTTP) input source
 	job := &models.PipelineJob{
@@ -157,7 +157,7 @@ func TestExecuteImportStep_HttpImportEmptyURL(t *testing.T) {
 		InitialBackoffMs: 500,
 		MaxBackoffMs:     5000,
 	}
-	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, models.TLSConfig{}, logger)
 
 	// Create a job with http_import step but empty URL
 	job := &models.PipelineJob{
@@ -200,7 +200,7 @@ func TestExecuteImportStep_TorchImportCRTDLValidationFailure(t *testing.T) {
 		InitialBackoffMs: 500,
 		MaxBackoffMs:     5000,
 	}
-	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, models.TLSConfig{}, logger)
 
 	// Create a job with torch import step but non-existent CRTDL file
 	job := &models.PipelineJob{
@@ -238,7 +238,7 @@ func TestExecuteImportStep_TorchImportTORCHURLValidationFailure(t *testing.T) {
 		InitialBackoffMs: 500,
 		MaxBackoffMs:     5000,
 	}
-	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, models.TLSConfig{}, logger)
 
 	// Create a job with torch import step but invalid TORCH URL
 	job := &models.PipelineJob{
@@ -276,7 +276,7 @@ func TestExecuteImportStep_TorchImportInvalidInputType(t *testing.T) {
 		InitialBackoffMs: 500,
 		MaxBackoffMs:     5000,
 	}
-	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, models.TLSConfig{}, logger)
 
 	// Create a job with torch import step but local input type (not CRTDL or TORCH URL)
 	job := &models.PipelineJob{

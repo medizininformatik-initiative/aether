@@ -116,6 +116,10 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 			Enabled: viper.GetBool("compression.enabled"),
 			Level:   viper.GetString("compression.level"),
 		},
+		TLS: models.TLSConfig{
+			CACertPath:         ExpandEnvVars(viper.GetString("tls.ca_cert_path")),
+			InsecureSkipVerify: viper.GetBool("tls.insecure_skip_verify"),
+		},
 		JobsDir: ExpandEnvVars(viper.GetString("jobs_dir")),
 	}
 

@@ -15,21 +15,11 @@ import (
 
 // Test helpers for flattener client tests
 
-// newTestFlattenerHTTPClient creates an HTTPClient with no retries for fast unit tests
-func newTestFlattenerHTTPClient() *services.HTTPClient {
-	return services.NewHTTPClient(
-		30*time.Second,
-		models.RetryConfig{MaxAttempts: 1},
-		lib.DefaultLogger,
-	)
-}
-
-func newTestFlattenerHTTPClientWithTimeout(timeout time.Duration) *services.HTTPClient {
-	return services.NewHTTPClient(
-		timeout,
-		models.RetryConfig{MaxAttempts: 1},
-		lib.DefaultLogger,
-	)
+func newTestFlatteningConfig(serverURL string) models.FlatteningConfig {
+	return models.FlatteningConfig{
+		ServiceURL: serverURL,
+		Timeout:    30 * time.Second,
+	}
 }
 
 func newTestViewDefinition(name, resource string) models.ViewDefinition {
@@ -64,7 +54,7 @@ func TestFlattenerClient_Flatten(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := services.NewFlattenerClient(server.URL, newTestFlattenerHTTPClient(), lib.DefaultLogger)
+		client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), nil, lib.DefaultLogger)
 		viewDef := newTestViewDefinition("TestView", "Patient")
 		resources := newTestResources("1", "2")
 
@@ -74,7 +64,7 @@ func TestFlattenerClient_Flatten(t *testing.T) {
 	})
 
 	t.Run("empty resources", func(t *testing.T) {
-		client := services.NewFlattenerClient("http://localhost:8080", newTestFlattenerHTTPClient(), lib.DefaultLogger)
+		client := services.NewFlattenerClient(newTestFlatteningConfig("http://localhost:8080"), nil, lib.DefaultLogger)
 
 		result, err := client.Flatten(models.ViewDefinition{Name: "TestView"}, []map[string]any{})
 		require.NoError(t, err)
@@ -82,13 +72,50 @@ func TestFlattenerClient_Flatten(t *testing.T) {
 	})
 
 	t.Run("connection refused", func(t *testing.T) {
-		httpClient := newTestFlattenerHTTPClientWithTimeout(1 * time.Second)
-		client := services.NewFlattenerClient("http://localhost:59999", httpClient, lib.DefaultLogger)
+		config := models.FlatteningConfig{
+			ServiceURL: "http://localhost:59999",
+			Timeout:    1 * time.Second,
+		}
+		client := services.NewFlattenerClient(config, nil, lib.DefaultLogger)
 
 		_, err := client.Flatten(newTestViewDefinition("TestView", "Patient"), newTestResources("1"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "request failed")
 	})
+}
+
+func TestFlattenerClient_WithCustomTransport(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/csv")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("id,name\n1,Test\n"))
+	}))
+	defer server.Close()
+
+	// Provide a non-nil transport to exercise the transport injection branch
+	transport := &http.Transport{}
+	client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), transport, lib.DefaultLogger)
+
+	result, err := client.Flatten(newTestViewDefinition("TestView", "Patient"), newTestResources("1"))
+	require.NoError(t, err)
+	assert.Equal(t, "id,name\n1,Test\n", result)
+}
+
+func TestFlattenerClient_DefaultTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	config := models.FlatteningConfig{
+		ServiceURL: server.URL,
+		Timeout:    0, // No timeout set - should use default
+	}
+	client := services.NewFlattenerClient(config, nil, lib.DefaultLogger)
+
+	_, err := client.Flatten(newTestViewDefinition("TestView", "Patient"), newTestResources("1"))
+	require.NoError(t, err)
 }
 
 func TestFlattenerClient_HealthCheck(t *testing.T) {
@@ -99,7 +126,7 @@ func TestFlattenerClient_HealthCheck(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := services.NewFlattenerClient(server.URL, newTestFlattenerHTTPClient(), lib.DefaultLogger)
+		client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), nil, lib.DefaultLogger)
 		assert.NoError(t, client.HealthCheck())
 	})
 
@@ -109,15 +136,18 @@ func TestFlattenerClient_HealthCheck(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := services.NewFlattenerClient(server.URL, newTestFlattenerHTTPClient(), lib.DefaultLogger)
+		client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), nil, lib.DefaultLogger)
 		err := client.HealthCheck()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "HTTP 503")
 	})
 
 	t.Run("connection refused", func(t *testing.T) {
-		httpClient := newTestFlattenerHTTPClientWithTimeout(1 * time.Second)
-		client := services.NewFlattenerClient("http://localhost:59998", httpClient, lib.DefaultLogger)
+		config := models.FlatteningConfig{
+			ServiceURL: "http://localhost:59998",
+			Timeout:    1 * time.Second,
+		}
+		client := services.NewFlattenerClient(config, nil, lib.DefaultLogger)
 		err := client.HealthCheck()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "health check failed")
@@ -185,7 +215,11 @@ func TestFlattenerError_IsRetryable(t *testing.T) {
 }
 
 func TestFlattenerClient_InvalidURL(t *testing.T) {
-	client := services.NewFlattenerClient("://invalid-url", newTestFlattenerHTTPClient(), lib.DefaultLogger)
+	invalidConfig := models.FlatteningConfig{
+		ServiceURL: "://invalid-url",
+		Timeout:    1 * time.Second,
+	}
+	client := services.NewFlattenerClient(invalidConfig, nil, lib.DefaultLogger)
 
 	t.Run("flatten request", func(t *testing.T) {
 		_, err := client.Flatten(newTestViewDefinition("TestView", "Patient"), newTestResources("1"))
@@ -196,7 +230,7 @@ func TestFlattenerClient_InvalidURL(t *testing.T) {
 	t.Run("health check", func(t *testing.T) {
 		err := client.HealthCheck()
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "health check failed")
+		assert.Contains(t, err.Error(), "failed to create health check request")
 	})
 }
 
@@ -220,22 +254,14 @@ func TestFlattenerClient_HTTPErrors(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := services.NewFlattenerClient(server.URL, newTestFlattenerHTTPClient(), lib.DefaultLogger)
+			client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), nil, lib.DefaultLogger)
 			_, err := client.Flatten(newTestViewDefinition("TestView", "Patient"), newTestResources("1"))
 
-			if !tt.isRetryable {
-				// Non-transient errors (4xx): HTTPClient returns response, FlattenerClient returns FlattenerError
-				require.Error(t, err)
-				flattenerErr, ok := err.(*services.FlattenerError)
-				require.True(t, ok, "expected FlattenerError")
-				assert.Equal(t, tt.statusCode, flattenerErr.StatusCode)
-				assert.Equal(t, tt.isRetryable, flattenerErr.IsRetryable())
-			} else {
-				// Transient errors (5xx): HTTPClient retries and exhausts attempts,
-				// returns a generic error (not FlattenerError) since body is consumed during retry
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), "request failed")
-			}
+			require.Error(t, err)
+			flattenerErr, ok := err.(*services.FlattenerError)
+			require.True(t, ok, "expected FlattenerError")
+			assert.Equal(t, tt.statusCode, flattenerErr.StatusCode)
+			assert.Equal(t, tt.isRetryable, flattenerErr.IsRetryable())
 		})
 	}
 }

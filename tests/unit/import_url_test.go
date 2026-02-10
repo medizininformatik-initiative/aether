@@ -328,6 +328,7 @@ func TestHTTPClient_Retry(t *testing.T) {
 			InitialBackoffMs: 10, // Short backoff for fast test
 			MaxBackoffMs:     100,
 		},
+		models.TLSConfig{},
 		logger,
 	)
 

@@ -194,7 +194,7 @@ func TestCreatePollRequest_SuccessByVerifyingPollExecution(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",

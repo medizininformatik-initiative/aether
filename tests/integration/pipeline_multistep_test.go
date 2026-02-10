@@ -82,7 +82,7 @@ func TestPipelineMultiStep_AutomaticExecution(t *testing.T) {
 
 	// Execute import step
 	logger = lib.NewLogger(lib.LogLevelError) // Suppress logs in tests
-	httpClient := services.NewHTTPClient(30*time.Second, config.Retry, logger)
+	httpClient := services.NewHTTPClient(30*time.Second, config.Retry, models.TLSConfig{}, logger)
 	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
 	require.NoError(t, err)
 	require.NoError(t, pipeline.UpdateJob(jobsDir, importedJob))
@@ -197,7 +197,7 @@ func TestPipelineMultiStep_OnlyImportEnabled(t *testing.T) {
 
 	// Execute import
 	logger = lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(30*time.Second, config.Retry, logger)
+	httpClient := services.NewHTTPClient(30*time.Second, config.Retry, models.TLSConfig{}, logger)
 	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
 	require.NoError(t, err)
 
@@ -318,7 +318,7 @@ func TestPipelineMultiStep_JobStatePersistedBetweenSteps(t *testing.T) {
 	require.NoError(t, pipeline.UpdateJob(jobsDir, startedJob))
 
 	logger = lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(30*time.Second, config.Retry, logger)
+	httpClient := services.NewHTTPClient(30*time.Second, config.Retry, models.TLSConfig{}, logger)
 	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
 	require.NoError(t, err)
 	require.NoError(t, pipeline.UpdateJob(jobsDir, importedJob))

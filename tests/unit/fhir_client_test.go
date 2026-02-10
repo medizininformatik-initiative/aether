@@ -34,7 +34,7 @@ func TestFHIRClient_UploadNDJSON_Success(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -73,7 +73,7 @@ func TestFHIRClient_UploadNDJSON_DefaultBatchSize(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -111,7 +111,7 @@ func TestFHIRClient_UploadNDJSON_EmptyLines(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -151,7 +151,7 @@ func TestFHIRClient_UploadNDJSON_BatchSize(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -183,7 +183,7 @@ func TestFHIRClient_UploadNDJSON_ServerError(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -205,7 +205,7 @@ func TestFHIRClient_UploadNDJSON_ScannerError(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -237,7 +237,7 @@ func TestFHIRClient_UploadNDJSON_PartialBatchError(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -270,7 +270,7 @@ func TestFHIRClient_UploadNDJSON_BasicAuth(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -299,7 +299,7 @@ func TestFHIRClient_UploadNDJSON_NoAuth(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -326,7 +326,7 @@ func TestFHIRClient_CreateTransactionBundle_ResourceWithID(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -360,7 +360,7 @@ func TestFHIRClient_CreateTransactionBundle_ResourceWithoutID(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -390,7 +390,7 @@ func TestFHIRClient_CreateTransactionBundle_InvalidJSON(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -418,7 +418,7 @@ func TestFHIRClient_CreateTransactionBundle_EmptyID(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -491,7 +491,7 @@ func TestFHIRClient_UploadNDJSON_URLTrailingSlash(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
 	// URL with trailing slash
 	config := models.SendConfig{
@@ -520,7 +520,7 @@ func TestFHIRClient_UploadNDJSON_MixedResources(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -569,7 +569,7 @@ func TestFHIRClient_UploadNDJSON_4xxError(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -597,7 +597,7 @@ func TestFHIRClient_UploadNDJSON_5xxError(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -624,7 +624,7 @@ func TestFHIRClient_UploadNDJSON_LargeResource(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -670,7 +670,7 @@ func TestFHIRUploadStats(t *testing.T) {
 
 func TestNewFHIRClient(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       "http://localhost:8080",
@@ -689,7 +689,7 @@ func TestFHIRClient_UploadNDJSON_EmptyFile(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -714,7 +714,7 @@ func TestFHIRClient_UploadNDJSON_OnlyEmptyLines(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -744,7 +744,7 @@ func TestFHIRClient_UploadNDJSON_FinalBatchOnly(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -780,7 +780,7 @@ func TestFHIRClient_UploadNDJSON_FinalBatchError(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -808,7 +808,7 @@ func TestFHIRClient_UploadNDJSON_BytesReader(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -827,7 +827,7 @@ func TestFHIRClient_UploadNDJSON_BytesReader(t *testing.T) {
 
 func TestNewFHIRClientWithParams(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	auth := models.AuthConfig{
 		Username: "user",
 		Password: "pass",
@@ -866,7 +866,7 @@ func TestFHIRClient_UploadNDJSON_OAuth2Auth(t *testing.T) {
 	defer fhirServer.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       fhirServer.URL,
@@ -904,7 +904,7 @@ func TestFHIRClient_UploadNDJSON_OAuth2AuthError(t *testing.T) {
 	defer fhirServer.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       fhirServer.URL,
@@ -935,7 +935,7 @@ func TestFHIRClient_UploadNDJSON_UnwrapCollectionBundle(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -976,7 +976,7 @@ func TestFHIRClient_UploadNDJSON_UnwrapSearchsetBundle(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -1012,7 +1012,7 @@ func TestFHIRClient_UploadNDJSON_UnwrapTransactionBundle(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -1053,7 +1053,7 @@ func TestFHIRClient_UploadNDJSON_DocumentBundleNotUnwrapped(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,
@@ -1089,7 +1089,7 @@ func TestFHIRClient_UploadNDJSON_CollectionBundleWithEmptyEntries(t *testing.T) 
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	config := models.SendConfig{
 		SendAs:    models.SendModeDirectResourceLoad,
 		URL:       server.URL,

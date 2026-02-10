@@ -335,7 +335,7 @@ func executeStepManually(job *models.PipelineJob, stepName models.StepName, conf
 		}
 
 		// Create HTTP client
-		httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, logger)
+		httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
 		showProgress := true
 
 		importedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, showProgress)

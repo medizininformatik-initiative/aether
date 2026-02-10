@@ -38,7 +38,7 @@ func TestPipelineImportError_UnreachableURL(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelInfo)
-	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, logger)
+	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
 
 	// Create job with unreachable URL
 	job, err := pipeline.CreateJob(unreachableURL, config, logger)
@@ -153,7 +153,7 @@ func TestPipelineImportError_HTTP500WithRetry(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelInfo)
-	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, logger)
+	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
 
 	// Execute import
 	job, _ := pipeline.CreateJob(server.URL+"/error.ndjson", config, logger)
@@ -322,7 +322,7 @@ func TestPipelineImportError_NetworkTimeout(t *testing.T) {
 
 	logger := lib.NewLogger(lib.LogLevelInfo)
 	// Create HTTP client with short timeout
-	httpClient := services.NewHTTPClient(1*time.Second, config.Retry, logger)
+	httpClient := services.NewHTTPClient(1*time.Second, config.Retry, models.TLSConfig{}, logger)
 
 	// Execute import
 	job, _ := pipeline.CreateJob(server.URL+"/slow.ndjson", config, logger)

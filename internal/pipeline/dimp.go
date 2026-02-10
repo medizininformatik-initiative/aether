@@ -40,7 +40,7 @@ func ExecuteDIMPStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 		return err
 	}
 
-	httpClient := services.DefaultHTTPClient()
+	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
 	dimpClient := services.NewDIMPClient(job.Config.Services.DIMP.URL, httpClient, logger)
 
 	// Setup directories - use GetStepInputDir to handle wait step correctly

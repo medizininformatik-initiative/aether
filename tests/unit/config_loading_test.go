@@ -1126,8 +1126,41 @@ func TestValidateServiceConnectivity_AllServicesAvailable(t *testing.T) {
 	}
 
 	// ValidateServiceConnectivity should succeed when all services are reachable
-	err := config.ValidateServiceConnectivity()
+	err := config.ValidateServiceConnectivity(nil)
 	assert.NoError(t, err, "All services should be reachable")
+}
+
+// TestValidateServiceConnectivity_WithCustomTransport verifies connectivity check uses the provided transport
+func TestValidateServiceConnectivity_WithCustomTransport(t *testing.T) {
+	dimpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer dimpServer.Close()
+
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			DIMP: models.DIMPConfig{
+				URL: dimpServer.URL,
+			},
+		},
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{
+				models.StepLocalImport,
+				models.StepDIMP,
+			},
+		},
+		Retry: models.RetryConfig{
+			MaxAttempts:      5,
+			InitialBackoffMs: 1000,
+			MaxBackoffMs:     30000,
+		},
+		JobsDir: "/tmp/jobs",
+	}
+
+	// Pass a non-nil transport to exercise the transport injection branch
+	transport := &http.Transport{}
+	err := config.ValidateServiceConnectivity(transport)
+	assert.NoError(t, err, "Should succeed with custom transport")
 }
 
 // TestValidateServiceConnectivity_DIMMServiceUnreachable verifies error when DIMP service is unreachable
@@ -1161,7 +1194,7 @@ func TestValidateServiceConnectivity_DIMMServiceUnreachable(t *testing.T) {
 	}
 
 	// ValidateServiceConnectivity should fail when DIMP is unreachable
-	err := config.ValidateServiceConnectivity()
+	err := config.ValidateServiceConnectivity(nil)
 	assert.Error(t, err, "Should fail when DIMP service is unreachable")
 	assert.Contains(t, err.Error(), "DIMP")
 }
@@ -1197,7 +1230,7 @@ func TestValidateServiceConnectivity_CSVServiceUnreachable(t *testing.T) {
 	}
 
 	// ValidateServiceConnectivity should fail when CSV service is unreachable
-	err := config.ValidateServiceConnectivity()
+	err := config.ValidateServiceConnectivity(nil)
 	assert.Error(t, err, "Should fail when CSV conversion service is unreachable")
 	assert.Contains(t, err.Error(), "CSV Conversion")
 }
@@ -1233,7 +1266,7 @@ func TestValidateServiceConnectivity_ParquetServiceUnreachable(t *testing.T) {
 	}
 
 	// ValidateServiceConnectivity should fail when Parquet service is unreachable
-	err := config.ValidateServiceConnectivity()
+	err := config.ValidateServiceConnectivity(nil)
 	assert.Error(t, err, "Should fail when Parquet conversion service is unreachable")
 	assert.Contains(t, err.Error(), "Parquet Conversion")
 }
@@ -1271,7 +1304,7 @@ func TestValidateServiceConnectivity_SendServiceAvailable(t *testing.T) {
 	}
 
 	// ValidateServiceConnectivity should succeed when Send service is reachable
-	err := config.ValidateServiceConnectivity()
+	err := config.ValidateServiceConnectivity(nil)
 	assert.NoError(t, err, "Send service should be reachable")
 }
 
@@ -1303,7 +1336,7 @@ func TestValidateServiceConnectivity_SendServiceUnreachable(t *testing.T) {
 	}
 
 	// ValidateServiceConnectivity should fail when Send service is unreachable
-	err := config.ValidateServiceConnectivity()
+	err := config.ValidateServiceConnectivity(nil)
 	assert.Error(t, err, "Should fail when Send service is unreachable")
 	assert.Contains(t, err.Error(), "Send")
 }
@@ -1989,4 +2022,100 @@ func TestPipelineJob_ValidateWithEmptyInputSource_NoConfigDir(t *testing.T) {
 	err := job.Validate()
 	assert.Error(t, err, "Validation should fail with empty InputSource and no config dir")
 	assert.Contains(t, err.Error(), "input_source is required", "Error should mention input_source")
+}
+
+// TestConfigLoading_TLSConfig verifies TLS settings are loaded from YAML
+func TestConfigLoading_TLSConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+pipeline:
+  enabled_steps:
+    - local_import
+
+tls:
+  ca_cert_path: "/etc/ssl/custom/ca-bundle.pem"
+  insecure_skip_verify: true
+
+retry:
+  max_attempts: 3
+  initial_backoff_ms: 500
+  max_backoff_ms: 5000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.Equal(t, "/etc/ssl/custom/ca-bundle.pem", config.TLS.CACertPath, "TLS CA cert path should be loaded")
+	assert.True(t, config.TLS.InsecureSkipVerify, "InsecureSkipVerify should be true")
+}
+
+// TestConfigLoading_TLSConfigDefaults verifies TLS defaults when not specified
+func TestConfigLoading_TLSConfigDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 3
+  initial_backoff_ms: 500
+  max_backoff_ms: 5000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.Empty(t, config.TLS.CACertPath, "TLS CA cert path should be empty by default")
+	assert.False(t, config.TLS.InsecureSkipVerify, "InsecureSkipVerify should default to false")
+}
+
+// TestConfigLoading_TLSConfigEnvVar verifies environment variable expansion in ca_cert_path
+func TestConfigLoading_TLSConfigEnvVar(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	require.NoError(t, os.Setenv("TEST_CA_CERT_PATH", "/custom/certs/ca.pem"))
+	defer func() { _ = os.Unsetenv("TEST_CA_CERT_PATH") }()
+
+	configContent := `
+pipeline:
+  enabled_steps:
+    - local_import
+
+tls:
+  ca_cert_path: "${TEST_CA_CERT_PATH}"
+
+retry:
+  max_attempts: 3
+  initial_backoff_ms: 500
+  max_backoff_ms: 5000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.Equal(t, "/custom/certs/ca.pem", config.TLS.CACertPath, "TLS CA cert path should expand env var")
 }

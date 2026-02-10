@@ -255,12 +255,15 @@ func ValidateJobsDir(path string) error {
 	return nil
 }
 
-// ValidateServiceConnectivity checks if required service URLs are reachable
-// This performs a lightweight HTTP HEAD request to verify connectivity
-// Validates that configured service URLs are reachable
-func (c *ProjectConfig) ValidateServiceConnectivity() error {
+// ValidateServiceConnectivity checks if required service URLs are reachable.
+// This performs a lightweight HTTP HEAD request to verify connectivity.
+// If transport is non-nil it is used for custom TLS settings.
+func (c *ProjectConfig) ValidateServiceConnectivity(transport *http.Transport) error {
 	client := &http.Client{
 		Timeout: 5 * time.Second, // Quick connectivity check
+	}
+	if transport != nil {
+		client.Transport = transport
 	}
 
 	// Check TORCH connectivity if base URL is configured

@@ -134,7 +134,7 @@ func TestPipelineImportURL_WithRetry(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelInfo)
-	httpClient := services.NewHTTPClient(5*time.Second, config.Retry, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, config.Retry, models.TLSConfig{}, logger)
 
 	// Create and execute job
 	job, _ := pipeline.CreateJob(server.URL+"/test.ndjson", config, logger)

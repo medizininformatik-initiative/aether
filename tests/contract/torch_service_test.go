@@ -85,7 +85,7 @@ func TestTORCHService_SubmitExtraction_Success(t *testing.T) {
 
 	// Test will verify submission flow
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",
@@ -127,7 +127,7 @@ func TestTORCHService_SubmitExtraction_InvalidCRTDL(t *testing.T) {
 
 	// Test will verify error handling
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -157,7 +157,7 @@ func TestTORCHService_SubmitExtraction_Unauthorized(t *testing.T) {
 
 	// Test will verify authentication error handling
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "wronguser",
@@ -189,7 +189,7 @@ func TestTORCHService_PollStatus_InProgress(t *testing.T) {
 
 	// Test will verify polling continues on 202 (will timeout since server always returns 202)
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",
@@ -241,7 +241,7 @@ func TestTORCHService_PollStatus_Complete(t *testing.T) {
 
 	// Test will verify result parsing
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",
@@ -279,7 +279,7 @@ func TestTORCHService_PollStatus_Failed(t *testing.T) {
 
 	// Test will verify error handling
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",
@@ -319,7 +319,7 @@ func TestTORCHService_DownloadFile_Success(t *testing.T) {
 
 	// Test will verify file download
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -350,7 +350,7 @@ func TestTORCHService_DownloadFile_NotFound(t *testing.T) {
 
 	// Test will verify 404 error handling
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -379,7 +379,7 @@ func TestTORCHService_DownloadFile_ServerError(t *testing.T) {
 	// Test will verify error handling on 500
 	// Note: Current implementation doesn't retry downloads (uses client.Do instead of httpClient.Do)
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -472,7 +472,7 @@ func TestTORCHService_EndToEnd_SubmitPollDownload(t *testing.T) {
 
 	// Test will verify complete workflow
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",

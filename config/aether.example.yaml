@@ -170,6 +170,20 @@ retry:
   # Maximum backoff delay in milliseconds (exponential backoff cap)
   max_backoff_ms: 30000
 
+# TLS settings for outgoing HTTP connections
+# Use to trust custom/internal certificates (common in hospital/research networks)
+tls:
+  # Path to a PEM file containing additional certificates to trust
+  # Accepts both CA certificates and individual server certificates
+  # Multiple certificates can be bundled in a single PEM file
+  # System CA certificates are still trusted alongside custom ones
+  # Supports environment variables: ca_cert_path: "${CA_CERT_PATH}"
+  # ca_cert_path: "/path/to/certs.pem"
+
+  # Skip TLS verification entirely (development/testing ONLY)
+  # WARNING: Disables certificate validation — never use in production
+  insecure_skip_verify: false
+
 # Compression settings for pipeline output files
 # Zstd compression reduces disk usage and speeds up file transfers
 compression:

@@ -36,7 +36,7 @@ func TestFetchOAuth2Token_Success(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
 	token, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestFetchOAuth2Token_CacheHit(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
 	// First request - should hit the server
 	token1, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
@@ -83,7 +83,7 @@ func TestFetchOAuth2Token_HTTPError(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
 	_, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
 	require.Error(t, err)
@@ -102,7 +102,7 @@ func TestFetchOAuth2Token_InvalidJSON(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
 	_, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
 	require.Error(t, err)
@@ -122,7 +122,7 @@ func TestFetchOAuth2Token_MissingAccessToken(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
 	_, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
 	require.Error(t, err)
@@ -144,7 +144,7 @@ func TestFetchOAuth2Token_ShortExpiresIn(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
 	// First request
 	token1, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
@@ -173,7 +173,7 @@ func TestFetchOAuth2Token_TrailingSlashInIssuerURI(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
 	// Issuer URI with trailing slash
 	_, err := services.FetchOAuth2Token(server.URL+"/", "test-client", "test-secret", httpClient)
@@ -194,7 +194,7 @@ func TestClearOAuth2TokenCache(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
 	// Populate cache
 	_, _ = services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)

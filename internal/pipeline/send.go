@@ -152,7 +152,7 @@ func executeTransferLoadSend(job *models.PipelineJob, jobDir string, step *model
 		"binary_count", len(binaryResources),
 		"job_id", job.JobID)
 
-	httpClient := services.DefaultHTTPClient()
+	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
 
 	// Upload each Binary resource
 	for i, binary := range binaryResources {
@@ -226,7 +226,7 @@ func executeDirectResourceLoadSend(job *models.PipelineJob, jobDir string, step 
 		"total_files", len(orderedFiles))
 
 	// Create HTTP client
-	httpClient := services.DefaultHTTPClient()
+	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
 
 	// Create FHIR client
 	fhirClient := services.NewFHIRClient(job.Config.Services.Send, httpClient, logger)

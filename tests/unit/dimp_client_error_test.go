@@ -30,7 +30,7 @@ func TestDIMPClient_Error_400BadRequest(t *testing.T) {
 
 	// Test 400 error handling
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	client := services.NewDIMPClient(server.URL, httpClient, logger)
 
 	malformed := map[string]any{
@@ -58,7 +58,7 @@ func TestDIMPClient_Error_422UnprocessableEntity(t *testing.T) {
 
 	// Test 422 error handling
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	client := services.NewDIMPClient(server.URL, httpClient, logger)
 
 	invalid := map[string]any{
@@ -83,7 +83,7 @@ func TestDIMPClient_Error_500InternalServerError(t *testing.T) {
 
 	// Test 500 error is retryable
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 100}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 100}, models.TLSConfig{}, logger)
 	client := services.NewDIMPClient(server.URL, httpClient, logger)
 
 	resource := map[string]any{
@@ -108,7 +108,7 @@ func TestDIMPClient_Error_502BadGateway(t *testing.T) {
 
 	// Test 502 is retryable (upstream dependency down)
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 100}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 100}, models.TLSConfig{}, logger)
 	client := services.NewDIMPClient(server.URL, httpClient, logger)
 
 	resource := map[string]any{
@@ -133,7 +133,7 @@ func TestDIMPClient_Error_503ServiceUnavailable(t *testing.T) {
 
 	// Test 503 is retryable
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 100}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 100}, models.TLSConfig{}, logger)
 	client := services.NewDIMPClient(server.URL, httpClient, logger)
 
 	resource := map[string]any{
@@ -158,7 +158,7 @@ func TestDIMPClient_Error_504GatewayTimeout(t *testing.T) {
 
 	// Test 504 is retryable
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 100}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 100}, models.TLSConfig{}, logger)
 	client := services.NewDIMPClient(server.URL, httpClient, logger)
 
 	resource := map[string]any{
@@ -175,7 +175,7 @@ func TestDIMPClient_Error_504GatewayTimeout(t *testing.T) {
 func TestDIMPClient_Error_NetworkFailure(t *testing.T) {
 	// Test network connectivity error
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(1*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 100}, logger)
+	httpClient := services.NewHTTPClient(1*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 100}, models.TLSConfig{}, logger)
 	client := services.NewDIMPClient("http://192.0.2.1:9999", httpClient, logger) // Non-routable IP
 
 	resource := map[string]any{
@@ -198,7 +198,7 @@ func TestDIMPClient_Error_InvalidJSON(t *testing.T) {
 
 	// Test handling of invalid JSON response
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	client := services.NewDIMPClient(server.URL, httpClient, logger)
 
 	resource := map[string]any{

@@ -30,7 +30,7 @@ func TestHTTPClient_Put_Success(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 
 	body := []byte(`{"resourceType":"Binary","id":"123"}`)
 	resp, err := httpClient.Put(server.URL, "application/fhir+json", body)
@@ -54,7 +54,7 @@ func TestHTTPClient_Put_ClientError(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 
 	body := []byte(`{"data":"test"}`)
 	resp, err := httpClient.Put(server.URL, "application/json", body)
@@ -69,7 +69,7 @@ func TestHTTPClient_Put_ClientError(t *testing.T) {
 // TestHTTPClient_Put_InvalidURL tests the Put method with an invalid URL
 func TestHTTPClient_Put_InvalidURL(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 
 	body := []byte(`{"data":"test"}`)
 	// Use an invalid URL scheme to trigger NewRequest error
@@ -91,7 +91,7 @@ func TestHTTPClient_Put_EmptyBody(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 
 	resp, err := httpClient.Put(server.URL, "application/json", []byte{})
 
@@ -115,7 +115,7 @@ func TestHTTPClient_Put_LargeBody(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 
 	// Create a large body (1MB)
 	largeBody := make([]byte, 1024*1024)
@@ -153,7 +153,7 @@ func TestHTTPClient_Put_CustomContentType(t *testing.T) {
 			defer server.Close()
 
 			logger := lib.NewLogger(lib.LogLevelDebug)
-			httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+			httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 
 			resp, err := httpClient.Put(server.URL, expectedCT, []byte("test"))
 
@@ -164,4 +164,45 @@ func TestHTTPClient_Put_CustomContentType(t *testing.T) {
 			assert.Equal(t, expectedCT, receivedContentType)
 		})
 	}
+}
+
+// TestHTTPClient_WithInsecureSkipVerify verifies the TLS transport branch
+// where BuildTLSTransport returns a non-nil transport
+func TestHTTPClient_WithInsecureSkipVerify(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	tlsConfig := models.TLSConfig{InsecureSkipVerify: true}
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, tlsConfig, logger)
+
+	resp, err := httpClient.Put(server.URL, "application/json", []byte(`{"test":true}`))
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	defer func() { _ = resp.Body.Close() }()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// TestHTTPClient_WithInvalidCACertPath verifies the TLS error branch
+// where BuildTLSTransport returns an error and the client falls back to defaults
+func TestHTTPClient_WithInvalidCACertPath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	tlsConfig := models.TLSConfig{CACertPath: "/nonexistent/ca.pem"}
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, tlsConfig, logger)
+
+	// Should still work — falls back to default transport on TLS error
+	resp, err := httpClient.Put(server.URL, "application/json", []byte(`{"test":true}`))
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	defer func() { _ = resp.Body.Close() }()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }

@@ -64,7 +64,7 @@ func TestTORCHClient_SubmitExtraction_Success(t *testing.T) {
 
 	// Test execution
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",
@@ -84,7 +84,7 @@ func TestTORCHClient_SubmitExtraction_Success(t *testing.T) {
 
 func TestTORCHClient_SubmitExtraction_FileNotFound(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  "http://localhost:8080",
 		Username: "testuser",
@@ -113,7 +113,7 @@ func TestTORCHClient_SubmitExtraction_Unauthorized(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "wrong",
@@ -164,7 +164,7 @@ func TestTORCHClient_PollExtractionStatus_ImmediateSuccess(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",
@@ -207,7 +207,7 @@ func TestTORCHClient_PollExtractionStatus_EmptyOutput(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",
@@ -235,7 +235,7 @@ func TestTORCHClient_PollExtractionStatus_Timeout(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",
@@ -271,7 +271,7 @@ func TestTORCHClient_PollExtractionStatus_ServerError(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",
@@ -310,7 +310,7 @@ func TestTORCHClient_DownloadExtractionFiles_Success(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -359,7 +359,7 @@ func TestTORCHClient_DownloadExtractionFiles_PartialFailure(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -400,7 +400,7 @@ func TestTORCHClient_EncodeCRTDLToBase64_ValidJSON(t *testing.T) {
 	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  "http://localhost:8080",
 		Username: "testuser",
@@ -474,7 +474,7 @@ func TestTORCHClient_PollExtractionStatus_ExponentialBackoff(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",
@@ -512,7 +512,7 @@ func TestTORCHClient_Ping_Success(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -527,7 +527,7 @@ func TestTORCHClient_Ping_Success(t *testing.T) {
 
 func TestTORCHClient_Ping_Unreachable(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  "http://unreachable-host-12345.invalid:9999",
 		Username: "testuser",
@@ -553,7 +553,7 @@ func TestTORCHClient_Ping_PerformanceWithin5Seconds(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelError) // Reduce log noise for performance test
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -579,7 +579,7 @@ func TestTORCHClient_Ping_PerformanceWithin5Seconds(t *testing.T) {
 
 func TestTORCHClient_MakeAbsoluteURL_RelativeURL(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  "http://torch.example.com:8080",
 		Username: "testuser",
@@ -603,7 +603,7 @@ func TestTORCHClient_EncodeCRTDLToBase64_EmptyFile(t *testing.T) {
 	require.NoError(t, err)
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  "http://localhost:8080",
 		Username: "testuser",
@@ -625,7 +625,7 @@ func TestTORCHClient_EncodeCRTDLToBase64_InvalidJSON(t *testing.T) {
 	require.NoError(t, err)
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  "http://localhost:8080",
 		Username: "testuser",
@@ -666,7 +666,7 @@ func TestTORCHClient_ParseExtractionResult_FHIRFormat(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",
@@ -704,7 +704,7 @@ func TestTORCHClient_ParseExtractionResult_SimpleFormat(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",
@@ -731,7 +731,7 @@ func TestTORCHClient_ParseExtractionResult_InvalidJSON(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",
@@ -762,7 +762,7 @@ func TestTORCHClient_SubmitExtraction_MissingContentLocation(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -778,7 +778,7 @@ func TestTORCHClient_SubmitExtraction_MissingContentLocation(t *testing.T) {
 
 func TestTORCHClient_DownloadExtractionFiles_EmptyFileList(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  "http://localhost:8080",
 		Username: "testuser",
@@ -805,7 +805,7 @@ func TestTORCHClient_DownloadExtractionFiles_InvalidDestinationPermissions(t *te
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -844,7 +844,7 @@ func TestTORCHClient_DownloadExtractionFiles_WithCompression(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -897,7 +897,7 @@ func TestTORCHClient_DownloadExtractionFiles_CompressionAllLevels(t *testing.T) 
 	for _, level := range levels {
 		t.Run(level, func(t *testing.T) {
 			logger := lib.NewLogger(lib.LogLevelDebug)
-			httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+			httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 			torchConfig := models.TORCHConfig{
 				BaseURL:  server.URL,
 				Username: "testuser",
@@ -929,7 +929,7 @@ func TestTORCHClient_DownloadExtractionFiles_WithProgressAndCompression(t *testi
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -974,7 +974,7 @@ func TestTORCHClient_DownloadExtractionFiles_CompressedFileSizeSmaller(t *testin
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -1021,7 +1021,7 @@ func TestTORCHClient_SubmitExtraction_HttpDoError(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -1049,7 +1049,7 @@ func TestTORCHClient_PollExtractionStatus_HttpDoError(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",
@@ -1079,7 +1079,7 @@ func TestTORCHClient_DownloadFile_HttpDoError(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -1114,7 +1114,7 @@ func TestTORCHClient_DownloadFile_PartialContent(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -1149,7 +1149,7 @@ func TestTORCHClient_DownloadFile_FilenameFallback(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -1179,7 +1179,7 @@ func TestTORCHClient_DownloadFile_HTTP4xxError(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -1205,7 +1205,7 @@ func TestTORCHClient_Ping_ServerError(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",
@@ -1235,7 +1235,7 @@ func TestTORCHClient_DownloadExtractionFiles_LargeFileWithCompression(t *testing
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(10*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, logger)
+	httpClient := services.NewHTTPClient(10*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:  server.URL,
 		Username: "testuser",

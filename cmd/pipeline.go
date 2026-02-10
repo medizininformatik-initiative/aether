@@ -185,7 +185,7 @@ func executeStep(job *models.PipelineJob, stepName models.StepName, config *mode
 			return fmt.Errorf("step validation failed: %w", err)
 		}
 
-		httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, logger)
+		httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
 		showProgress := !noProgress
 
 		importedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, showProgress)
@@ -346,7 +346,8 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("Validating service connectivity...")
-	if err := config.ValidateServiceConnectivity(); err != nil {
+	connectTransport, _ := services.BuildTLSTransport(config.TLS, lib.DefaultLogger)
+	if err := config.ValidateServiceConnectivity(connectTransport); err != nil {
 		return fmt.Errorf("service connectivity check failed: %w\n\nPlease ensure all required services are running and accessible", err)
 	}
 	fmt.Println("✓ All required services are reachable")
@@ -390,6 +391,7 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	httpClient := services.NewHTTPClient(
 		time.Duration(config.Retry.InitialBackoffMs)*time.Millisecond*10, // Longer timeout for downloads
 		config.Retry,
+		config.TLS,
 		logger,
 	)
 

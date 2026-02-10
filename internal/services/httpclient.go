@@ -18,18 +18,28 @@ type HTTPClient struct {
 	logger      *lib.Logger
 }
 
-// NewHTTPClient creates an HTTP client with timeout and retry configuration
-func NewHTTPClient(timeout time.Duration, retryConfig models.RetryConfig, logger *lib.Logger) *HTTPClient {
+// NewHTTPClient creates an HTTP client with timeout, retry, and TLS configuration.
+// If tlsConfig specifies a custom CA or InsecureSkipVerify, a custom transport is built.
+func NewHTTPClient(timeout time.Duration, retryConfig models.RetryConfig, tlsConfig models.TLSConfig, logger *lib.Logger) *HTTPClient {
+	client := &http.Client{
+		Timeout: timeout,
+	}
+
+	transport, err := BuildTLSTransport(tlsConfig, logger)
+	if err != nil {
+		logger.Warn("Failed to build TLS transport, using defaults", "error", err)
+	} else if transport != nil {
+		client.Transport = transport
+	}
+
 	return &HTTPClient{
-		client: &http.Client{
-			Timeout: timeout,
-		},
+		client:      client,
 		retryConfig: lib.NewRetryConfigFromModel(retryConfig),
 		logger:      logger,
 	}
 }
 
-// DefaultHTTPClient creates an HTTP client with sensible defaults
+// DefaultHTTPClient creates an HTTP client with sensible defaults (no custom TLS).
 func DefaultHTTPClient() *HTTPClient {
 	return NewHTTPClient(
 		30*time.Second,
@@ -38,6 +48,7 @@ func DefaultHTTPClient() *HTTPClient {
 			InitialBackoffMs: 1000,
 			MaxBackoffMs:     30000,
 		},
+		models.TLSConfig{},
 		lib.DefaultLogger,
 	)
 }

@@ -11,7 +11,15 @@ type ProjectConfig struct {
 	Pipeline    PipelineConfig    `yaml:"pipeline" json:"pipeline"`
 	Retry       RetryConfig       `yaml:"retry" json:"retry"`
 	Compression CompressionConfig `yaml:"compression" json:"compression"`
+	TLS         TLSConfig         `yaml:"tls" json:"tls" mapstructure:"tls"`
 	JobsDir     string            `yaml:"jobs_dir" json:"jobs_dir"`
+}
+
+// TLSConfig holds TLS settings for outgoing HTTP connections.
+// Used to trust custom/internal CA certificates common in hospital networks.
+type TLSConfig struct {
+	CACertPath         string `yaml:"ca_cert_path" json:"ca_cert_path" mapstructure:"ca_cert_path"`
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify" json:"insecure_skip_verify" mapstructure:"insecure_skip_verify"`
 }
 
 // CompressionConfig holds compression settings for pipeline output files.

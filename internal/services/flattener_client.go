@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
@@ -15,25 +14,16 @@ import (
 // FlattenerClient handles communication with the fhir-flattener service
 type FlattenerClient struct {
 	baseURL    string
-	httpClient *http.Client
-	timeout    time.Duration
+	httpClient *HTTPClient
 	logger     *lib.Logger
 }
 
-// NewFlattenerClient creates a new flattener client with the given configuration
-func NewFlattenerClient(config models.FlatteningConfig, logger *lib.Logger) *FlattenerClient {
-	timeout := config.Timeout
-	if timeout == 0 {
-		timeout = 30 * time.Minute
-	}
-
+// NewFlattenerClient creates a new flattener client with the given base URL
+func NewFlattenerClient(baseURL string, httpClient *HTTPClient, logger *lib.Logger) *FlattenerClient {
 	return &FlattenerClient{
-		baseURL: config.ServiceURL,
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
-		timeout: timeout,
-		logger:  logger,
+		baseURL:    baseURL,
+		httpClient: httpClient,
+		logger:     logger,
 	}
 }
 
@@ -48,8 +38,7 @@ func (c *FlattenerClient) Flatten(viewDef models.ViewDefinition, resources []map
 	c.logger.Debug("Sending resources to flattener",
 		"viewDefinition", viewDef.Name,
 		"resourceCount", len(resources),
-		"resourceType", viewDef.Resource,
-		"url", c.baseURL+"/fhir/ViewDefinition/$run")
+		"resourceType", viewDef.Resource)
 
 	// Create the FHIR Parameters request
 	request := models.NewFlatteningRequest(viewDef, resources)
@@ -73,16 +62,12 @@ func (c *FlattenerClient) Flatten(viewDef models.ViewDefinition, resources []map
 	req.Header.Set("Content-Type", "application/fhir+json")
 	req.Header.Set("Accept", "text/csv")
 
-	// Execute request
-	startTime := time.Now()
+	// Execute request via shared HTTPClient (handles retries, logging, backoff)
 	resp, err := c.httpClient.Do(req)
-	duration := time.Since(startTime)
-
 	if err != nil {
-		c.logger.Error("Flattener HTTP request failed",
+		c.logger.Error("Flattener request failed",
 			"viewDefinition", viewDef.Name,
-			"error", err,
-			"duration", duration)
+			"error", err)
 		return "", fmt.Errorf("request failed: %w", err)
 	}
 	defer func() {
@@ -91,11 +76,6 @@ func (c *FlattenerClient) Flatten(viewDef models.ViewDefinition, resources []map
 		}
 	}()
 
-	c.logger.Debug("Flattener responded",
-		"status_code", resp.StatusCode,
-		"viewDefinition", viewDef.Name,
-		"duration", duration)
-
 	// Check for HTTP error status
 	if resp.StatusCode >= 400 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -103,7 +83,6 @@ func (c *FlattenerClient) Flatten(viewDef models.ViewDefinition, resources []map
 
 		c.logger.Error("Flattener service returned error",
 			"status_code", resp.StatusCode,
-			"status", resp.Status,
 			"viewDefinition", viewDef.Name,
 			"error_body", string(bodyBytes))
 
@@ -126,21 +105,14 @@ func (c *FlattenerClient) Flatten(viewDef models.ViewDefinition, resources []map
 
 	c.logger.Debug("Flattener returned CSV data",
 		"viewDefinition", viewDef.Name,
-		"bytes", len(bodyBytes),
-		"duration", duration)
+		"bytes", len(bodyBytes))
 
 	return string(bodyBytes), nil
 }
 
 // HealthCheck verifies the flattener service is available
 func (c *FlattenerClient) HealthCheck() error {
-	url := c.baseURL + "/health"
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create health check request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Get(c.baseURL + "/health")
 	if err != nil {
 		return fmt.Errorf("flattener health check failed: %w", err)
 	}

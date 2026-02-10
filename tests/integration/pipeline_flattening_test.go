@@ -103,6 +103,7 @@ func TestExecuteFlatteningStep_FullPipeline(t *testing.T) {
 			Pipeline: models.PipelineConfig{
 				EnabledSteps: []models.StepName{models.StepLocalImport, models.StepFlattening},
 			},
+			Retry: models.RetryConfig{MaxAttempts: 1},
 		},
 		Steps: []models.PipelineStep{},
 	}
@@ -121,7 +122,7 @@ func TestExecuteFlatteningStep_FullPipeline(t *testing.T) {
 	// Verify CSV content
 	csvContent, err := os.ReadFile(csvFiles[0])
 	require.NoError(t, err)
-	assert.Contains(t, string(csvContent), "id,")  // Header should include id column
+	assert.Contains(t, string(csvContent), "id,") // Header should include id column
 }
 
 func TestExecuteFlatteningStep_NotEnabled(t *testing.T) {
@@ -364,6 +365,7 @@ func TestExecuteFlatteningStep_FlattenerServiceError(t *testing.T) {
 			Pipeline: models.PipelineConfig{
 				EnabledSteps: []models.StepName{models.StepLocalImport, models.StepFlattening},
 			},
+			Retry: models.RetryConfig{MaxAttempts: 1},
 		},
 	}
 

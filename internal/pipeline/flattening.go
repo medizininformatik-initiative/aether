@@ -120,8 +120,9 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 		"total_resources", len(allResources),
 		"job_id", job.JobID)
 
-	// Create clients
-	flattenerClient := services.NewFlattenerClient(job.Config.Services.Flattening, logger)
+	// Create clients — Timeout is validated > 0 by FlatteningConfig.Validate() above
+	httpClient := services.NewHTTPClient(job.Config.Services.Flattening.Timeout, job.Config.Retry, logger)
+	flattenerClient := services.NewFlattenerClient(job.Config.Services.Flattening.ServiceURL, httpClient, logger)
 	viewDefBuilder := services.NewViewDefinitionBuilder(lookupTables)
 	csvWriter := services.NewCSVWriter(outputDir)
 	viewDefWriter := services.NewViewDefinitionWriter(viewDefDir)

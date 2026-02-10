@@ -482,6 +482,7 @@ func createFlatteningTestJob(serviceURL, lookupPath, crtdlPath string) *models.P
 			Pipeline: models.PipelineConfig{
 				EnabledSteps: []models.StepName{models.StepLocalImport, models.StepFlattening},
 			},
+			Retry: models.RetryConfig{MaxAttempts: 1},
 		},
 		Steps: []models.PipelineStep{},
 	}
@@ -556,6 +557,7 @@ func TestExecuteFlatteningStep_ConfigValidationError(t *testing.T) {
 			Pipeline: models.PipelineConfig{
 				EnabledSteps: []models.StepName{models.StepFlattening},
 			},
+			Retry: models.RetryConfig{MaxAttempts: 1},
 		},
 		Steps: []models.PipelineStep{},
 	}

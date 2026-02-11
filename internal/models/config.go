@@ -77,6 +77,8 @@ type TORCHConfig struct {
 	ExtractionTimeoutMinutes  int    `yaml:"extraction_timeout_minutes" json:"extraction_timeout_minutes"`
 	PollingIntervalSeconds    int    `yaml:"polling_interval_seconds" json:"polling_interval_seconds"`
 	MaxPollingIntervalSeconds int    `yaml:"max_polling_interval_seconds" json:"max_polling_interval_seconds"`
+	FileReadyRetries          int    `yaml:"file_ready_retries" json:"file_ready_retries"`
+	FileReadyIntervalSeconds  int    `yaml:"file_ready_interval_seconds" json:"file_ready_interval_seconds"`
 }
 
 // SendMode defines the mode for sending data
@@ -288,6 +290,8 @@ func DefaultConfig() ProjectConfig {
 				ExtractionTimeoutMinutes:  30,
 				PollingIntervalSeconds:    5,
 				MaxPollingIntervalSeconds: 30,
+				FileReadyRetries:          10,
+				FileReadyIntervalSeconds:  10,
 			},
 			Flattening: DefaultFlatteningConfig(),
 		},

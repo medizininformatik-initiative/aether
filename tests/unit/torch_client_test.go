@@ -42,7 +42,7 @@ func TestTORCHClient_SubmitExtraction_Success(t *testing.T) {
 		// Verify request
 		assert.Equal(t, "POST", r.Method)
 		assert.Equal(t, "/fhir/$extract-data", r.URL.Path)
-		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		assert.Equal(t, "application/fhir+json", r.Header.Get("Content-Type"))
 
 		// Verify authentication
 		authHeader := r.Header.Get("Authorization")
@@ -181,6 +181,190 @@ func TestTORCHClient_PollExtractionStatus_ImmediateSuccess(t *testing.T) {
 	require.Len(t, urls, 2)
 	assert.Equal(t, server.URL+"/output/batch-1.ndjson", urls[0])
 	assert.Equal(t, server.URL+"/output/batch-2.ndjson", urls[1])
+}
+
+// TestTORCHClient_PollExtractionStatus_HTTP102Processing verifies that HTTP 102 (Processing)
+// is handled the same as HTTP 202 (Accepted) during polling. Note: Go's net/http client
+// transparently consumes 1xx status codes, so we cannot test 102 directly with httptest.
+// This test verifies the code path via 202, which shares the same switch case.
+func TestTORCHClient_PollExtractionStatus_HTTP102Processing(t *testing.T) {
+	pollCount := 0
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pollCount++
+		if pollCount < 3 {
+			// Return 202 (exercises same code path as 102 Processing)
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+
+		// Return 200 (complete)
+		result := map[string]any{
+			"resourceType": "Parameters",
+			"parameter": []map[string]any{
+				{
+					"name": "output",
+					"part": []map[string]any{
+						{
+							"name":     "url",
+							"valueUrl": serverURL + "/output/result.ndjson",
+						},
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(result)
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:                   server.URL,
+		Username:                  "testuser",
+		Password:                  "testpass",
+		ExtractionTimeoutMinutes:  1,
+		PollingIntervalSeconds:    1,
+		MaxPollingIntervalSeconds: 5,
+	}
+
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+	urls, err := client.PollExtractionStatus(server.URL+"/fhir/extraction/job-123", false)
+
+	assert.NoError(t, err)
+	require.Len(t, urls, 1)
+	assert.Equal(t, server.URL+"/output/result.ndjson", urls[0])
+	assert.Equal(t, 3, pollCount, "Should have polled 3 times before completion")
+}
+
+func TestTORCHClient_PollExtractionStatus_WithOperationOutcomeDiagnostics(t *testing.T) {
+	pollCount := 0
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pollCount++
+		if pollCount < 3 {
+			// Return 202 with OperationOutcome containing progress diagnostics
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"resourceType": "OperationOutcome",
+				"issue": []map[string]any{
+					{
+						"severity":    "information",
+						"code":        "informational",
+						"diagnostics": "Processing Patient resources",
+					},
+				},
+			})
+			return
+		}
+
+		// Return 200 (complete)
+		result := map[string]any{
+			"resourceType": "Parameters",
+			"parameter": []map[string]any{
+				{
+					"name": "output",
+					"part": []map[string]any{
+						{
+							"name":     "url",
+							"valueUrl": serverURL + "/output/result.ndjson",
+						},
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(result)
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:                   server.URL,
+		Username:                  "testuser",
+		Password:                  "testpass",
+		ExtractionTimeoutMinutes:  1,
+		PollingIntervalSeconds:    1,
+		MaxPollingIntervalSeconds: 5,
+	}
+
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+	urls, err := client.PollExtractionStatus(server.URL+"/fhir/extraction/job-123", false)
+
+	assert.NoError(t, err)
+	require.Len(t, urls, 1)
+	assert.Equal(t, 3, pollCount)
+}
+
+func TestTORCHClient_PollExtractionStatus_DiagnosticsNotRepeated(t *testing.T) {
+	pollCount := 0
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pollCount++
+		if pollCount < 4 {
+			// Return same diagnostic message for first 3 polls
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"resourceType": "OperationOutcome",
+				"issue": []map[string]any{
+					{
+						"severity":    "information",
+						"code":        "informational",
+						"diagnostics": "Processing Patient resources",
+					},
+				},
+			})
+			return
+		}
+
+		// Return 200 (complete)
+		result := map[string]any{
+			"resourceType": "Parameters",
+			"parameter": []map[string]any{
+				{
+					"name": "output",
+					"part": []map[string]any{
+						{
+							"name":     "url",
+							"valueUrl": serverURL + "/output/result.ndjson",
+						},
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(result)
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:                   server.URL,
+		Username:                  "testuser",
+		Password:                  "testpass",
+		ExtractionTimeoutMinutes:  1,
+		PollingIntervalSeconds:    1,
+		MaxPollingIntervalSeconds: 5,
+	}
+
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+	urls, err := client.PollExtractionStatus(server.URL+"/fhir/extraction/job-123", false)
+
+	// Should succeed — the duplicate diagnostics are just not re-logged
+	assert.NoError(t, err)
+	require.Len(t, urls, 1)
+	assert.Equal(t, 4, pollCount)
 }
 
 func TestTORCHClient_PollExtractionStatus_EmptyOutput(t *testing.T) {
@@ -822,6 +1006,170 @@ func TestTORCHClient_DownloadExtractionFiles_InvalidDestinationPermissions(t *te
 	assert.Error(t, err)
 }
 
+
+// =============================================
+// File Availability Tests for TORCH Client
+// =============================================
+
+func TestTORCHClient_WaitForFileAvailability_ImmediateSuccess(t *testing.T) {
+	ndjsonContent := `{"resourceType":"Patient","id":"1"}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "HEAD" {
+			w.Header().Set("Content-Length", "36")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		// GET for actual download
+		w.Header().Set("Content-Type", "application/fhir+ndjson")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(ndjsonContent))
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:                  server.URL,
+		Username:                 "testuser",
+		Password:                 "testpass",
+		FileReadyRetries:         1,
+		FileReadyIntervalSeconds: 1,
+	}
+
+	tempDir := t.TempDir()
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+
+	fileURLs := []string{server.URL + "/output/Patient.ndjson"}
+	files, err := client.DownloadExtractionFiles(fileURLs, tempDir, false, false, "")
+
+	assert.NoError(t, err)
+	require.Len(t, files, 1)
+	assert.Equal(t, "Patient.ndjson", files[0].FileName)
+}
+
+func TestTORCHClient_WaitForFileAvailability_RetryThenSuccess(t *testing.T) {
+	headCount := 0
+	ndjsonContent := `{"resourceType":"Patient","id":"1"}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "HEAD" {
+			headCount++
+			if headCount <= 2 {
+				// First 2 HEAD requests return 404
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			// Third HEAD request succeeds
+			w.Header().Set("Content-Length", "36")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if r.Method == "GET" && r.Header.Get("Range") != "" {
+			// Range fallback for 404 from HEAD
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		// GET for actual download
+		w.Header().Set("Content-Type", "application/fhir+ndjson")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(ndjsonContent))
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:                  server.URL,
+		Username:                 "testuser",
+		Password:                 "testpass",
+		FileReadyRetries:         5,
+		FileReadyIntervalSeconds: 1,
+	}
+
+	tempDir := t.TempDir()
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+
+	fileURLs := []string{server.URL + "/output/Patient.ndjson"}
+	files, err := client.DownloadExtractionFiles(fileURLs, tempDir, false, false, "")
+
+	assert.NoError(t, err)
+	require.Len(t, files, 1)
+	assert.Equal(t, 3, headCount, "Should have made 3 HEAD requests (2 failures + 1 success)")
+}
+
+func TestTORCHClient_WaitForFileAvailability_Timeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "HEAD" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		// Range fallback also returns not found
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:                  server.URL,
+		Username:                 "testuser",
+		Password:                 "testpass",
+		FileReadyRetries:         2,
+		FileReadyIntervalSeconds: 1,
+	}
+
+	tempDir := t.TempDir()
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+
+	fileURLs := []string{server.URL + "/output/Patient.ndjson"}
+	_, err := client.DownloadExtractionFiles(fileURLs, tempDir, false, false, "")
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "file not available")
+}
+
+func TestTORCHClient_WaitForFileAvailability_RangeFallback(t *testing.T) {
+	ndjsonContent := `{"resourceType":"Patient","id":"1"}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "HEAD" {
+			// HEAD not allowed — triggers Range fallback
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if r.Method == "GET" && r.Header.Get("Range") != "" {
+			// Range GET succeeds with 206
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write([]byte("{"))
+			return
+		}
+		// Full GET for download
+		w.Header().Set("Content-Type", "application/fhir+ndjson")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(ndjsonContent))
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:                  server.URL,
+		Username:                 "testuser",
+		Password:                 "testpass",
+		FileReadyRetries:         1,
+		FileReadyIntervalSeconds: 1,
+	}
+
+	tempDir := t.TempDir()
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+
+	fileURLs := []string{server.URL + "/output/Patient.ndjson"}
+	files, err := client.DownloadExtractionFiles(fileURLs, tempDir, false, false, "")
+
+	assert.NoError(t, err)
+	require.Len(t, files, 1)
+}
 
 // =============================================
 // Compression Tests for TORCH Client

@@ -26,7 +26,7 @@ func TestTORCHService_SubmitExtraction_Success(t *testing.T) {
 		// Verify request format per TORCH API spec
 		assert.Equal(t, "POST", r.Method)
 		assert.Equal(t, "/fhir/$extract-data", r.URL.Path)
-		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		assert.Equal(t, "application/fhir+json", r.Header.Get("Content-Type"))
 
 		// Verify Basic authentication header
 		authHeader := r.Header.Get("Authorization")

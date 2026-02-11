@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -42,16 +43,17 @@ func createPollRequest(extractionURL string, c *TORCHClient) (*http.Request, err
 	return req, nil
 }
 
-// handlePollResponse processes a polling response and returns completion status and file URLs
-func handlePollResponse(resp *http.Response, c *TORCHClient) (complete bool, fileURLs []string, err error) {
+// handlePollResponse processes a polling response and returns completion status, file URLs, and progress diagnostics
+func handlePollResponse(resp *http.Response, c *TORCHClient) (complete bool, fileURLs []string, diagnostics string, err error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
 
 	switch resp.StatusCode {
-	case http.StatusAccepted:
-		// Still in progress
-		return false, nil, nil
+	case http.StatusAccepted, http.StatusProcessing:
+		// Still in progress (202 Accepted or 102 Processing)
+		diagnostics = extractProgressDiagnostics(bodyBytes)
+		return false, nil, diagnostics, nil
 
 	case http.StatusOK:
 		// Extraction complete - parse result
@@ -59,9 +61,9 @@ func handlePollResponse(resp *http.Response, c *TORCHClient) (complete bool, fil
 		c.logger.Debug("TORCH extraction response body", "body", string(bodyBytes))
 		fileURLs, err := c.parseExtractionResult(bodyBytes)
 		if err != nil {
-			return false, nil, err
+			return false, nil, "", err
 		}
-		return true, fileURLs, nil
+		return true, fileURLs, "", nil
 
 	default:
 		// Error response
@@ -71,13 +73,38 @@ func handlePollResponse(resp *http.Response, c *TORCHClient) (complete bool, fil
 			"status", resp.Status,
 			"error_body", string(bodyBytes))
 
-		return false, nil, &TORCHError{
+		return false, nil, "", &TORCHError{
 			Operation:  "poll",
 			StatusCode: resp.StatusCode,
 			Message:    string(bodyBytes),
 			ErrorType:  errorType,
 		}
 	}
+}
+
+// extractProgressDiagnostics parses an OperationOutcome response body and returns
+// the first informational diagnostic message, if any.
+func extractProgressDiagnostics(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+
+	var outcome OperationOutcome
+	if err := json.Unmarshal(body, &outcome); err != nil {
+		return ""
+	}
+
+	if outcome.ResourceType != "OperationOutcome" {
+		return ""
+	}
+
+	for _, issue := range outcome.Issue {
+		if issue.Severity == "information" && issue.Diagnostics != "" {
+			return issue.Diagnostics
+		}
+	}
+
+	return ""
 }
 
 // CalculateNextPollInterval calculates exponential backoff for next polling attempt

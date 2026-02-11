@@ -25,6 +25,19 @@
       "matchStrings": [
         "# renovate: datasource=github-release-attachments depName=(?<depName>\\S+?)(?: (?:lookupName|packageName)=(?<packageName>\\S+?))?(?: versioning=(?<versioning>\\S+?))?(?: extractVersion=(?<extractVersion>\\S+?))?\\s+\\w+?_VERSION\\s*:\\s*[\"']?(?<currentValue>.+?)[\"']?\\s+(\\w+?_CHECKSUM\\s*:\\s*[\"']?(?<currentDigest>\\w+)[\"']?)?"
       ]
+    },
+    {
+      "description": [
+        "Like customManagers:githubActionsVersions, but matches annotated action inputs (e.g. version:) instead of _VERSION env vars."
+      ],
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)(workflow-templates|\\.(?:github|gitea|forgejo)/(?:workflows|actions))/.+\\.ya?ml$/",
+        "/(^|/)action\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-zA-Z0-9-._]+?) depName=(?<depName>[^\\s]+?)(?: (?:lookupName|packageName)=(?<packageName>[^\\s]+?))?(?: versioning=(?<versioning>[^\\s]+?))?(?: extractVersion=(?<extractVersion>[^\\s]+?))?(?: registryUrl=(?<registryUrl>[^\\s]+?))?\\s+\\w+\\s*:\\s*[\"']?(?<currentValue>.+?)[\"']?\\s"
+      ]
     }
   ]
 }

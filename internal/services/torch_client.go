@@ -67,6 +67,19 @@ type TORCHSimpleOutput struct {
 	URL  string `json:"url"`
 }
 
+// OperationOutcome represents a FHIR OperationOutcome resource used for progress diagnostics
+type OperationOutcome struct {
+	ResourceType string                  `json:"resourceType"`
+	Issue        []OperationOutcomeIssue `json:"issue"`
+}
+
+// OperationOutcomeIssue represents an issue within an OperationOutcome
+type OperationOutcomeIssue struct {
+	Severity    string `json:"severity"`
+	Code        string `json:"code"`
+	Diagnostics string `json:"diagnostics"`
+}
+
 // TORCHError represents errors from TORCH operations
 type TORCHError struct {
 	Operation  string // "submit", "poll", "download"
@@ -138,7 +151,7 @@ func (c *TORCHClient) SubmitExtraction(crtdlPath string) (string, error) {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/fhir+json")
 	req.Header.Set("Authorization", c.buildBasicAuthHeader())
 
 	// Send request
@@ -207,6 +220,8 @@ func (c *TORCHClient) PollExtractionStatus(extractionURL string, showProgress bo
 		}()
 	}
 
+	var lastDiagnostics string
+
 	for {
 		// Check timeout
 		if pollConfig.CheckTimeout() {
@@ -239,7 +254,7 @@ func (c *TORCHClient) PollExtractionStatus(extractionURL string, showProgress bo
 		}
 
 		// Handle response
-		complete, fileURLs, err := handlePollResponse(resp, c)
+		complete, fileURLs, diagnostics, err := handlePollResponse(resp, c)
 		if err != nil {
 			return nil, err
 		}
@@ -247,6 +262,15 @@ func (c *TORCHClient) PollExtractionStatus(extractionURL string, showProgress bo
 		if complete {
 			c.logger.Info("TORCH extraction completed", "polls", pollConfig.PollCount)
 			return fileURLs, nil
+		}
+
+		// Log progress diagnostics from OperationOutcome (only when changed)
+		if diagnostics != "" && diagnostics != lastDiagnostics {
+			c.logger.Info("TORCH extraction progress", "diagnostics", diagnostics)
+			if spinner != nil {
+				spinner.UpdateMessage(diagnostics)
+			}
+			lastDiagnostics = diagnostics
 		}
 
 		// Still in progress - wait with exponential backoff
@@ -288,6 +312,12 @@ func (c *TORCHClient) DownloadExtractionFiles(fileURLs []string, destinationDir 
 
 		outputFileName := lib.GetCompressedFilename(fileName, compress)
 		destPath := filepath.Join(destinationDir, outputFileName)
+
+		// Wait for file to become available (handles nginx eventual consistency)
+		if err := c.waitForFileAvailability(fileURL); err != nil {
+			c.logger.Error("File not available for download", "url", fileURL, "error", err)
+			return nil, fmt.Errorf("file not available for download %s: %w", fileURL, err)
+		}
 
 		var spinner *ui.Spinner
 		if showProgress {
@@ -564,6 +594,82 @@ func (c *TORCHClient) buildBasicAuthHeader() string {
 	credentials := c.config.Username + ":" + c.config.Password
 	encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
 	return "Basic " + encoded
+}
+
+// waitForFileAvailability waits until a file URL is available for download.
+// Skips the check if FileReadyRetries <= 0 (zero-value means disabled).
+func (c *TORCHClient) waitForFileAvailability(fileURL string) error {
+	if c.config.FileReadyRetries <= 0 {
+		return nil
+	}
+
+	interval := time.Duration(c.config.FileReadyIntervalSeconds) * time.Second
+	if interval <= 0 {
+		interval = 10 * time.Second
+	}
+
+	for attempt := 1; attempt <= c.config.FileReadyRetries; attempt++ {
+		available, err := c.checkFileAvailable(fileURL)
+		if err != nil {
+			c.logger.Warn("File availability check error", "url", fileURL, "attempt", attempt, "error", err)
+		}
+		if available {
+			c.logger.Debug("File is available", "url", fileURL, "attempt", attempt)
+			return nil
+		}
+
+		if attempt < c.config.FileReadyRetries {
+			c.logger.Debug("File not yet available, retrying", "url", fileURL, "attempt", attempt, "next_check_in", interval)
+			time.Sleep(interval)
+		}
+	}
+
+	return fmt.Errorf("file not available after %d retries: %s", c.config.FileReadyRetries, fileURL)
+}
+
+// checkFileAvailable checks if a file is available via HEAD request.
+// Falls back to Range GET if HEAD returns 403, 404, or 405.
+func (c *TORCHClient) checkFileAvailable(fileURL string) (bool, error) {
+	req, err := http.NewRequest("HEAD", fileURL, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create HEAD request: %w", err)
+	}
+	req.Header.Set("Authorization", c.buildBasicAuthHeader())
+
+	resp, err := c.httpClient.client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	_ = resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return resp.ContentLength > 0, nil
+	case http.StatusForbidden, http.StatusMethodNotAllowed, http.StatusNotFound:
+		// HEAD not supported or file not found — fall back to Range request
+		return c.checkFileAvailableWithRange(fileURL)
+	default:
+		return false, fmt.Errorf("unexpected status %d from HEAD request", resp.StatusCode)
+	}
+}
+
+// checkFileAvailableWithRange checks file availability using a GET with Range header.
+// Accepts 200 or 206 as successful responses.
+func (c *TORCHClient) checkFileAvailableWithRange(fileURL string) (bool, error) {
+	req, err := http.NewRequest("GET", fileURL, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create Range GET request: %w", err)
+	}
+	req.Header.Set("Authorization", c.buildBasicAuthHeader())
+	req.Header.Set("Range", "bytes=0-0")
+
+	resp, err := c.httpClient.client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	_ = resp.Body.Close()
+
+	return resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPartialContent, nil
 }
 
 // makeAbsoluteURL converts relative URLs to absolute using the configured baseURL.

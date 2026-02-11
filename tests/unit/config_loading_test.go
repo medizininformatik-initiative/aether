@@ -709,6 +709,82 @@ func TestTORCHConfig_WithDefaults(t *testing.T) {
 	assert.Equal(t, 30, config.Services.TORCH.ExtractionTimeoutMinutes, "Should default to 30 minutes")
 	assert.Equal(t, 5, config.Services.TORCH.PollingIntervalSeconds, "Should default to 5 seconds")
 	assert.Equal(t, 30, config.Services.TORCH.MaxPollingIntervalSeconds, "Should default to 30 seconds")
+	assert.Equal(t, 10, config.Services.TORCH.FileReadyRetries, "Should default to 10 retries")
+	assert.Equal(t, 10, config.Services.TORCH.FileReadyIntervalSeconds, "Should default to 10 seconds")
+}
+
+func TestTORCHConfig_FileReadySettings(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  torch:
+    base_url: "http://localhost:8080"
+    username: "testuser"
+    password: "testpass"
+    extraction_timeout_minutes: 30
+    polling_interval_seconds: 5
+    max_polling_interval_seconds: 30
+    file_ready_retries: 5
+    file_ready_interval_seconds: 3
+
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.Equal(t, 5, config.Services.TORCH.FileReadyRetries, "FileReadyRetries should be loaded")
+	assert.Equal(t, 3, config.Services.TORCH.FileReadyIntervalSeconds, "FileReadyIntervalSeconds should be loaded")
+}
+
+func TestTORCHConfig_FileReadySettingsDefault(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	// Config without file_ready settings — should get defaults
+	configContent := `
+services:
+  torch:
+    base_url: "http://localhost:8080"
+    username: "testuser"
+    password: "testpass"
+
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.Equal(t, 10, config.Services.TORCH.FileReadyRetries, "FileReadyRetries should default to 10")
+	assert.Equal(t, 10, config.Services.TORCH.FileReadyIntervalSeconds, "FileReadyIntervalSeconds should default to 10")
 }
 
 func TestTORCHConfig_ValidateMalformedURL(t *testing.T) {

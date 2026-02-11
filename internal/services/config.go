@@ -70,6 +70,8 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 				ExtractionTimeoutMinutes:  viper.GetInt("services.torch.extraction_timeout_minutes"),
 				PollingIntervalSeconds:    viper.GetInt("services.torch.polling_interval_seconds"),
 				MaxPollingIntervalSeconds: viper.GetInt("services.torch.max_polling_interval_seconds"),
+				FileReadyRetries:          viper.GetInt("services.torch.file_ready_retries"),
+				FileReadyIntervalSeconds:  viper.GetInt("services.torch.file_ready_interval_seconds"),
 			},
 			DIMP: models.DIMPConfig{
 				URL:                    ExpandEnvVars(viper.GetString("services.dimp.url")),
@@ -179,6 +181,12 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 		}
 		if config.Services.TORCH.MaxPollingIntervalSeconds == 0 {
 			config.Services.TORCH.MaxPollingIntervalSeconds = 30
+		}
+		if config.Services.TORCH.FileReadyRetries == 0 {
+			config.Services.TORCH.FileReadyRetries = 10
+		}
+		if config.Services.TORCH.FileReadyIntervalSeconds == 0 {
+			config.Services.TORCH.FileReadyIntervalSeconds = 10
 		}
 		// Apply DIMP Bundle split threshold default if not set
 		if config.Services.DIMP.BundleSplitThresholdMB == 0 {

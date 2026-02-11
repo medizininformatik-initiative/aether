@@ -16,7 +16,7 @@ services:
         - torch
   torch:
     restart: unless-stopped
-    image: ghcr.io/medizininformatik-initiative/torch:1.0.0-alpha.13
+    image: ghcr.io/medizininformatik-initiative/torch:1.0.0-alpha.14
     # image: torch:latest
     networks: [ "aether", "torch" ]
     ports:
@@ -45,7 +45,7 @@ services:
       TORCH_FHIR_DISABLE_ASYNC: true
       TORCH_BATCHSIZE: 500
       TORCH_FHIR_PAGE_COUNT: 500
-      TORCH_FHIR_MAX_CONNECTIONS: 5
+      TORCH_FHIR_MAX_CONNECTIONS: 50
       TORCH_MAXCONCURRENCY: 4
       # Other
       LOG_LEVEL: trace

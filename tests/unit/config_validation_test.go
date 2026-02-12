@@ -1029,6 +1029,22 @@ func TestSendConfig_ValidateS3Upload(t *testing.T) {
 			errMsg:  "s3 secret_access_key is required",
 		},
 		{
+			name: "Invalid endpoint URL - unparseable",
+			config: models.SendConfig{
+				SendAs: models.SendModeS3Upload,
+				S3: models.S3Config{
+					Endpoint:        "http://host:notaport",
+					Region:          "eu-central-1",
+					Bucket:          "my-bucket",
+					AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+					SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+					Timeout:         30 * 60 * 1e9,
+				},
+			},
+			wantErr: true,
+			errMsg:  "invalid s3 endpoint",
+		},
+		{
 			name: "Invalid endpoint URL scheme",
 			config: models.SendConfig{
 				SendAs: models.SendModeS3Upload,

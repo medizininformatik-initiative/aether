@@ -1471,6 +1471,41 @@ func TestValidateServiceConnectivity_ValidationServiceUnreachable(t *testing.T) 
 	assert.Contains(t, err.Error(), "Validation")
 }
 
+// TestValidateServiceConnectivity_S3ModeSkipsHTTPCheck verifies that S3 upload mode
+// skips the HTTP connectivity check (S3 requires AWS Signature V4, not plain HTTP HEAD).
+func TestValidateServiceConnectivity_S3ModeSkipsHTTPCheck(t *testing.T) {
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			Send: models.SendConfig{
+				SendAs: models.SendModeS3Upload,
+				S3: models.S3Config{
+					Region:          "eu-central-1",
+					Bucket:          "test-bucket",
+					AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+					SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+				},
+			},
+		},
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{
+				models.StepLocalImport,
+				models.StepSend,
+			},
+		},
+		Retry: models.RetryConfig{
+			MaxAttempts:      5,
+			InitialBackoffMs: 1000,
+			MaxBackoffMs:     30000,
+		},
+		JobsDir: "/tmp/jobs",
+	}
+
+	// S3 mode should skip the HTTP connectivity check entirely
+	// (no URL to check, and S3 uses AWS SDK connectivity)
+	err := config.ValidateServiceConnectivity(nil)
+	assert.NoError(t, err, "S3 mode should skip connectivity check")
+}
+
 // TestConfigLoading_BundleSplitThreshold verifies bundle_split_threshold_mb is loaded correctly
 func TestConfigLoading_BundleSplitThreshold(t *testing.T) {
 	tmpDir := t.TempDir()

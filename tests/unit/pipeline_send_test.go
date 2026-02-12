@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -2113,4 +2114,94 @@ func TestExecuteSendStep_FHIR_CloseWarning(t *testing.T) {
 	err := pipeline.ExecuteSendStep(job, jobDir, logger)
 	require.NoError(t, err)
 	assert.Equal(t, 1, receivedResources)
+}
+
+func TestFormatSize_AllBranches(t *testing.T) {
+	tests := []struct {
+		name     string
+		bytes    int64
+		expected string
+	}{
+		{"bytes", 512, "512 B"},
+		{"kilobytes", 2048, "2.0 KB"},
+		{"megabytes", 5 * 1024 * 1024, "5.0 MB"},
+		{"gigabytes", 3 * 1024 * 1024 * 1024, "3.0 GB"},
+		{"zero", 0, "0 B"},
+		{"exactly_1KB", 1024, "1.0 KB"},
+		{"exactly_1MB", 1024 * 1024, "1.0 MB"},
+		{"exactly_1GB", 1024 * 1024 * 1024, "1.0 GB"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := pipeline.FormatSizeForTesting(tt.bytes)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExecuteSendStep_S3_UploaderFactoryError(t *testing.T) {
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+		return nil, fmt.Errorf("failed to initialize S3 client")
+	})
+	defer pipeline.ResetS3UploaderFactory()
+
+	tmpDir := t.TempDir()
+	jobID := "test-s3-factory-error"
+	jobDir := filepath.Join(tmpDir, jobID)
+	inputDir := filepath.Join(jobDir, "pseudonymized")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte("data\n"), 0644))
+
+	job := createS3SendTestJob(jobID, tmpDir)
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to create S3 uploader")
+}
+
+func TestExecuteSendStep_S3_CorruptedManifest(t *testing.T) {
+	// A corrupted manifest should trigger a warning and start fresh
+	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+		return mock, nil
+	})
+	defer pipeline.ResetS3UploaderFactory()
+
+	tmpDir := t.TempDir()
+	jobID := "test-s3-corrupted-manifest"
+	jobDir := filepath.Join(tmpDir, jobID)
+	inputDir := filepath.Join(jobDir, "pseudonymized")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte("data\n"), 0644))
+
+	// Write a corrupted manifest file
+	manifestPath := filepath.Join(jobDir, "upload_manifest.json")
+	require.NoError(t, os.WriteFile(manifestPath, []byte("{corrupted json"), 0644))
+
+	job := createS3SendTestJob(jobID, tmpDir)
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	// Should succeed despite the corrupted manifest (starts fresh)
+	require.NoError(t, err)
+	assert.Len(t, mock.UploadedKeys, 1)
+}
+
+func TestExecuteSendStep_S3_NonExistentInputDir(t *testing.T) {
+	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+		return mock, nil
+	})
+	defer pipeline.ResetS3UploaderFactory()
+
+	tmpDir := t.TempDir()
+	jobID := "test-s3-no-input-dir"
+	jobDir := filepath.Join(tmpDir, jobID)
+	// Don't create the input directory
+
+	job := createS3SendTestJob(jobID, tmpDir)
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to list input files")
 }

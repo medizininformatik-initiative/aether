@@ -696,6 +696,11 @@ func executeS3UploadSend(job *models.PipelineJob, jobDir string, step *models.Pi
 	return nil
 }
 
+// FormatSizeForTesting exposes formatSize for unit tests.
+func FormatSizeForTesting(bytes int64) string {
+	return formatSize(bytes)
+}
+
 // formatSize formats a byte count as a human-readable size string.
 func formatSize(bytes int64) string {
 	const (

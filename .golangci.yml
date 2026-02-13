@@ -1,0 +1,12 @@
+version: "2"
+
+formatters:
+  enable:
+    - gci
+
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/medizininformatik-initiative/aether)

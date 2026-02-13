@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
@@ -1005,7 +1006,6 @@ func TestTORCHClient_DownloadExtractionFiles_InvalidDestinationPermissions(t *te
 
 	assert.Error(t, err)
 }
-
 
 // =============================================
 // File Availability Tests for TORCH Client

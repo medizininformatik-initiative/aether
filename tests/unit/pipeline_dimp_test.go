@@ -846,7 +846,6 @@ func TestExecuteDIMPStep_SpecialCharactersInFilenames(t *testing.T) {
 	assert.FileExists(t, outputFile)
 }
 
-
 // =============================================
 // Compression Tests for DIMP Pipeline
 // =============================================

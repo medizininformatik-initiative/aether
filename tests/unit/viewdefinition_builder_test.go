@@ -3,10 +3,11 @@ package unit
 import (
 	"testing"
 
-	"github.com/medizininformatik-initiative/aether/internal/models"
-	"github.com/medizininformatik-initiative/aether/internal/services"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/medizininformatik-initiative/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
 // Test helpers for ViewDefinition builder tests

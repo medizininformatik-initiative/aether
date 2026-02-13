@@ -318,7 +318,6 @@ func TestResourceProcessor_ProcessBundleChunks_DIMPError(t *testing.T) {
 
 // Additional tests for error paths and edge cases
 
-
 func TestResourceProcessor_ProcessNonBundle_WithCorrectTracking(t *testing.T) {
 	server := createMockDIMPServer()
 	defer server.Close()

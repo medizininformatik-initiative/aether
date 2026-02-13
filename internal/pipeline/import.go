@@ -227,4 +227,3 @@ func classifyImportError(err error, inputType models.InputType) models.ErrorType
 	// Default to non-transient
 	return models.ErrorTypeNonTransient
 }
-

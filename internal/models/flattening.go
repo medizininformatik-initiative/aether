@@ -69,9 +69,9 @@ type LookupTable struct {
 
 // LookupElement represents a single element's flattening configuration
 type LookupElement struct {
-	Parent         string         `json:"parent,omitempty"`         // Parent element ID (for nested elements)
-	ViewDefinition ViewDefSnippet `json:"viewDefinition"`           // The ViewDefinition snippet for this element
-	Children       []string       `json:"children,omitempty"`       // Child element IDs
+	Parent         string         `json:"parent,omitempty"`   // Parent element ID (for nested elements)
+	ViewDefinition ViewDefSnippet `json:"viewDefinition"`     // The ViewDefinition snippet for this element
+	Children       []string       `json:"children,omitempty"` // Child element IDs
 }
 
 // ViewDefSnippet represents the viewDefinition snippet within a lookup element
@@ -95,10 +95,10 @@ type ViewDefinition struct {
 
 // SelectClause represents a select clause in a ViewDefinition
 type SelectClause struct {
-	Column      []ColumnDefinition `json:"column,omitempty"`      // Column definitions
-	Select      []SelectClause     `json:"select,omitempty"`      // Nested select clauses
-	ForEach     string             `json:"forEach,omitempty"`     // ForEach expression
-	ForEachOrNull string           `json:"forEachOrNull,omitempty"` // ForEachOrNull expression
+	Column        []ColumnDefinition `json:"column,omitempty"`        // Column definitions
+	Select        []SelectClause     `json:"select,omitempty"`        // Nested select clauses
+	ForEach       string             `json:"forEach,omitempty"`       // ForEach expression
+	ForEachOrNull string             `json:"forEachOrNull,omitempty"` // ForEachOrNull expression
 }
 
 // ColumnDefinition represents a column in a ViewDefinition select clause
@@ -122,10 +122,10 @@ type DataExtraction struct {
 
 // AttributeGroup represents an attributeGroup in the CRTDL dataExtraction
 type AttributeGroup struct {
-	ID             string      `json:"id,omitempty"`       // Optional ID
-	Name           string      `json:"name"`               // Group name (used for CSV filename)
-	GroupReference string      `json:"groupReference"`     // Profile URL for resource matching
-	Attributes     []Attribute `json:"attributes"`         // List of attributes to extract
+	ID             string      `json:"id,omitempty"`   // Optional ID
+	Name           string      `json:"name"`           // Group name (used for CSV filename)
+	GroupReference string      `json:"groupReference"` // Profile URL for resource matching
+	Attributes     []Attribute `json:"attributes"`     // List of attributes to extract
 }
 
 // Attribute represents a single attribute within an attributeGroup
@@ -136,14 +136,14 @@ type Attribute struct {
 
 // FlatteningRequest represents the FHIR Parameters request body sent to fhir-flattener
 type FlatteningRequest struct {
-	ResourceType string                  `json:"resourceType"` // Always "Parameters"
-	Parameter    []FlatteningParameter   `json:"parameter"`
+	ResourceType string                `json:"resourceType"` // Always "Parameters"
+	Parameter    []FlatteningParameter `json:"parameter"`
 }
 
 // FlatteningParameter represents a parameter in the FlatteningRequest
 type FlatteningParameter struct {
-	Name     string         `json:"name"`               // "viewDefinition" or "resources"
-	Resource any            `json:"resource,omitempty"` // The actual resource (ViewDefinition or FHIR resource)
+	Name     string `json:"name"`               // "viewDefinition" or "resources"
+	Resource any    `json:"resource,omitempty"` // The actual resource (ViewDefinition or FHIR resource)
 }
 
 // NewFlatteningRequest creates a new FlatteningRequest with the given ViewDefinition and resources

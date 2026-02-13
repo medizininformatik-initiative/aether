@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
+
 	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 

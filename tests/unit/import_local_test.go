@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
@@ -480,7 +481,6 @@ func TestValidateImportSource_CRTDLFileForLocalInput(t *testing.T) {
 	assert.Contains(t, err.Error(), "dataExtraction", "Error should mention dataExtraction")
 	assert.Contains(t, err.Error(), "verbose logging", "Error should mention verbose logging")
 }
-
 
 // =============================================
 // Compression Tests for ImportFromLocalDirectory

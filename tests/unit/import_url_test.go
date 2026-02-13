@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
@@ -370,7 +371,6 @@ func TestHTTPClient_NoRetryFor4xx(t *testing.T) {
 	assert.Nil(t, downloadedFiles)
 	assert.Equal(t, 1, attempts, "Should only make 1 attempt (no retries for 4xx)")
 }
-
 
 // =============================================
 // Compression Tests for DownloadFromURL

@@ -308,7 +308,6 @@ func TestSetupFileProcessing_ReadInputAndWrite(t *testing.T) {
 	require.NoError(t, ctx.OutFile.Close())
 }
 
-
 // =============================================
 // Compression Tests for FileProcessor
 // =============================================
@@ -515,7 +514,6 @@ func TestSetupFileProcessing_CompressionLevels(t *testing.T) {
 		})
 	}
 }
-
 
 // TestFinalizeFileProcessing_RenameError verifies error handling when rename fails
 func TestFinalizeFileProcessing_RenameError(t *testing.T) {

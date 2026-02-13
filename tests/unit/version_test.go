@@ -3,8 +3,9 @@ package unit
 import (
 	"testing"
 
-	"github.com/medizininformatik-initiative/aether/cmd"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/medizininformatik-initiative/aether/cmd"
 )
 
 func TestSetVersion_DoesNotPanic(t *testing.T) {

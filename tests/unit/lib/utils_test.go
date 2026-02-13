@@ -3,8 +3,9 @@ package lib_test
 import (
 	"testing"
 
-	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/medizininformatik-initiative/aether/internal/lib"
 )
 
 func TestSanitizeFilename(t *testing.T) {

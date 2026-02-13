@@ -9,10 +9,11 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/medizininformatik-initiative/aether/internal/lib"
-	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/medizininformatik-initiative/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // TestDefaultCompressionConfig verifies default configuration values
@@ -402,7 +403,6 @@ func TestLargeDataCompression(t *testing.T) {
 
 	assert.Equal(t, data, string(readData))
 }
-
 
 // =============================================
 // Additional Coverage Tests for compression.go

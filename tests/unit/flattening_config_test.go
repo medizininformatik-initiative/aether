@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 func TestFlatteningConfigValidation(t *testing.T) {

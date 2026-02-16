@@ -11,6 +11,15 @@ curl -sSfL https://raw.githubusercontent.com/medizininformatik-initiative/aether
 sudo mv aether /usr/local/bin/
 ```
 
+To install a specific version, pass the version number **without** the `v` prefix:
+
+```bash
+curl -sSfL https://raw.githubusercontent.com/medizininformatik-initiative/aether/main/install.sh | sh -s -- 0.3.0
+sudo mv aether /usr/local/bin/
+```
+
+> **Note:** Use `0.3.0`, not `v0.3.0`. The `v` prefix is added automatically by the install script.
+
 Without sudo:
 ```bash
 curl -sSfL https://raw.githubusercontent.com/medizininformatik-initiative/aether/main/install.sh | sh

@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -28,6 +30,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
+      - name: Get latest release version
+        id: version
+        run: echo "tag=$(gh release view --json tagName -q .tagName 2>/dev/null || echo 'dev')" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Setup Node.js
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
         with:
@@ -42,6 +50,8 @@ jobs:
       - name: Build documentation
         run: npm run docs:build
         working-directory: docs
+        env:
+          VITE_LATEST_RELEASE: ${{ steps.version.outputs.tag }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4

@@ -8,7 +8,7 @@ One import step must be first in the pipeline. Only enable one at a time.
 
 | Step | Description |
 |------|-------------|
-| [TORCH Import](./steps/torch-import.md) | Extract data from TORCH server using CRTDL queries |
+| [TORCH Import](./steps/torch-import.md) | Extract data from TORCH server using CRTDL queries or a direct TORCH URL |
 | [Local Import](./steps/local-import.md) | Import FHIR NDJSON files from local directory |
 | [HTTP Import](./steps/http-import.md) | Download FHIR NDJSON files from HTTP URL |
 

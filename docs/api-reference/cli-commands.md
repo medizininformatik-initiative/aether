@@ -20,11 +20,11 @@ aether [global-options] <command> [command-options]
 Start a new pipeline job.
 
 ```bash
-aether pipeline start [crtdl-file] [options]
+aether pipeline start [input] [options]
 ```
 
 **Arguments:**
-- `[crtdl-file]` - Path to CRTDL query file (required if torch or flattening enabled)
+- `[input]` - CRTDL file, TORCH URL, or HTTP URL. CRTDL file required if flattening enabled. TORCH URLs (containing `/fhir/extraction/` or `/fhir/result/`) skip extraction submission.
 
 **Options:**
 - `--no-progress` - Disable progress indicators
@@ -35,6 +35,9 @@ aether pipeline start [crtdl-file] [options]
 # TORCH extraction with CRTDL
 aether pipeline start query.crtdl
 
+# Direct TORCH URL (skip extraction, poll and download results)
+aether pipeline start "https://torch.example.com/fhir/extraction/result-123"
+
 # Local import with CRTDL for flattening
 aether pipeline start query.crtdl --dir /path/to/data
 
@@ -44,7 +47,7 @@ aether pipeline start
 # Local import with directory override
 aether pipeline start --dir /path/to/data
 
-# HTTP download
+# HTTP download (single file)
 aether pipeline start https://example.com/fhir/data.ndjson
 
 # Disable progress bars

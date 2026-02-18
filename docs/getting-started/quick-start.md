@@ -59,6 +59,16 @@ If a pipeline fails or pauses, resume it:
 aether pipeline continue <job-id>
 ```
 
+## Alternative: Direct TORCH URL
+
+If you already have a TORCH extraction URL, skip the CRTDL submission:
+
+```bash
+aether pipeline start "https://torch.example.com/fhir/extraction/result-123"
+```
+
+Aether auto-detects URLs containing `/fhir/extraction/` or `/fhir/result/` and polls them directly. See [TORCH Integration](../guides/torch-integration.md#direct-torch-url-import) for details.
+
 ## Alternative: Local Import
 
 Process local FHIR files instead of TORCH extraction:

@@ -34,15 +34,15 @@ func (e *AetherError) Error() string {
 	var sb strings.Builder
 
 	// Category prefix for clarity
-	sb.WriteString(fmt.Sprintf("[%s] ", strings.ToUpper(string(e.Category))))
+	fmt.Fprintf(&sb, "[%s] ", strings.ToUpper(string(e.Category)))
 	sb.WriteString(e.Message)
 
 	if e.Cause != nil {
-		sb.WriteString(fmt.Sprintf(": %v", e.Cause))
+		fmt.Fprintf(&sb, ": %v", e.Cause)
 	}
 
 	if e.HTTPStatus > 0 {
-		sb.WriteString(fmt.Sprintf(" (HTTP %d)", e.HTTPStatus))
+		fmt.Fprintf(&sb, " (HTTP %d)", e.HTTPStatus)
 	}
 
 	return sb.String()
@@ -59,12 +59,12 @@ func (e *AetherError) UserMessage() string {
 	if len(e.Guidance) > 0 {
 		sb.WriteString("💡 How to fix:\n")
 		for i, guide := range e.Guidance {
-			sb.WriteString(fmt.Sprintf("  %d. %s\n", i+1, guide))
+			fmt.Fprintf(&sb, "  %d. %s\n", i+1, guide)
 		}
 	}
 
 	if e.Cause != nil {
-		sb.WriteString(fmt.Sprintf("\nTechnical details: %v\n", e.Cause))
+		fmt.Fprintf(&sb, "\nTechnical details: %v\n", e.Cause)
 	}
 
 	if e.IsRetryable {

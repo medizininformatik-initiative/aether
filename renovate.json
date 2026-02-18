@@ -11,6 +11,18 @@
     "dependencies"
   ],
   "prConcurrentLimit": 1,
+  "packageRules": [
+    {
+      "description": "Use semver for MII pre-release Docker images so alpha.N increments are tracked",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": [
+        "ghcr.io/medizininformatik-initiative/torch",
+        "ghcr.io/medizininformatik-initiative/fhir-flattener"
+      ],
+      "versioning": "semver",
+      "ignoreUnstable": false
+    }
+  ],
   "customManagers": [
     {
       "description": [

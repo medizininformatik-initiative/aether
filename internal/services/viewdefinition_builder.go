@@ -90,15 +90,20 @@ func isParentInAttributeList(lookup *models.LookupTable, elementID string, attrR
 	return isParentInAttributeList(lookup, element.Parent, attrRefs)
 }
 
-// buildFixedColumns creates the fixed columns (id, patient) for a ViewDefinition
+// buildFixedColumns creates the fixed columns (id, and optionally patient) for a ViewDefinition.
+// The patient column path varies by resource type because FHIR R4 Patient compartment resources
+// reference patients through different element names (subject, patient, beneficiary, etc.).
+// Non-compartment resources (e.g. Organization) have no patient column at all.
 func (b *ViewDefinitionBuilder) buildFixedColumns(resourceType string) []models.ColumnDefinition {
 	columns := []models.ColumnDefinition{
 		models.GetFixedIDColumn(),
 	}
 
-	// Add patient column for non-Patient resources
-	if resourceType != "Patient" {
-		columns = append(columns, models.GetFixedPatientColumn())
+	if path, ok := models.GetPatientReferencePath(resourceType); ok {
+		columns = append(columns, models.ColumnDefinition{
+			Name: "patient",
+			Path: path,
+		})
 	}
 
 	return columns

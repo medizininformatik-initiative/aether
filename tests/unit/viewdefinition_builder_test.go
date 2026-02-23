@@ -71,7 +71,7 @@ func TestBuildViewDefinition(t *testing.T) {
 		require.NotEmpty(t, viewDef.Select)
 	})
 
-	t.Run("non-Patient resource includes patient column", func(t *testing.T) {
+	t.Run("patient compartment resource includes patient column with correct path", func(t *testing.T) {
 		lookupTables := []models.LookupTable{
 			newLookupTable("https://example.com/Condition", "Condition", map[string]models.LookupElement{
 				"Condition.code": {
@@ -86,6 +86,45 @@ func TestBuildViewDefinition(t *testing.T) {
 		assert.Equal(t, "Condition", viewDef.Resource)
 		require.NotEmpty(t, viewDef.Select)
 		assert.Len(t, viewDef.Select[0].Column, 2) // id and patient
+		assert.Equal(t, "patient", viewDef.Select[0].Column[1].Name)
+		assert.Equal(t, "subject.reference", viewDef.Select[0].Column[1].Path)
+	})
+
+	t.Run("patient compartment resource with patient.reference path", func(t *testing.T) {
+		lookupTables := []models.LookupTable{
+			newLookupTable("https://example.com/AllergyIntolerance", "AllergyIntolerance", map[string]models.LookupElement{
+				"AllergyIntolerance.code": {
+					ViewDefinition: newViewDefSnippet(newSelectClause("code", "code.coding[0].code")),
+				},
+			}),
+		}
+		group := newAttributeGroup("Allergies", "https://example.com/AllergyIntolerance", "AllergyIntolerance.code")
+
+		viewDef := buildAndAssertViewDef(t, lookupTables, group)
+
+		assert.Equal(t, "AllergyIntolerance", viewDef.Resource)
+		require.NotEmpty(t, viewDef.Select)
+		assert.Len(t, viewDef.Select[0].Column, 2) // id and patient
+		assert.Equal(t, "patient", viewDef.Select[0].Column[1].Name)
+		assert.Equal(t, "patient.reference", viewDef.Select[0].Column[1].Path)
+	})
+
+	t.Run("non-compartment resource does not include patient column", func(t *testing.T) {
+		lookupTables := []models.LookupTable{
+			newLookupTable("https://example.com/Organization", "Organization", map[string]models.LookupElement{
+				"Organization.name": {
+					ViewDefinition: newViewDefSnippet(newSelectClause("name", "name")),
+				},
+			}),
+		}
+		group := newAttributeGroup("Organizations", "https://example.com/Organization", "Organization.name")
+
+		viewDef := buildAndAssertViewDef(t, lookupTables, group)
+
+		assert.Equal(t, "Organization", viewDef.Resource)
+		require.NotEmpty(t, viewDef.Select)
+		assert.Len(t, viewDef.Select[0].Column, 1) // only id, no patient
+		assert.Equal(t, "id", viewDef.Select[0].Column[0].Name)
 	})
 
 	t.Run("missing lookup profile", func(t *testing.T) {

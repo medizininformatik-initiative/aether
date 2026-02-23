@@ -176,16 +176,64 @@ func TestNewBaseViewDefinition(t *testing.T) {
 	assert.Empty(t, viewDef.Select)
 }
 
-func TestGetFixedColumns(t *testing.T) {
-	t.Run("id column", func(t *testing.T) {
-		col := models.GetFixedIDColumn()
-		assert.Equal(t, "id", col.Name)
-		assert.Equal(t, "id", col.Path)
+func TestGetFixedIDColumn(t *testing.T) {
+	col := models.GetFixedIDColumn()
+	assert.Equal(t, "id", col.Name)
+	assert.Equal(t, "id", col.Path)
+}
+
+func TestGetPatientReferencePath(t *testing.T) {
+	t.Run("resources with subject.reference", func(t *testing.T) {
+		subjectResources := []string{
+			"Observation", "Condition", "DiagnosticReport", "MedicationRequest",
+			"Procedure", "Encounter", "Specimen", "ServiceRequest",
+		}
+		for _, rt := range subjectResources {
+			path, ok := models.GetPatientReferencePath(rt)
+			assert.True(t, ok, "%s should be in patient compartment", rt)
+			assert.Equal(t, "subject.reference", path, "%s should use subject.reference", rt)
+		}
 	})
 
-	t.Run("patient column", func(t *testing.T) {
-		col := models.GetFixedPatientColumn()
-		assert.Equal(t, "patient", col.Name)
-		assert.Equal(t, "subject.reference", col.Path)
+	t.Run("resources with patient.reference", func(t *testing.T) {
+		patientResources := []string{
+			"AllergyIntolerance", "Consent", "Immunization", "EpisodeOfCare",
+			"FamilyMemberHistory", "NutritionOrder", "VisionPrescription",
+		}
+		for _, rt := range patientResources {
+			path, ok := models.GetPatientReferencePath(rt)
+			assert.True(t, ok, "%s should be in patient compartment", rt)
+			assert.Equal(t, "patient.reference", path, "%s should use patient.reference", rt)
+		}
+	})
+
+	t.Run("resources with other reference paths", func(t *testing.T) {
+		path, ok := models.GetPatientReferencePath("Coverage")
+		assert.True(t, ok)
+		assert.Equal(t, "beneficiary.reference", path)
+
+		path, ok = models.GetPatientReferencePath("ResearchSubject")
+		assert.True(t, ok)
+		assert.Equal(t, "individual.reference", path)
+
+		path, ok = models.GetPatientReferencePath("EnrollmentRequest")
+		assert.True(t, ok)
+		assert.Equal(t, "candidate.reference", path)
+	})
+
+	t.Run("Patient resource is not in compartment map", func(t *testing.T) {
+		_, ok := models.GetPatientReferencePath("Patient")
+		assert.False(t, ok, "Patient should not be in compartment map")
+	})
+
+	t.Run("non-compartment resources return false", func(t *testing.T) {
+		nonCompartmentResources := []string{
+			"Organization", "Practitioner", "Medication", "Location",
+			"Device", "Substance", "HealthcareService", "PractitionerRole",
+		}
+		for _, rt := range nonCompartmentResources {
+			_, ok := models.GetPatientReferencePath(rt)
+			assert.False(t, ok, "%s should not be in patient compartment", rt)
+		}
 	})
 }

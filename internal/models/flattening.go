@@ -178,12 +178,83 @@ func GetFixedIDColumn() ColumnDefinition {
 	}
 }
 
-// GetFixedPatientColumn returns the fixed "patient" column definition for non-Patient resources
-func GetFixedPatientColumn() ColumnDefinition {
-	return ColumnDefinition{
-		Name: "patient",
-		Path: "subject.reference",
-	}
+// patientCompartmentPaths maps FHIR R4 resource types in the Patient compartment to their
+// patient reference FHIRPath. Only resources with a single, clear patient reference element
+// are included. Resources with complex multi-element paths (AuditEvent, Appointment, Group,
+// Person, Provenance, Schedule) are intentionally excluded.
+// Source: https://hl7.org/fhir/R4/compartmentdefinition-patient.html
+var patientCompartmentPaths = map[string]string{
+	// Resources using subject.reference
+	"Account":                  "subject.reference",
+	"AdverseEvent":             "subject.reference",
+	"Basic":                    "subject.reference",
+	"CarePlan":                 "subject.reference",
+	"CareTeam":                 "subject.reference",
+	"ChargeItem":               "subject.reference",
+	"ClinicalImpression":       "subject.reference",
+	"Communication":            "subject.reference",
+	"CommunicationRequest":     "subject.reference",
+	"Composition":              "subject.reference",
+	"Condition":                "subject.reference",
+	"DeviceRequest":            "subject.reference",
+	"DeviceUseStatement":       "subject.reference",
+	"DiagnosticReport":         "subject.reference",
+	"DocumentManifest":         "subject.reference",
+	"DocumentReference":        "subject.reference",
+	"Encounter":                "subject.reference",
+	"Flag":                     "subject.reference",
+	"Goal":                     "subject.reference",
+	"ImagingStudy":             "subject.reference",
+	"Invoice":                  "subject.reference",
+	"List":                     "subject.reference",
+	"MeasureReport":            "subject.reference",
+	"Media":                    "subject.reference",
+	"MedicationAdministration": "subject.reference",
+	"MedicationDispense":       "subject.reference",
+	"MedicationRequest":        "subject.reference",
+	"MedicationStatement":      "subject.reference",
+	"Observation":              "subject.reference",
+	"Procedure":                "subject.reference",
+	"QuestionnaireResponse":    "subject.reference",
+	"RequestGroup":             "subject.reference",
+	"RiskAssessment":           "subject.reference",
+	"ServiceRequest":           "subject.reference",
+	"Specimen":                 "subject.reference",
+	"SupplyRequest":            "subject.reference",
+
+	// Resources using patient.reference
+	"AllergyIntolerance":          "patient.reference",
+	"BodyStructure":               "patient.reference",
+	"Claim":                       "patient.reference",
+	"ClaimResponse":               "patient.reference",
+	"Consent":                     "patient.reference",
+	"CoverageEligibilityRequest":  "patient.reference",
+	"CoverageEligibilityResponse": "patient.reference",
+	"DetectedIssue":               "patient.reference",
+	"EpisodeOfCare":               "patient.reference",
+	"ExplanationOfBenefit":        "patient.reference",
+	"FamilyMemberHistory":         "patient.reference",
+	"Immunization":                "patient.reference",
+	"ImmunizationEvaluation":      "patient.reference",
+	"ImmunizationRecommendation":  "patient.reference",
+	"MolecularSequence":           "patient.reference",
+	"NutritionOrder":              "patient.reference",
+	"RelatedPerson":               "patient.reference",
+	"SupplyDelivery":              "patient.reference",
+	"VisionPrescription":          "patient.reference",
+
+	// Resources using other reference paths
+	"Coverage":          "beneficiary.reference",
+	"EnrollmentRequest": "candidate.reference",
+	"ResearchSubject":   "individual.reference",
+}
+
+// GetPatientReferencePath returns the FHIRPath to the patient reference for a given
+// resource type, and whether the resource is in the FHIR R4 Patient compartment.
+// Returns ("", false) for Patient itself and for resources not in the compartment.
+func GetPatientReferencePath(resourceType string) (string, bool) {
+	path, ok := patientCompartmentPaths[resourceType]
+	return path, ok
 }
 
 // NewBaseViewDefinition creates a base ViewDefinition with required fields

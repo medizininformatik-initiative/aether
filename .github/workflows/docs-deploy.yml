@@ -4,8 +4,9 @@ on:
   push:
     branches:
       - main
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -20,6 +21,11 @@ jobs:
   build:
     name: Build Documentation
     runs-on: ubuntu-24.04
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
 
     steps:
       - name: Harden Runner
@@ -30,9 +36,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Get latest release version
+      - name: Get version
         id: version
-        run: echo "tag=$(gh release view --json tagName -q .tagName 2>/dev/null || echo 'dev')" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_run" ]; then
+            echo "tag=$(gh release view --json tagName -q .tagName 2>/dev/null || echo 'dev')" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=dev" >> "$GITHUB_OUTPUT"
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
 

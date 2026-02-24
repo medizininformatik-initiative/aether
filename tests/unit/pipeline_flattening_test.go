@@ -185,7 +185,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, resources)
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger)
+		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
 		assert.Equal(t, "1", result[0]["id"])
@@ -204,7 +204,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		err := os.WriteFile(filePath, []byte(content), 0644)
 		require.NoError(t, err)
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger)
+		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
 	})
@@ -233,7 +233,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger)
+		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
 		assert.Equal(t, "Patient", result[0]["resourceType"])
@@ -259,7 +259,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger)
+		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		// Should extract only the valid entry
 		assert.Len(t, result, 1)
@@ -280,7 +280,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger)
+		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		assert.Empty(t, result)
 	})
@@ -300,7 +300,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger)
+		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		assert.Empty(t, result)
 	})
@@ -316,14 +316,14 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger)
+		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		// Bundle without valid entries should result in empty resources
 		assert.Empty(t, result)
 	})
 
 	t.Run("returns error for nonexistent file", func(t *testing.T) {
-		_, err := pipeline.LoadResourcesFromFile("/nonexistent/path/file.ndjson", logger)
+		_, err := pipeline.LoadResourcesFromFile("/nonexistent/path/file.ndjson", logger, lib.DefaultMaxNDJSONLineSize)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to open file")
 	})
@@ -340,7 +340,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		err := os.WriteFile(filePath, []byte(content), 0644)
 		require.NoError(t, err)
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger)
+		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		// Should skip invalid line and continue
 		assert.Len(t, result, 2)
@@ -363,7 +363,7 @@ func TestLoadAllResources(t *testing.T) {
 			{"resourceType": "Patient", "id": "2"},
 		})
 
-		result, err := pipeline.LoadAllResources([]string{file1, file2}, logger)
+		result, err := pipeline.LoadAllResources([]string{file1, file2}, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
 	})
@@ -375,13 +375,13 @@ func TestLoadAllResources(t *testing.T) {
 			{"resourceType": "Patient", "id": "1"},
 		})
 
-		_, err := pipeline.LoadAllResources([]string{file1, "/nonexistent/file.ndjson"}, logger)
+		_, err := pipeline.LoadAllResources([]string{file1, "/nonexistent/file.ndjson"}, logger, lib.DefaultMaxNDJSONLineSize)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to load")
 	})
 
 	t.Run("handles empty file list", func(t *testing.T) {
-		result, err := pipeline.LoadAllResources([]string{}, logger)
+		result, err := pipeline.LoadAllResources([]string{}, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		assert.Empty(t, result)
 	})
@@ -754,7 +754,7 @@ func TestLoadResourcesFromFile_ScannerError(t *testing.T) {
 	}
 	writeTestNDJSON(t, filePath, resources)
 
-	result, err := pipeline.LoadResourcesFromFile(filePath, logger)
+	result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
 }

@@ -1,7 +1,6 @@
 package pipeline
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -109,7 +108,7 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 		"job_id", job.JobID)
 
 	// Load all resources from input files
-	allResources, err := LoadAllResources(files, logger)
+	allResources, err := LoadAllResources(files, logger, job.Config.Pipeline.MaxNDJSONLineSize())
 	if err != nil {
 		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
 		recordStepError(step, err, models.ErrorTypeNonTransient)
@@ -217,11 +216,11 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 }
 
 // LoadAllResources loads all FHIR resources from the given NDJSON files
-func LoadAllResources(files []string, logger *lib.Logger) ([]map[string]any, error) {
+func LoadAllResources(files []string, logger *lib.Logger, maxLineSize int) ([]map[string]any, error) {
 	var allResources []map[string]any
 
 	for _, filePath := range files {
-		resources, err := LoadResourcesFromFile(filePath, logger)
+		resources, err := LoadResourcesFromFile(filePath, logger, maxLineSize)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), err)
 		}
@@ -233,7 +232,7 @@ func LoadAllResources(files []string, logger *lib.Logger) ([]map[string]any, err
 
 // LoadResourcesFromFile loads FHIR resources from a single NDJSON file
 // Handles both compressed (.ndjson.zst) and uncompressed (.ndjson) files
-func LoadResourcesFromFile(filePath string, logger *lib.Logger) ([]map[string]any, error) {
+func LoadResourcesFromFile(filePath string, logger *lib.Logger, maxLineSize int) ([]map[string]any, error) {
 	// Use lib.OpenFileForReading to auto-detect compression
 	reader, err := lib.OpenFileForReading(filePath)
 	if err != nil {
@@ -242,10 +241,7 @@ func LoadResourcesFromFile(filePath string, logger *lib.Logger) ([]map[string]an
 	defer func() { _ = reader.Close() }()
 
 	var resources []map[string]any
-	scanner := bufio.NewScanner(reader)
-	// Increase buffer size for large resources
-	buf := make([]byte, 0, 100*1024*1024)
-	scanner.Buffer(buf, 100*1024*1024)
+	scanner := lib.NewNDJSONScannerWithMaxSize(reader, maxLineSize)
 
 	lineNum := 0
 	for scanner.Scan() {

@@ -70,6 +70,7 @@ export default defineConfig({
                 { text: 'TORCH Import', link: '/guides/steps/torch-import' },
                 { text: 'Local Import', link: '/guides/steps/local-import' },
                 { text: 'HTTP Import', link: '/guides/steps/http-import' },
+                { text: 'Validation', link: '/guides/steps/validation' },
                 { text: 'DIMP', link: '/guides/steps/dimp' },
                 { text: 'Flattening', link: '/guides/steps/flattening' },
                 { text: 'Wait', link: '/guides/steps/wait' },

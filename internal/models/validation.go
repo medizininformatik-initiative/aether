@@ -162,7 +162,7 @@ func (c *ProjectConfig) Validate() error {
 	for _, step := range c.Pipeline.EnabledSteps {
 		if !c.Services.HasServiceURL(step) {
 			switch step {
-			case StepDIMP, StepCSVConversion, StepParquetConversion, StepSend:
+			case StepDIMP, StepValidation, StepCSVConversion, StepParquetConversion, StepSend:
 				return fmt.Errorf("service URL required for enabled step '%s'", step)
 			}
 		}
@@ -188,6 +188,11 @@ func (c *ProjectConfig) Validate() error {
 	if c.Services.DIMP.URL != "" {
 		if _, err := url.Parse(c.Services.DIMP.URL); err != nil {
 			return fmt.Errorf("invalid dimp url: %w", err)
+		}
+	}
+	if c.Services.Validation.URL != "" {
+		if _, err := url.Parse(c.Services.Validation.URL); err != nil {
+			return fmt.Errorf("invalid validation url: %w", err)
 		}
 	}
 	if c.Services.CSVConversion.URL != "" {
@@ -296,6 +301,9 @@ func (c *ProjectConfig) ValidateServiceConnectivity(transport *http.Transport) e
 		case StepDIMP:
 			serviceURL = c.Services.DIMP.URL
 			serviceName = "DIMP"
+		case StepValidation:
+			serviceURL = c.Services.Validation.URL
+			serviceName = "Validation"
 		case StepSend:
 			serviceURL = c.Services.GetServiceURL(StepSend)
 			serviceName = "Send"

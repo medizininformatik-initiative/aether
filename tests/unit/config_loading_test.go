@@ -1418,6 +1418,59 @@ func TestValidateServiceConnectivity_SendServiceUnreachable(t *testing.T) {
 	assert.Contains(t, err.Error(), "Send")
 }
 
+// TestValidateServiceConnectivity_ValidationServiceAvailable verifies the validation service
+// connectivity branch in ValidateServiceConnectivity (covers the StepValidation case).
+func TestValidateServiceConnectivity_ValidationServiceAvailable(t *testing.T) {
+	validationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer validationServer.Close()
+
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			Validation: models.ValidationConfig{
+				URL: validationServer.URL,
+			},
+		},
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepLocalImport, models.StepValidation},
+		},
+		Retry: models.RetryConfig{
+			MaxAttempts:      3,
+			InitialBackoffMs: 500,
+			MaxBackoffMs:     5000,
+		},
+		JobsDir: "/tmp/jobs",
+	}
+
+	err := config.ValidateServiceConnectivity(nil)
+	assert.NoError(t, err, "Validation service should be reachable")
+}
+
+// TestValidateServiceConnectivity_ValidationServiceUnreachable verifies error when validation is unreachable
+func TestValidateServiceConnectivity_ValidationServiceUnreachable(t *testing.T) {
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			Validation: models.ValidationConfig{
+				URL: "http://localhost:59997", // Unreachable
+			},
+		},
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepLocalImport, models.StepValidation},
+		},
+		Retry: models.RetryConfig{
+			MaxAttempts:      3,
+			InitialBackoffMs: 500,
+			MaxBackoffMs:     5000,
+		},
+		JobsDir: "/tmp/jobs",
+	}
+
+	err := config.ValidateServiceConnectivity(nil)
+	assert.Error(t, err, "Should fail when validation service is unreachable")
+	assert.Contains(t, err.Error(), "Validation")
+}
+
 // TestConfigLoading_BundleSplitThreshold verifies bundle_split_threshold_mb is loaded correctly
 func TestConfigLoading_BundleSplitThreshold(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -2254,4 +2307,148 @@ jobs_dir: "` + jobsDir + `"
 
 	assert.Equal(t, 0, config.Pipeline.MaxNDJSONLineSizeMB, "MaxNDJSONLineSizeMB should be 0 when not set")
 	assert.Equal(t, 100*1024*1024, config.Pipeline.MaxNDJSONLineSize(), "MaxNDJSONLineSize() should default to 100MB")
+}
+
+// TestConfigLoading_ValidationConfig verifies that validation config including
+// bundle_chunk_size_mb is properly loaded from YAML
+func TestConfigLoading_ValidationConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  validation:
+    url: "http://validator.example.com:8080"
+    max_concurrent_requests: 8
+    bundle_chunk_size_mb: 25
+
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 3
+  initial_backoff_ms: 500
+  max_backoff_ms: 5000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.Equal(t, "http://validator.example.com:8080", config.Services.Validation.URL, "Validation URL should be loaded")
+	assert.Equal(t, 8, config.Services.Validation.MaxConcurrentRequests, "MaxConcurrentRequests should be loaded")
+	assert.Equal(t, 25, config.Services.Validation.BundleChunkSizeMB, "BundleChunkSizeMB should be loaded")
+}
+
+// TestConfigLoading_ValidationConfigDefaults verifies that defaults are applied
+// when validation config fields are not set
+func TestConfigLoading_ValidationConfigDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  validation:
+    url: "http://validator.example.com:8080"
+
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 3
+  initial_backoff_ms: 500
+  max_backoff_ms: 5000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.Equal(t, "http://validator.example.com:8080", config.Services.Validation.URL)
+	assert.Equal(t, 4, config.Services.Validation.MaxConcurrentRequests, "MaxConcurrentRequests should default to 4")
+	assert.Equal(t, 10, config.Services.Validation.BundleChunkSizeMB, "BundleChunkSizeMB should default to 10")
+	require.NotNil(t, config.Services.Validation.FailOnError, "FailOnError should not be nil")
+	assert.True(t, *config.Services.Validation.FailOnError, "FailOnError should default to true")
+}
+
+// TestConfigLoading_ValidationFailOnError verifies that fail_on_error: true is loaded from YAML
+func TestConfigLoading_ValidationFailOnError(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  validation:
+    url: "http://validator.example.com:8080"
+    fail_on_error: true
+
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 3
+  initial_backoff_ms: 500
+  max_backoff_ms: 5000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	require.NotNil(t, config.Services.Validation.FailOnError, "FailOnError should not be nil")
+	assert.True(t, *config.Services.Validation.FailOnError, "FailOnError should be true when set in config")
+	assert.Equal(t, "http://validator.example.com:8080", config.Services.Validation.URL)
+}
+
+// TestConfigLoading_ValidationFailOnErrorExplicitFalse verifies that fail_on_error: false
+// is respected and not overridden by the default (true).
+func TestConfigLoading_ValidationFailOnErrorExplicitFalse(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  validation:
+    url: "http://validator.example.com:8080"
+    fail_on_error: false
+
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 3
+  initial_backoff_ms: 500
+  max_backoff_ms: 5000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	require.NotNil(t, config.Services.Validation.FailOnError, "FailOnError should not be nil")
+	assert.False(t, *config.Services.Validation.FailOnError, "FailOnError should be false when explicitly set to false in config")
 }

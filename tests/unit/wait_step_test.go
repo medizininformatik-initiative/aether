@@ -449,6 +449,18 @@ func TestGetPreviousStepForWait_AllWaitsBeforeIndex(t *testing.T) {
 	assert.Contains(t, err.Error(), "no non-wait step found")
 }
 
+// TestGetStepInputDir_AllTransparentNonWaitFallback verifies the fallback when all previous
+// steps are transparent non-wait (e.g., all validation steps).
+func TestGetStepInputDir_AllTransparentNonWaitFallback(t *testing.T) {
+	jobsBaseDir := "/tmp/jobs"
+	jobID := "test-job"
+	// All preceding steps are validation (transparent, non-wait) — falls back to job dir
+	steps := []models.StepName{models.StepValidation, models.StepDIMP}
+
+	inputDir := services.GetStepInputDir(jobsBaseDir, jobID, steps, 1)
+	assert.Equal(t, "/tmp/jobs/test-job", inputDir)
+}
+
 // TestGetStepInputDir_AllWaitsFallback verifies the fallback when all previous steps are waits
 func TestGetStepInputDir_AllWaitsFallback(t *testing.T) {
 	jobsBaseDir := "/tmp/jobs"
@@ -632,4 +644,69 @@ func TestGetDirSize_EntryInfoError(t *testing.T) {
 	size, err := pipeline.GetDirSize("/some/dir")
 	assert.NoError(t, err) // Function continues on Info() error
 	assert.Equal(t, int64(0), size)
+}
+
+// TestGetStepInputDir_AfterValidation verifies that steps after validation
+// skip over validation and read from the previous data-producing step
+func TestGetStepInputDir_AfterValidation(t *testing.T) {
+	jobsBaseDir := "/tmp/jobs"
+	jobID := "test-job"
+
+	testCases := []struct {
+		name        string
+		steps       []models.StepName
+		stepIndex   int
+		expectedDir string
+	}{
+		{
+			name:        "Step after validation reads from import",
+			steps:       []models.StepName{models.StepLocalImport, models.StepValidation, models.StepFlattening},
+			stepIndex:   2,
+			expectedDir: "/tmp/jobs/test-job/import",
+		},
+		{
+			name:        "Step after validation reads from pseudonymized",
+			steps:       []models.StepName{models.StepLocalImport, models.StepDIMP, models.StepValidation, models.StepFlattening},
+			stepIndex:   3,
+			expectedDir: "/tmp/jobs/test-job/pseudonymized",
+		},
+		{
+			name:        "Validation itself reads from import",
+			steps:       []models.StepName{models.StepLocalImport, models.StepValidation},
+			stepIndex:   1,
+			expectedDir: "/tmp/jobs/test-job/import",
+		},
+		{
+			name:        "Validation reads from pseudonymized after DIMP",
+			steps:       []models.StepName{models.StepLocalImport, models.StepDIMP, models.StepValidation},
+			stepIndex:   2,
+			expectedDir: "/tmp/jobs/test-job/pseudonymized",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			inputDir := services.GetStepInputDir(jobsBaseDir, jobID, tc.steps, tc.stepIndex)
+			assert.Equal(t, tc.expectedDir, inputDir)
+		})
+	}
+}
+
+// TestGetStepInputDir_WaitThenValidation verifies correct behavior with both transparent steps
+func TestGetStepInputDir_WaitThenValidation(t *testing.T) {
+	jobsBaseDir := "/tmp/jobs"
+	jobID := "test-job"
+
+	// import -> wait -> validation -> flattening
+	steps := []models.StepName{
+		models.StepLocalImport, models.StepWait, models.StepValidation, models.StepFlattening,
+	}
+
+	// Validation (index 2) should read from wait dir (previous is wait at index 1)
+	inputDir := services.GetStepInputDir(jobsBaseDir, jobID, steps, 2)
+	assert.Equal(t, "/tmp/jobs/test-job/import_wait", inputDir)
+
+	// Flattening (index 3): prevStep is validation -> walk back -> find wait -> apply wait semantics
+	inputDir = services.GetStepInputDir(jobsBaseDir, jobID, steps, 3)
+	assert.Equal(t, "/tmp/jobs/test-job/import_wait", inputDir)
 }

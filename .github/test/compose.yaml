@@ -8,6 +8,7 @@ include:
   - dimp/compose.yaml
   - flattener/compose.yaml
   - blaze/compose.yaml
+  - validator/compose.yaml
 
 services:
   # E2E test runner - runs aether inside the Docker network
@@ -19,9 +20,11 @@ services:
     volumes:
       - ./aether.yaml:/app/aether.yaml:ro
       - ./aether-flattening.yaml:/app/aether-flattening.yaml:ro
+      - ./aether-validation.yaml:/app/aether-validation.yaml:ro
       - ./aether-direct-load.yaml:/app/aether-direct-load.yaml:ro
       - ./torch/queries:/app/torch/queries:ro
       - ./example-flattening:/app/example-flattening:ro
+      - ./example-validation:/app/example-validation:ro
       - ./jobs:/app/jobs
     # Keep container running so we can exec into it
     command: ["sleep", "infinity"]
@@ -29,4 +32,5 @@ services:
       - torch-proxy
       - fhir-pseudonymizer
       - fhir-flattener
+      - fhir-validator
       - blaze-fhir

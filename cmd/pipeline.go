@@ -223,7 +223,20 @@ func executeStep(job *models.PipelineJob, stepName models.StepName, config *mode
 		return nil
 
 	case models.StepValidation:
-		fmt.Println("Validation step not yet implemented - job will remain at this step")
+		fmt.Println("Starting validation step...")
+		if err := pipeline.ExecuteValidationStep(job, jobDir, logger); err != nil {
+			failedJob := pipeline.FailJob(job, err.Error())
+			if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
+				logger.Error("Failed to save job state", "error", saveErr)
+			}
+			return fmt.Errorf("validation step failed: %w", err)
+		}
+
+		if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
+			return fmt.Errorf("failed to save job state: %w", err)
+		}
+
+		fmt.Printf("\n✓ Validation completed\n")
 		return nil
 
 	case models.StepCSVConversion:

@@ -1,0 +1,28 @@
+# Aether Validation E2E Test Configuration
+# Uses internal Docker hostnames since aether runs inside the Docker network
+
+services:
+  # Validation Service (mii-fhir-validator)
+  validation:
+    url: "http://fhir-validator:8080"
+    max_concurrent_requests: 2
+    bundle_chunk_size_mb: 10
+    fail_on_error: false
+
+pipeline:
+  # Pipeline starts from pre-staged data after local_import step
+  enabled_steps:
+    - local_import  # Already completed (pre-staged)
+    - validation    # This is the step being tested
+
+# Disable compression for simpler test verification
+compression:
+  enabled: false
+
+retry:
+  max_attempts: 3
+  initial_backoff_ms: 1000
+  max_backoff_ms: 10000
+
+# Directory to store job state and data
+jobs_dir: "./jobs"

@@ -1,0 +1,2 @@
+{"resourceType":"Patient","id":"val-patient-1","gender":"male","birthDate":"1965-07-15","active":true}
+{"resourceType":"Patient","id":"val-patient-2","gender":"female","birthDate":"1980-03-22","active":true}

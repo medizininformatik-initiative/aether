@@ -353,10 +353,83 @@ jobs:
         if: always()
         run: docker compose -f .github/test/compose.yaml down -v
 
+  e2e-test-validation:
+    name: E2E Validation Tests
+    runs-on: ubuntu-24.04
+    needs: [detect-changes, test]
+    if: needs.detect-changes.outputs.code == 'true'
+    timeout-minutes: 15
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pre-pull Docker images
+        working-directory: .github/test/validator
+        run: |
+          echo "Pulling fhir-validator image..."
+          docker compose config --images | while read -r image; do
+            docker pull "$image" || exit 1
+          done
+
+      - name: Set up Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+        with:
+          go-version: '1.26.0'
+          cache: true
+
+      - name: Build aether
+        run: make build
+
+      - name: Start validator and runner services
+        working-directory: .github/test
+        run: docker compose up -d --wait aether-runner fhir-validator
+
+      - name: Run validation E2E test
+        working-directory: .github/test
+        run: ../scripts/run-validation-e2e-test.sh
+
+      - name: Upload validation job outputs
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: e2e-validation-outputs-${{ github.run_id }}
+          path: .github/test/jobs/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Capture service logs on failure
+        if: failure()
+        run: |
+          docker compose -f .github/test/validator/compose.yaml logs > docker-logs-validation.txt
+
+      - name: Upload service logs
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: docker-logs-validation-${{ github.run_id }}
+          path: docker-logs-validation.txt
+          retention-days: 7
+
+      - name: Cleanup Docker services
+        if: always()
+        run: docker compose -f .github/test/compose.yaml down -v
+
   test-status:
     name: Test Status
     runs-on: ubuntu-24.04
-    needs: [detect-changes, e2e-test, e2e-test-direct-load, e2e-test-flattening]
+    needs: [detect-changes, e2e-test, e2e-test-direct-load, e2e-test-flattening, e2e-test-validation]
     if: always()
     timeout-minutes: 5
     steps:
@@ -370,12 +443,14 @@ jobs:
           echo "E2E Tests Result: ${{ needs.e2e-test.result }}"
           echo "E2E Direct Load Tests Result: ${{ needs.e2e-test-direct-load.result }}"
           echo "E2E Flattening Tests Result: ${{ needs.e2e-test-flattening.result }}"
+          echo "E2E Validation Tests Result: ${{ needs.e2e-test-validation.result }}"
           echo "Code Changed: ${{ needs.detect-changes.outputs.code }}"
 
           # Pass if all e2e tests succeeded or were skipped (docs-only changes)
           E2E_OK=false
           DIRECT_OK=false
           FLAT_OK=false
+          VAL_OK=false
 
           if [[ "${{ needs.e2e-test.result }}" == "success" ]] || [[ "${{ needs.e2e-test.result }}" == "skipped" ]]; then
             E2E_OK=true
@@ -389,7 +464,11 @@ jobs:
             FLAT_OK=true
           fi
 
-          if [[ "$E2E_OK" == "true" ]] && [[ "$DIRECT_OK" == "true" ]] && [[ "$FLAT_OK" == "true" ]]; then
+          if [[ "${{ needs.e2e-test-validation.result }}" == "success" ]] || [[ "${{ needs.e2e-test-validation.result }}" == "skipped" ]]; then
+            VAL_OK=true
+          fi
+
+          if [[ "$E2E_OK" == "true" ]] && [[ "$DIRECT_OK" == "true" ]] && [[ "$FLAT_OK" == "true" ]] && [[ "$VAL_OK" == "true" ]]; then
             echo "Tests passed or were not required"
             exit 0
           else

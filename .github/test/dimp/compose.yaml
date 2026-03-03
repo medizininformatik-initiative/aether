@@ -28,7 +28,7 @@ services:
     privileged: false
 
   vfps_db:
-    image: docker.io/library/postgres:17.5@sha256:016154be900bddeac413c2ed2d03b7fdc38799a18e61ecf250d19f0973693de1
+    image: docker.io/library/postgres:17.5@sha256:aadf2c0696f5ef357aa7a68da995137f0cf17bad0bf6e1f17de06ae5c769b302
     networks: [ "vfps" ]
     environment:
       POSTGRES_USER: postgres

@@ -7,6 +7,14 @@
     ":maintainLockFilesWeekly",
     "customManagers:githubActionsVersions"
   ],
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/bower_components/**",
+    "**/vendor/**",
+    "**/examples/**",
+    "**/__tests__/**",
+    "**/__fixtures__/**"
+  ],
   "labels": [
     "dependencies"
   ],

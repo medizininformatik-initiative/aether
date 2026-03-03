@@ -327,17 +327,30 @@
                                     "name": "performed_datetime",
                                     "path": "performed.ofType(dateTime)",
                                     "type": "dateTime"
-                                },
+                                }
+                            ]
+                        },
+                        {
+                            "forEachOrNull": "performed.ofType(Period)",
+                            "select": [
                                 {
-                                    "name": "performed_period_start",
-                                    "path": "performed.ofType(Period).start",
-                                    "type": "dateTime"
-                                },
-                                {
-                                    "name": "performed_period_end",
-                                    "path": "performed.ofType(Period).end",
-                                    "type": "dateTime"
-                                },
+                                    "column": [
+                                        {
+                                            "name": "performed_period_start",
+                                            "path": "start",
+                                            "type": "dateTime"
+                                        },
+                                        {
+                                            "name": "performed_period_end",
+                                            "path": "end",
+                                            "type": "dateTime"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "column": [
                                 {
                                     "name": "performed_string",
                                     "path": "performed.ofType(string)",

@@ -6,7 +6,7 @@ networks:
 
 services:
   fhir-pseudonymizer:
-    image: ghcr.io/miracum/fhir-pseudonymizer:v2.22.10
+    image: ghcr.io/miracum/fhir-pseudonymizer:v2.22.10@sha256:88a8bf300a97acc7a493788add58c207d0ba0397431829c2377aab0eb39ae1d1
     ports: [ ":8080" ]
     networks: [ "aether", "dimp" ]
     volumes:
@@ -47,7 +47,7 @@ services:
       retries: 10
 
   vfps:
-    image: ghcr.io/miracum/vfps:v1.3.6 # x-release-please-version
+    image: ghcr.io/miracum/vfps:v1.3.6@sha256:21f45ea0c6f9b08d672b3e8529720b65340183c21609e13f056be25325d50be8 # x-release-please-version
     networks: [ "dimp", "vfps" ]
     ports: [ ":8080", ":8081" ]
     environment:

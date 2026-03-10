@@ -1,7 +1,6 @@
 package services
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -17,11 +16,12 @@ import (
 
 // FHIRClient handles sending NDJSON files to a FHIR server
 type FHIRClient struct {
-	url        string
-	batchSize  int
-	auth       models.AuthConfig
-	httpClient *HTTPClient
-	logger     *lib.Logger
+	url         string
+	batchSize   int
+	auth        models.AuthConfig
+	httpClient  *HTTPClient
+	logger      *lib.Logger
+	MaxLineSize int // Maximum NDJSON line size in bytes; 0 uses models.DefaultMaxNDJSONLineSize
 }
 
 // FHIRUploadStats contains statistics from uploading an NDJSON file
@@ -79,11 +79,11 @@ func (c *FHIRClient) UploadNDJSON(filePath string, reader io.Reader) (*FHIRUploa
 		batchSize = 100 // default
 	}
 
-	scanner := bufio.NewScanner(reader)
-	// Increase buffer size for large resources
-	const maxScanTokenSize = 10 * 1024 * 1024 // 10MB
-	buf := make([]byte, maxScanTokenSize)
-	scanner.Buffer(buf, maxScanTokenSize)
+	maxLineSize := c.MaxLineSize
+	if maxLineSize <= 0 {
+		maxLineSize = models.DefaultMaxNDJSONLineSize
+	}
+	scanner := lib.NewNDJSONScannerWithMaxSize(reader, maxLineSize)
 
 	var batch []json.RawMessage
 	stats := &FHIRUploadStats{}

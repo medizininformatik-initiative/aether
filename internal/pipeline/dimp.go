@@ -1,7 +1,6 @@
 package pipeline
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -172,7 +171,7 @@ func processDIMPFile(inputFile, outputFile string, dimpClient *services.DIMPClie
 	thresholdBytes := thresholdMB * 1024 * 1024
 
 	processor := NewResourceProcessor(dimpClient, logger, thresholdBytes, inputFile)
-	scanner := newLargeBufferScanner(fileCtx.InFile)
+	scanner := lib.NewNDJSONScannerWithMaxSize(fileCtx.InFile, job.Config.Pipeline.MaxNDJSONLineSize())
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -246,15 +245,6 @@ func processDIMPFile(inputFile, outputFile string, dimpClient *services.DIMPClie
 	}
 
 	return processor.GetResourceCount(), nil
-}
-
-// newLargeBufferScanner creates a bufio.Scanner with a 100MB buffer to handle very large FHIR resources
-// Default bufio.Scanner buffer is 64KB which can cause "token too long" errors with complex queries
-func newLargeBufferScanner(r interface{ Read([]byte) (int, error) }) *bufio.Scanner {
-	scanner := bufio.NewScanner(r)
-	buf := make([]byte, 0, 100*1024*1024)
-	scanner.Buffer(buf, 100*1024*1024)
-	return scanner
 }
 
 // countResourcesInFile counts the number of non-empty lines in an NDJSON file

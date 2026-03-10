@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // FHIRResource represents a generic FHIR resource as a map
@@ -69,16 +71,34 @@ func ReadNDJSONFile(filePath string, callback func(FHIRResource) error) (int, er
 	return ReadNDJSON(reader, callback)
 }
 
+// DefaultMaxNDJSONLineSize is an alias for models.DefaultMaxNDJSONLineSize.
+// Kept here for convenience so callers of the scanner API don't need to import models.
+const DefaultMaxNDJSONLineSize = models.DefaultMaxNDJSONLineSize
+
+// NewNDJSONScanner creates a bufio.Scanner configured to handle large FHIR NDJSON lines.
+// Uses DefaultMaxNDJSONLineSize (100MB) as the maximum line size.
+func NewNDJSONScanner(r io.Reader) *bufio.Scanner {
+	return NewNDJSONScannerWithMaxSize(r, DefaultMaxNDJSONLineSize)
+}
+
+// NewNDJSONScannerWithMaxSize creates a bufio.Scanner with a custom maximum line size.
+// The buffer starts at min(64KB, maxSize) and grows on demand up to maxSize bytes.
+func NewNDJSONScannerWithMaxSize(r io.Reader, maxSize int) *bufio.Scanner {
+	scanner := bufio.NewScanner(r)
+	initialSize := bufio.MaxScanTokenSize
+	if maxSize < initialSize {
+		initialSize = maxSize
+	}
+	buf := make([]byte, initialSize)
+	scanner.Buffer(buf, maxSize)
+	return scanner
+}
+
 // ReadNDJSON reads FHIR NDJSON from an io.Reader
 // Calls the callback function for each valid resource
 // Returns total lines processed and any fatal error
 func ReadNDJSON(reader io.Reader, callback func(FHIRResource) error) (int, error) {
-	scanner := bufio.NewScanner(reader)
-
-	// Increase buffer size for large FHIR resources
-	const maxCapacity = 1024 * 1024 // 1MB per line
-	buf := make([]byte, maxCapacity)
-	scanner.Buffer(buf, maxCapacity)
+	scanner := NewNDJSONScanner(reader)
 
 	lineNum := 0
 	for scanner.Scan() {

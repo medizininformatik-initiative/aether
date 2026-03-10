@@ -231,6 +231,7 @@ func executeDirectResourceLoadSend(job *models.PipelineJob, jobDir string, step 
 
 	// Create FHIR client
 	fhirClient := services.NewFHIRClient(job.Config.Services.Send, httpClient, logger)
+	fhirClient.MaxLineSize = job.Config.Pipeline.MaxNDJSONLineSize()
 
 	fhirURL := job.Config.Services.Send.URL
 	fmt.Printf("Uploading %d NDJSON file(s) to FHIR server: %s\n\n", len(orderedFiles), fhirURL)

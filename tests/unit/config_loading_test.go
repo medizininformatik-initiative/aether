@@ -2196,3 +2196,62 @@ jobs_dir: "` + jobsDir + `"
 
 	assert.Equal(t, "/custom/certs/ca.pem", config.TLS.CACertPath, "TLS CA cert path should expand env var")
 }
+
+// TestConfigLoading_MaxNDJSONLineSize verifies max_ndjson_line_size_mb is loaded
+func TestConfigLoading_MaxNDJSONLineSize(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+pipeline:
+  enabled_steps:
+    - local_import
+  max_ndjson_line_size_mb: 200
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.Equal(t, 200, config.Pipeline.MaxNDJSONLineSizeMB, "MaxNDJSONLineSizeMB should be loaded from config")
+	assert.Equal(t, 200*1024*1024, config.Pipeline.MaxNDJSONLineSize(), "MaxNDJSONLineSize() should return bytes")
+}
+
+// TestConfigLoading_MaxNDJSONLineSizeDefault verifies default when not specified
+func TestConfigLoading_MaxNDJSONLineSizeDefault(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.Equal(t, 0, config.Pipeline.MaxNDJSONLineSizeMB, "MaxNDJSONLineSizeMB should be 0 when not set")
+	assert.Equal(t, 100*1024*1024, config.Pipeline.MaxNDJSONLineSize(), "MaxNDJSONLineSize() should default to 100MB")
+}

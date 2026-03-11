@@ -249,6 +249,8 @@ services:
   dimp:
     url: "http://localhost:8080"
     bundle_split_threshold_mb: 10
+  validation:
+    url: "http://localhost:8081/fhir"
 `
 	require.NoError(t, os.WriteFile(configFile, []byte(configContent), 0644))
 

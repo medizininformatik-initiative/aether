@@ -12,6 +12,15 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
+// viperGetBoolPtr returns a *bool if the key is explicitly set in config, or nil otherwise.
+func viperGetBoolPtr(key string) *bool {
+	if !viper.IsSet(key) {
+		return nil
+	}
+	v := viper.GetBool(key)
+	return &v
+}
+
 // ExpandEnvVars expands environment variables in the format ${VAR} or $VAR
 func ExpandEnvVars(s string) string {
 	// Match ${VAR} pattern
@@ -77,6 +86,12 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 			DIMP: models.DIMPConfig{
 				URL:                    ExpandEnvVars(viper.GetString("services.dimp.url")),
 				BundleSplitThresholdMB: viper.GetInt("services.dimp.bundle_split_threshold_mb"),
+			},
+			Validation: models.ValidationConfig{
+				URL:                   ExpandEnvVars(viper.GetString("services.validation.url")),
+				MaxConcurrentRequests: viper.GetInt("services.validation.max_concurrent_requests"),
+				BundleChunkSizeMB:     viper.GetInt("services.validation.bundle_chunk_size_mb"),
+				FailOnError:           viperGetBoolPtr("services.validation.fail_on_error"),
 			},
 			CSVConversion: models.CSVConversionConfig{
 				URL: ExpandEnvVars(viper.GetString("services.csv_conversion.url")),
@@ -195,6 +210,17 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 		// Apply DIMP Bundle split threshold default if not set
 		if config.Services.DIMP.BundleSplitThresholdMB == 0 {
 			config.Services.DIMP.BundleSplitThresholdMB = 10 // 10MB default
+		}
+		// Apply validation defaults if not set
+		if config.Services.Validation.MaxConcurrentRequests == 0 {
+			config.Services.Validation.MaxConcurrentRequests = 4
+		}
+		if config.Services.Validation.BundleChunkSizeMB == 0 {
+			config.Services.Validation.BundleChunkSizeMB = 10 // 10MB default, same as DIMP threshold
+		}
+		if config.Services.Validation.FailOnError == nil {
+			defaultFailOnError := true
+			config.Services.Validation.FailOnError = &defaultFailOnError
 		}
 		// Apply compression level default if not set
 		if config.Compression.Level == "" {

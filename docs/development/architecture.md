@@ -66,12 +66,14 @@ aether/
 │   ├── pipeline/             # Pipeline orchestration (pure)
 │   │   ├── job.go            # Job initialization
 │   │   ├── import.go         # Import step dispatcher (torch/local/http)
+│   │   ├── validation.go     # FHIR validation step
 │   │   └── dimp.go           # DIMP pseudonymization step
 │   ├── services/             # Side effects (I/O, HTTP)
 │   │   ├── importer.go       # Local file import
 │   │   ├── downloader.go     # HTTP download
 │   │   ├── torch_client.go   # TORCH HTTP client
 │   │   ├── dimp_client.go    # DIMP HTTP client
+│   │   ├── validation_client.go # FHIR validation HTTP client
 │   │   ├── state.go          # State persistence
 │   │   └── config.go         # Configuration loader
 │   ├── ui/                   # Progress indicators
@@ -150,9 +152,11 @@ Benefits:
    │   ├─→ local_import: Load FHIR from local directory
    │   └─→ http_import: Download FHIR from HTTP URL
    │   └─→ Save results to job directory
+   ├─→ Validation Step (if enabled): FHIR data quality checks
+   │   └─→ Write OperationOutcome reports
    ├─→ DIMP Step (if enabled): Pseudonymization
    │   └─→ Save de-identified data
-   └─→ [Future steps...]
+   └─→ [Additional steps: flattening, send, ...]
    ↓
 5. Persist Job State
    ├─→ Step status (completed/failed)
@@ -174,6 +178,9 @@ jobs/
     ├── import/
     │   ├── Patient.ndjson.zst    # Compressed FHIR data (zstd)
     │   └── Observation.ndjson.zst
+    ├── validation/
+    │   ├── Patient.validation.ndjson     # OperationOutcome reports
+    │   └── Observation.validation.ndjson
     ├── pseudonymized/
     │   ├── Patient.ndjson.zst    # De-identified data (zstd)
     │   └── Observation.ndjson.zst
@@ -265,11 +272,11 @@ Adding new pipeline steps:
 4. **Update CLI** to recognize new step
 5. **Update configuration** documentation
 
-Example: Adding a "validation" step would involve:
-- Create `internal/pipeline/validation.go`
-- Implement `ValidateStep(ctx, job, config) error`
-- Add tests
-- Update step list in help/docs
+Example: The validation step was added by following this pattern:
+- `internal/pipeline/validation.go` — step logic (chunking, concurrent validation)
+- `internal/services/validation_client.go` — HTTP client for the validation service
+- `tests/unit/pipeline_validation_test.go` — unit tests
+- Documentation in `docs/guides/steps/validation.md`
 
 ## Next Steps
 

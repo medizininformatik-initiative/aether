@@ -1,7 +1,7 @@
 # Makefile for Aether Test Infrastructure
 # Located in .github/test/
 
-.PHONY: help services start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test flattener-up flattener-down flattener-logs blaze-up blaze-down blaze-logs test-with-services download-testdata upload-testdata e2e-test e2e-test-flattening e2e-test-direct-load clean-test-data
+.PHONY: help services build start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test flattener-up flattener-down flattener-logs blaze-up blaze-down blaze-logs validator-up validator-down validator-logs test-with-services download-testdata upload-testdata e2e-test e2e-test-flattening e2e-test-validation e2e-test-direct-load clean-test-data
 
 # Default target
 .DEFAULT_GOAL := help
@@ -16,6 +16,7 @@ help:
 	@echo "  torch             TORCH data extraction service"
 	@echo "  dimp              DIMP pseudonymization service"
 	@echo "  flattener         fhir-flattener CSV transformation service"
+	@echo "  validator         mii-fhir-validator FHIR validation service"
 	@echo ""
 	@echo "Targets:"
 	@echo "  start             Start all services (TORCH + DIMP + Flattener)"
@@ -35,13 +36,24 @@ help:
 	@echo "  blaze-up          Start Blaze FHIR server (DSF transfer target)"
 	@echo "  blaze-down        Stop Blaze FHIR server"
 	@echo "  blaze-logs        Show Blaze FHIR server logs"
+	@echo "  validator-up      Start mii-fhir-validator service"
+	@echo "  validator-down    Stop mii-fhir-validator service"
+	@echo "  validator-logs    Show mii-fhir-validator service logs"
 	@echo "  test-with-services Run all tests with required services"
 	@echo "  download-testdata Download test data (only if not present)"
 	@echo "  upload-testdata   Upload test data to TORCH (requires services)"
 	@echo "  e2e-test          Run end-to-end test (downloads, uploads, runs pipeline)"
 	@echo "  e2e-test-flattening Run flattening E2E test with pre-staged example data"
+	@echo "  e2e-test-validation Run validation E2E test with pre-staged example data"
 	@echo "  e2e-test-direct-load Run direct resource load E2E test (torch → send)"
+	@echo "  build             Build aether binary"
 	@echo "  clean-test-data   Clean test data and temporary files"
+
+## build: Build aether binary
+build:
+	@echo "Building aether binary..."
+	@cd ../.. && make build
+	@echo "✓ aether binary built"
 
 ## services: Alias for help
 services: help
@@ -155,6 +167,23 @@ blaze-logs:
 	@echo "Showing Blaze FHIR server logs..."
 	cd blaze && docker compose logs -f
 
+## validator-up: Start mii-fhir-validator service
+validator-up:
+	@echo "Starting mii-fhir-validator service..."
+	cd validator && docker compose up -d
+	@echo "✓ mii-fhir-validator service starting (may take up to 60s)"
+
+## validator-down: Stop mii-fhir-validator service
+validator-down:
+	@echo "Stopping mii-fhir-validator service..."
+	cd validator && docker compose down
+	@echo "✓ mii-fhir-validator service stopped"
+
+## validator-logs: Show mii-fhir-validator service logs
+validator-logs:
+	@echo "Showing mii-fhir-validator service logs..."
+	cd validator && docker compose logs -f
+
 ## dimp-test: Run integration tests with DIMP service
 dimp-test:
 	@echo "Running integration tests with DIMP service..."
@@ -222,6 +251,15 @@ e2e-test-flattening:
 	@echo "Running flattening E2E test script..."
 	@../scripts/run-flattening-e2e-test.sh
 	@echo "✓ Flattening E2E test complete"
+
+## e2e-test-validation: Run validation E2E test with pre-staged example data
+e2e-test-validation:
+	@echo "Running validation E2E test..."
+	@echo "Starting fhir-validator and aether-runner services..."
+	@docker compose up -d --wait aether-runner fhir-validator
+	@echo "Running validation E2E test script..."
+	@../scripts/run-validation-e2e-test.sh
+	@echo "✓ Validation E2E test complete"
 
 ## e2e-test-direct-load: Run direct resource load E2E test (torch → send)
 e2e-test-direct-load: download-testdata

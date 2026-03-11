@@ -38,6 +38,12 @@ services:
       project_identifier: string
       organization_identifier: string
 
+  validation:
+    url: string
+    max_concurrent_requests: integer   # default: 4
+    bundle_chunk_size_mb: integer      # default: 10
+    fail_on_error: boolean             # default: true
+
   local_import:
     dir: string
 
@@ -177,6 +183,28 @@ services:
 | `transfer.project_identifier` | MII project identifier |
 | `transfer.organization_identifier` | Organization identifier |
 
+### Validation
+
+FHIR validation service for data quality checks.
+
+```yaml
+services:
+  validation:
+    url: "http://validator:8080/fhir"
+    max_concurrent_requests: 4
+    bundle_chunk_size_mb: 10
+    fail_on_error: true
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `url` | string | - | Validation service URL (required if validation step enabled) |
+| `max_concurrent_requests` | int | 4 | Concurrent validation requests |
+| `bundle_chunk_size_mb` | int | 10 | Bundle chunk size for batching resources (MB) |
+| `fail_on_error` | bool | true | Stop pipeline when validation finds data quality errors |
+
+When `fail_on_error` is `true` (default), the pipeline stops after the validation step completes with errors. When `false`, validation reports are written but the pipeline continues.
+
 ### Local Import
 
 Default directory for local FHIR imports.
@@ -218,7 +246,7 @@ pipeline:
 | `wait` | Pause for manual inspection |
 | `flattening` | Transform to CSV (requires CRTDL) |
 | `send` | Upload to destination server |
-| `validation` | Validate FHIR data (placeholder) |
+| `validation` | Validate FHIR data against profiles |
 | `csv_conversion` | Convert to CSV (placeholder) |
 | `parquet_conversion` | Convert to Parquet (placeholder) |
 

@@ -16,6 +16,7 @@ One import step must be first in the pipeline. Only enable one at a time.
 
 | Step | Description |
 |------|-------------|
+| [Validation](./steps/validation.md) | Validate FHIR data against profiles |
 | [DIMP](./steps/dimp.md) | Pseudonymize FHIR data using DIMP service |
 | [Flattening](./steps/flattening.md) | Transform FHIR NDJSON to CSV |
 | [Wait](./steps/wait.md) | Pause pipeline for manual inspection |
@@ -29,6 +30,16 @@ One import step must be first in the pipeline. Only enable one at a time.
 pipeline:
   enabled_steps:
     - torch
+    - dimp
+```
+
+### With Validation
+
+```yaml
+pipeline:
+  enabled_steps:
+    - local_import
+    - validation    # Validate before pseudonymization
     - dimp
 ```
 
@@ -50,6 +61,7 @@ pipeline:
 pipeline:
   enabled_steps:
     - torch
+    - validation
     - dimp
     - flattening
     - send

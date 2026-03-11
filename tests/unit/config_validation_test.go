@@ -737,6 +737,32 @@ func TestSendConfig_GetBatchSize(t *testing.T) {
 	}
 }
 
+// TestProjectConfig_Validate_ValidationServiceURL verifies that an invalid validation URL
+// triggers a validation error in ProjectConfig.Validate.
+func TestProjectConfig_Validate_ValidationServiceURL(t *testing.T) {
+	config := models.ProjectConfig{
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepLocalImport, models.StepValidation},
+		},
+		Services: models.ServiceConfig{
+			Validation: models.ValidationConfig{
+				// url.Parse rejects percent-encoded sequences with invalid hex digits
+				URL: "http://host/%zz",
+			},
+		},
+		Retry: models.RetryConfig{
+			MaxAttempts:      3,
+			InitialBackoffMs: 500,
+			MaxBackoffMs:     5000,
+		},
+		JobsDir: "/tmp/jobs",
+	}
+
+	err := config.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid validation url")
+}
+
 func TestProjectConfig_Validate_SendStep(t *testing.T) {
 	tests := []struct {
 		name    string

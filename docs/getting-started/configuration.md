@@ -94,12 +94,22 @@ services:
     dir: "/path/to/fhir/data"  # Override with --dir flag
 ```
 
+### Validation
+
+```yaml
+services:
+  validation:
+    url: "http://your-validator:8080/fhir"
+    fail_on_error: true  # false to continue pipeline despite validation errors
+```
+
 ## Pipeline Steps
 
 ```yaml
 pipeline:
   enabled_steps:
     - torch         # OR local_import OR http_import
+    - validation    # Validate FHIR data (optional)
     - dimp          # Pseudonymization
     - wait          # Pause for inspection (optional)
     - flattening    # FHIR to CSV (requires CRTDL)

@@ -46,6 +46,15 @@ type ServiceConfig struct {
 	Flattening        FlatteningConfig        `yaml:"flattening" json:"flattening"`
 	Send              SendConfig              `yaml:"send" json:"send"`
 	LocalImport       LocalImportConfig       `yaml:"local_import" json:"local_import" mapstructure:"local_import"`
+	Validation        ValidationConfig        `yaml:"validation" json:"validation" mapstructure:"validation"`
+}
+
+// ValidationConfig contains FHIR validation service settings
+type ValidationConfig struct {
+	URL                   string `yaml:"url" json:"url" mapstructure:"url"`
+	MaxConcurrentRequests int    `yaml:"max_concurrent_requests" json:"max_concurrent_requests" mapstructure:"max_concurrent_requests"`
+	BundleChunkSizeMB     int    `yaml:"bundle_chunk_size_mb" json:"bundle_chunk_size_mb" mapstructure:"bundle_chunk_size_mb"`
+	FailOnError           *bool  `yaml:"fail_on_error" json:"fail_on_error" mapstructure:"fail_on_error"`
 }
 
 // LocalImportConfig contains settings for local directory import

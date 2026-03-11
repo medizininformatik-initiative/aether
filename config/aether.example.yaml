@@ -105,6 +105,24 @@ services:
       # Organization identifier (used in DocumentReference.author)
       organization_identifier: "your-org.example.de"
 
+  # FHIR Validation Service (optional)
+  # Validates FHIR resources against profiles before further processing
+  # Leave url empty to skip validation step
+  validation:
+    # Validation service URL
+    url: "http://localhost:8081/fhir"
+
+    # Maximum concurrent validation requests (default: 4)
+    max_concurrent_requests: 4
+
+    # Bundle chunk size in MB for batching resources (default: 10)
+    bundle_chunk_size_mb: 10
+
+    # Stop the pipeline when validation finds data quality errors (default: true)
+    # When true: pipeline stops after validation completes with errors
+    # When false: validation reports are written but the pipeline continues
+    fail_on_error: true
+
   # Local Import Configuration
   # Default directory for local FHIR NDJSON file imports
   # Can be overridden with --dir flag on command line

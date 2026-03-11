@@ -159,6 +159,7 @@ func EnsureJobDirs(jobsBaseDir string, jobID string) (map[models.StepName]string
 		models.StepLocalImport:       filepath.Join(jobDir, "import"),
 		models.StepHttpImport:        filepath.Join(jobDir, "import"),
 		models.StepDIMP:              filepath.Join(jobDir, "pseudonymized"),
+		models.StepValidation:        filepath.Join(jobDir, "validation"),
 		models.StepCSVConversion:     filepath.Join(jobDir, "csv"),
 		models.StepParquetConversion: filepath.Join(jobDir, "parquet"),
 		models.StepFlattening:        filepath.Join(jobDir, "csv"),
@@ -183,6 +184,8 @@ func GetJobOutputDir(jobsBaseDir string, jobID string, step models.StepName) str
 		return filepath.Join(jobDir, "import")
 	case models.StepDIMP:
 		return filepath.Join(jobDir, "pseudonymized")
+	case models.StepValidation:
+		return filepath.Join(jobDir, "validation")
 	case models.StepCSVConversion, models.StepFlattening:
 		return filepath.Join(jobDir, "csv")
 	case models.StepParquetConversion:
@@ -204,25 +207,43 @@ func GetWaitStepDir(jobsBaseDir, jobID string, previousStep models.StepName) str
 	return prevDir + "_wait"
 }
 
-// GetStepInputDir returns the input directory for a step, considering wait steps
-// If the previous step was a wait step, returns the _wait directory
-// Otherwise returns the standard output directory of the preceding step
+// isTransparentStep returns true for steps that don't produce FHIR data output.
+// These steps are skipped when determining the input directory for the next step.
+// - Wait steps: pause pipeline for user inspection, no data transformation
+// - Validation steps: produce only OperationOutcome reports, not FHIR data
+func isTransparentStep(step models.StepName) bool {
+	return step == models.StepWait || step == models.StepValidation
+}
+
+// GetStepInputDir returns the input directory for a step, considering transparent steps.
+// Transparent steps (wait, validation) don't produce FHIR data, so subsequent steps
+// need to look further back to find the actual data-producing step.
+// Wait steps are special: they expose a _wait directory where users can modify data,
+// so when encountered during the backwards walk we resolve through GetWaitStepDir.
 func GetStepInputDir(jobsBaseDir, jobID string, steps []models.StepName, currentStepIndex int) string {
 	if currentStepIndex <= 0 {
 		return GetJobDir(jobsBaseDir, jobID)
 	}
 
-	prevStep := steps[currentStepIndex-1]
+	// Walk backwards from the previous step to find the effective data source
+	for i := currentStepIndex - 1; i >= 0; i-- {
+		step := steps[i]
 
-	if prevStep == models.StepWait {
-		for i := currentStepIndex - 2; i >= 0; i-- {
-			if steps[i] != models.StepWait {
-				return GetWaitStepDir(jobsBaseDir, jobID, steps[i])
+		if step == models.StepWait {
+			// Wait step: find the data producer before it for the _wait directory
+			for j := i - 1; j >= 0; j-- {
+				if !isTransparentStep(steps[j]) {
+					return GetWaitStepDir(jobsBaseDir, jobID, steps[j])
+				}
 			}
+			return GetJobDir(jobsBaseDir, jobID)
 		}
-		// Shouldn't happen with proper validation (wait can't be first)
-		return GetJobDir(jobsBaseDir, jobID)
+
+		if !isTransparentStep(step) {
+			return GetJobOutputDir(jobsBaseDir, jobID, step)
+		}
+		// Transparent non-wait step (e.g. validation): keep walking back
 	}
 
-	return GetJobOutputDir(jobsBaseDir, jobID, prevStep)
+	return GetJobDir(jobsBaseDir, jobID)
 }

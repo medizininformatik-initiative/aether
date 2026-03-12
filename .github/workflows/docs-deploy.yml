@@ -4,28 +4,30 @@ on:
   push:
     branches:
       - main
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs-deploy.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Git tag to build docs from (e.g. v0.4.0)'
+        required: true
+        type: string
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build Documentation
+  deploy:
+    name: Build and Deploy Documentation
     runs-on: ubuntu-24.04
-    if: >-
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success' &&
-       startsWith(github.event.workflow_run.head_branch, 'v'))
+    if: ${{ !(github.event_name == 'release' && github.event.release.prerelease) }}
 
     steps:
       - name: Harden Runner
@@ -33,19 +35,42 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Get version
-        id: version
-        run: |
-          if [ "$GITHUB_EVENT_NAME" = "workflow_run" ]; then
-            echo "tag=$(gh release view --json tagName -q .tagName 2>/dev/null || echo 'dev')" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=dev" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Determine version and ref
+        id: vars
         env:
-          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          DISPATCH_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [[ "${EVENT_NAME}" == "push" ]]; then
+            echo "version=dev" >> "$GITHUB_OUTPUT"
+            echo "ref=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          elif [[ "${EVENT_NAME}" == "release" ]]; then
+            echo "version=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+            echo "ref=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "version=${DISPATCH_TAG}" >> "$GITHUB_OUTPUT"
+            echo "ref=${DISPATCH_TAG}" >> "$GITHUB_OUTPUT"
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository at target ref
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ steps.vars.outputs.ref }}
+
+      - name: Patch config for historical builds
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          # Historical tags have hardcoded base: '/aether/' — patch it
+          sed -i "s|base: '/aether/'|base: '/aether/${VERSION}/'|" docs/.vitepress/config.ts
+          # Also patch hardcoded favicon paths
+          sed -i "s|href: '/aether/|href: '/aether/${VERSION}/|g" docs/.vitepress/config.ts
 
       - name: Setup Node.js
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
@@ -62,27 +87,111 @@ jobs:
         run: npm run docs:build
         working-directory: docs
         env:
-          VITE_LATEST_RELEASE: ${{ steps.version.outputs.tag }}
+          VITE_BASE_PATH: /aether/${{ steps.vars.outputs.version }}/
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+      - name: Save build output
+        run: cp -r docs/.vitepress/dist /tmp/docs-build
+
+      - name: Checkout gh-pages branch
+        run: |
+          git fetch origin gh-pages:gh-pages 2>/dev/null || true
+          if git rev-parse --verify gh-pages >/dev/null 2>&1; then
+            git checkout gh-pages
+          else
+            # Create orphan branch with initial files
+            git checkout --orphan gh-pages
+            git rm -rf .
+            echo '[]' > versions.json
+            touch .nojekyll
+            cat > index.html << 'HEREDOC'
+          <!DOCTYPE html>
+          <html>
+          <head><meta http-equiv="refresh" content="0; url=/aether/dev/"></head>
+          <body><a href="/aether/dev/">Redirecting to latest docs...</a></body>
+          </html>
+          HEREDOC
+            git add versions.json .nojekyll index.html
+            git commit -m "Initialize gh-pages branch"
+          fi
+
+      - name: Deploy version directory
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          rm -rf "${VERSION}"
+          cp -r /tmp/docs-build "${VERSION}"
+
+      - name: Update versions.json
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        env:
+          DOC_VERSION: ${{ steps.vars.outputs.version }}
+          IS_RELEASE: ${{ steps.vars.outputs.is_release }}
         with:
-          path: 'docs/.vitepress/dist'
+          script: |
+            const fs = require('fs');
+            const version = process.env.DOC_VERSION;
+            const isRelease = process.env.IS_RELEASE === 'true';
 
-  deploy:
-    name: Deploy to GitHub Pages
-    needs: build
-    runs-on: ubuntu-24.04
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+            let versions = [];
+            try {
+              versions = JSON.parse(fs.readFileSync('versions.json', 'utf8'));
+            } catch {
+              versions = [];
+            }
 
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
-        with:
-          egress-policy: audit
+            // Remove existing entry for this version
+            versions = versions.filter(v => v.version !== version);
 
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+            // If this is a release, unmark all others as latest
+            if (isRelease) {
+              versions.forEach(v => { v.latest = false; });
+            }
+
+            // Add new entry
+            versions.push({
+              version,
+              path: `/aether/${version}/`,
+              latest: isRelease
+            });
+
+            // Sort: latest first, then semver descending, dev last
+            versions.sort((a, b) => {
+              if (a.version === 'dev') return 1;
+              if (b.version === 'dev') return -1;
+              if (a.latest && !b.latest) return -1;
+              if (!a.latest && b.latest) return 1;
+              const aParts = a.version.replace('v', '').split('.').map(Number);
+              const bParts = b.version.replace('v', '').split('.').map(Number);
+              for (let i = 0; i < 3; i++) {
+                if ((bParts[i] || 0) !== (aParts[i] || 0)) {
+                  return (bParts[i] || 0) - (aParts[i] || 0);
+                }
+              }
+              return 0;
+            });
+
+            fs.writeFileSync('versions.json', JSON.stringify(versions, null, 2) + '\n');
+            console.log('Updated versions.json:', JSON.stringify(versions, null, 2));
+
+      - name: Update root redirect
+        if: steps.vars.outputs.is_release == 'true'
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          cat > index.html << HEREDOC
+          <!DOCTYPE html>
+          <html>
+          <head><meta http-equiv="refresh" content="0; url=/aether/${VERSION}/"></head>
+          <body><a href="/aether/${VERSION}/">Redirecting to latest docs...</a></body>
+          </html>
+          HEREDOC
+
+      - name: Commit and push
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${VERSION}" versions.json index.html .nojekyll
+          git commit -m "Deploy docs: ${VERSION}" || echo "No changes to commit"
+          git push origin gh-pages

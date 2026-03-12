@@ -1,20 +1,20 @@
 import { defineConfig } from 'vitepress'
 
-const version = process.env.VITE_LATEST_RELEASE || 'dev'
+const basePath = process.env.VITE_BASE_PATH || '/aether/'
 
 export default defineConfig({
   title: 'Aether',
   description: 'Healthcare Data Integration Platform',
   lang: 'en-US',
-  base: '/aether/',
+  base: basePath,
 
   // Favicon configuration
   head: [
-    ['link', { rel: 'icon', type: 'image/x-icon', href: '/aether/favicon.ico' }],
-    ['link', { rel: 'icon', type: 'image/png', sizes: '16x16', href: '/aether/favicon-16x16.png' }],
-    ['link', { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/aether/favicon-32x32.png' }],
-    ['link', { rel: 'icon', type: 'image/png', sizes: '96x96', href: '/aether/favicon-96x96.png' }],
-    ['link', { rel: 'apple-touch-icon', sizes: '180x180', href: '/aether/apple-touch-icon.png' }]
+    ['link', { rel: 'icon', type: 'image/x-icon', href: `${basePath}favicon.ico` }],
+    ['link', { rel: 'icon', type: 'image/png', sizes: '16x16', href: `${basePath}favicon-16x16.png` }],
+    ['link', { rel: 'icon', type: 'image/png', sizes: '32x32', href: `${basePath}favicon-32x32.png` }],
+    ['link', { rel: 'icon', type: 'image/png', sizes: '96x96', href: `${basePath}favicon-96x96.png` }],
+    ['link', { rel: 'apple-touch-icon', sizes: '180x180', href: `${basePath}apple-touch-icon.png` }]
   ],
 
   // Theme configuration
@@ -26,7 +26,7 @@ export default defineConfig({
     // Top navigation bar
     nav: [
       {
-        text: version,
+        text: 'GitHub',
         items: [
           {
             text: 'Issues',

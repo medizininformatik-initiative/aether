@@ -47,6 +47,32 @@ services:
   parquet_conversion:
     url: "http://localhost:9000/convert/parquet"
 
+  # CRTDL Preprocessing (optional)
+  # Enriches CRTDL files with additional attributes required by DIMP before sending to TORCH.
+  # This is needed when DIMP requires certain identifiers (e.g., PseudonymisierterIdentifier,
+  # Aufnahmenummer) that are not part of the research query but needed for pseudonymization.
+  crtdl_preprocessing:
+    # Enable/disable CRTDL preprocessing (default: false)
+    enabled: false
+
+    # Option 1: External JSON file containing enrichment rules (recommended for complex/shared rules)
+    # The file should contain a JSON array of GroupEnrichment objects
+    # enrichments_path: "/path/to/dimp-enrichments.json"
+
+    # Option 2: Inline enrichment rules (simpler for small configs)
+    # NOTE: Cannot use both enrichments_path AND enrichments - validation error if both are provided
+    # enrichments:
+    #   - group_reference: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient"
+    #     create_if_not_exists:
+    #       group_name: "Patient"
+    #     attributes_to_add:
+    #       - attribute_ref: "Patient.identifier:PseudonymisierterIdentifier"
+    #         must_have: true
+    #   - group_reference: "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung"
+    #     attributes_to_add:
+    #       - attribute_ref: "Encounter.identifier:Aufnahmenummer"
+    #         must_have: true
+
   # Flattening Service (optional)
   # fhir-flattener transforms FHIR NDJSON data into CSV files using ViewDefinitions
   # Only used with CRTDL-based pipelines (requires CRTDL file to define attribute groups)

@@ -1,7 +1,10 @@
 package pipeline
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
@@ -149,8 +152,25 @@ func executeTORCHExtraction(job *models.PipelineJob, importDir string, httpClien
 	// Create TORCH client
 	torchClient := services.NewTORCHClient(job.Config.Services.TORCH, httpClient, logger)
 
-	// Submit extraction
-	extractionURL, err := torchClient.SubmitExtraction(job.InputSource)
+	var extractionURL string
+	var err error
+
+	// Check if CRTDL preprocessing is enabled
+	if job.Config.Services.CRTDLPreprocessing.Enabled {
+		logger.Info("CRTDL preprocessing enabled, enriching CRTDL before submission")
+
+		enrichedContent, preprocessErr := preprocessCRTDL(job, logger)
+		if preprocessErr != nil {
+			return nil, fmt.Errorf("failed to preprocess CRTDL: %w", preprocessErr)
+		}
+
+		// Submit enriched CRTDL content
+		extractionURL, err = torchClient.SubmitExtractionWithContent(enrichedContent)
+	} else {
+		// Submit original CRTDL file
+		extractionURL, err = torchClient.SubmitExtraction(job.InputSource)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to submit TORCH extraction: %w", err)
 	}
@@ -226,4 +246,67 @@ func classifyImportError(err error, inputType models.InputType) models.ErrorType
 	// For local imports, most errors are non-transient (file not found, permissions, etc.)
 	// Default to non-transient
 	return models.ErrorTypeNonTransient
+}
+
+// preprocessCRTDL loads, enriches, and saves the CRTDL document for DIMP requirements.
+// Returns the serialized enriched CRTDL content ready for TORCH submission.
+//
+// Process:
+//  1. Parse original CRTDL from job input source
+//  2. Load enrichments from configuration (file or inline)
+//  3. Apply enrichments using EnrichCRTDL
+//  4. Save enriched CRTDL to job directory for debugging/auditing
+//  5. Return serialized JSON content
+func preprocessCRTDL(job *models.PipelineJob, logger *lib.Logger) ([]byte, error) {
+	// 1. Parse original CRTDL
+	logger.Info("Parsing original CRTDL", "path", job.InputSource)
+	originalDoc, err := services.ParseCRTDL(job.InputSource)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CRTDL: %w", err)
+	}
+
+	// 2. Load enrichments from configuration
+	enrichments, err := services.LoadEnrichments(job.Config.Services.CRTDLPreprocessing)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load enrichments: %w", err)
+	}
+
+	if len(enrichments) == 0 {
+		logger.Warn("CRTDL preprocessing enabled but no enrichments configured")
+		// Return original file content
+		return os.ReadFile(job.InputSource)
+	}
+
+	logger.Info("Applying CRTDL enrichments",
+		"enrichment_count", len(enrichments),
+		"original_groups", len(originalDoc.DataExtraction.AttributeGroups))
+
+	// 3. Apply enrichments
+	enrichedDoc, err := services.EnrichCRTDL(*originalDoc, enrichments)
+	if err != nil {
+		return nil, fmt.Errorf("failed to enrich CRTDL: %w", err)
+	}
+
+	logger.Info("CRTDL enriched successfully",
+		"enriched_groups", len(enrichedDoc.DataExtraction.AttributeGroups))
+
+	// 4. Serialize enriched document
+	enrichedContent, err := json.MarshalIndent(enrichedDoc, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize enriched CRTDL: %w", err)
+	}
+
+	// 5. Save enriched CRTDL to job directory for debugging/auditing
+	jobDir := services.GetJobDir(job.Config.JobsDir, job.JobID)
+	enrichedPath := filepath.Join(jobDir, "enriched-crtdl.json")
+
+	if err := os.MkdirAll(jobDir, 0755); err != nil {
+		logger.Warn("Failed to create job directory for enriched CRTDL", "error", err)
+	} else if err := os.WriteFile(enrichedPath, enrichedContent, 0644); err != nil {
+		logger.Warn("Failed to save enriched CRTDL for debugging", "error", err, "path", enrichedPath)
+	} else {
+		logger.Info("Enriched CRTDL saved for debugging", "path", enrichedPath)
+	}
+
+	return enrichedContent, nil
 }

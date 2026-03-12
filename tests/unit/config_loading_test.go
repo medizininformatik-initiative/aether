@@ -1675,6 +1675,122 @@ jobs_dir: "` + jobsDir + `"
 	}
 }
 
+// TestConfigLoading_CRTDLPreprocessing verifies CRTDL preprocessing configuration is loaded
+func TestConfigLoading_CRTDLPreprocessing(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  torch:
+    base_url: "http://localhost:8080"
+  crtdl_preprocessing:
+    enabled: true
+    enrichments:
+      - group_reference: "https://www.example.org/fhir/StructureDefinition/Patient"
+        add_group_if_not_exists: false
+        attributes_to_add:
+          - attribute_ref: "Patient.identifier:PseudonymisierterIdentifier"
+            must_have: true
+
+pipeline:
+  enabled_steps:
+    - torch
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	// Verify CRTDL preprocessing is loaded
+	assert.True(t, config.Services.CRTDLPreprocessing.Enabled, "CRTDL preprocessing should be enabled")
+	require.Len(t, config.Services.CRTDLPreprocessing.Enrichments, 1, "Should have 1 enrichment")
+
+	enrichment := config.Services.CRTDLPreprocessing.Enrichments[0]
+	assert.Equal(t, "https://www.example.org/fhir/StructureDefinition/Patient", enrichment.GroupReference)
+	assert.Nil(t, enrichment.CreateIfNotExists, "CreateIfNotExists should be nil when not configured")
+	require.Len(t, enrichment.AttributesToAdd, 1, "Should have 1 attribute to add")
+	assert.Equal(t, "Patient.identifier:PseudonymisierterIdentifier", enrichment.AttributesToAdd[0].AttributeRef)
+	assert.True(t, enrichment.AttributesToAdd[0].MustHave)
+}
+
+// TestConfigLoading_CRTDLPreprocessingDisabled verifies disabled CRTDL preprocessing
+func TestConfigLoading_CRTDLPreprocessingDisabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  torch:
+    base_url: "http://localhost:8080"
+  crtdl_preprocessing:
+    enabled: false
+
+pipeline:
+  enabled_steps:
+    - torch
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.False(t, config.Services.CRTDLPreprocessing.Enabled, "CRTDL preprocessing should be disabled")
+}
+
+// TestConfigLoading_CRTDLPreprocessingNotSet verifies default when CRTDL preprocessing is not set
+func TestConfigLoading_CRTDLPreprocessingNotSet(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  torch:
+    base_url: "http://localhost:8080"
+
+pipeline:
+  enabled_steps:
+    - torch
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	// When not set, should default to disabled
+	assert.False(t, config.Services.CRTDLPreprocessing.Enabled, "CRTDL preprocessing should default to disabled")
+}
+
 // TestConfigLoading_SendConfig verifies that send service configuration
 // is properly loaded from YAML config file
 func TestConfigLoading_SendConfig(t *testing.T) {

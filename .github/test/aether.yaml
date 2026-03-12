@@ -40,6 +40,15 @@ services:
       - csv
     timeout: 30m
 
+  # CRTDL Preprocessing - enriches CRTDL with DIMP-required identifiers
+  crtdl_preprocessing:
+    enabled: true
+    enrichments:
+      - group_reference: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/PatientPseudonymisiert"
+        attributes_to_add:
+          - attribute_ref: "Patient.identifier:PseudonymisierterIdentifier"
+            must_have: true
+
   # Send step configuration (Blaze FHIR server for e2e testing)
   send:
     url: "http://blaze-fhir:8080/fhir"

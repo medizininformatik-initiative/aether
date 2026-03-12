@@ -198,6 +198,104 @@ func (c *TORCHClient) SubmitExtraction(crtdlPath string) (string, error) {
 	return contentLocation, nil
 }
 
+// SubmitExtractionWithContent submits already-encoded CRTDL content for extraction to TORCH server.
+// This is used when CRTDL preprocessing has enriched the document in-memory.
+// Returns the Content-Location URL for polling extraction status.
+// Per TORCH API: POST /fhir/$extract-data with base64-encoded CRTDL
+func (c *TORCHClient) SubmitExtractionWithContent(crtdlContent []byte) (string, error) {
+	c.logger.Info("Submitting enriched CRTDL extraction to TORCH", "content_size", len(crtdlContent), "server", c.config.BaseURL)
+
+	if len(crtdlContent) == 0 {
+		return "", fmt.Errorf("CRTDL content is empty")
+	}
+
+	// Validate it's valid JSON
+	var crtdl map[string]any
+	if err := json.Unmarshal(crtdlContent, &crtdl); err != nil {
+		return "", fmt.Errorf("CRTDL content is not valid JSON: %w", err)
+	}
+
+	// Encode to base64
+	base64Content := base64.StdEncoding.EncodeToString(crtdlContent)
+
+	c.logger.Debug("Encoded CRTDL content to base64",
+		"original_size", len(crtdlContent),
+		"encoded_size", len(base64Content))
+
+	// Build FHIR Parameters request
+	requestBody := TORCHExtractionRequest{
+		ResourceType: "Parameters",
+		Parameter: []TORCHParameter{
+			{
+				Name:              "crtdl",
+				ValueBase64Binary: base64Content,
+			},
+		},
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	c.logger.Debug("TORCH extraction request", "body_size", len(jsonBody))
+
+	// Construct URL
+	url := c.config.BaseURL + "/fhir/$extract-data"
+
+	// Create HTTP request with authentication
+	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", c.buildBasicAuthHeader())
+
+	// Send request
+	resp, err := c.httpClient.client.Do(req)
+	if err != nil {
+		c.logger.Error("TORCH submission failed", "error", err)
+		return "", &TORCHError{
+			Operation:  "submit",
+			StatusCode: 0,
+			Message:    err.Error(),
+			ErrorType:  models.ErrorTypeTransient,
+		}
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// Check for errors
+	if resp.StatusCode >= 400 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		errorType := lib.ClassifyHTTPError(resp.StatusCode)
+
+		c.logger.Error("TORCH submission returned error",
+			"status_code", resp.StatusCode,
+			"status", resp.Status,
+			"error_body", string(bodyBytes))
+
+		return "", &TORCHError{
+			Operation:  "submit",
+			StatusCode: resp.StatusCode,
+			Message:    string(bodyBytes),
+			ErrorType:  errorType,
+		}
+	}
+
+	// Extract Content-Location header
+	contentLocation := resp.Header.Get("Content-Location")
+	if contentLocation == "" {
+		return "", fmt.Errorf("TORCH server did not return Content-Location header")
+	}
+
+	// Ensure URL is absolute (handle relative URLs from TORCH)
+	contentLocation = c.makeAbsoluteURL(contentLocation)
+	c.logger.Info("TORCH extraction submitted successfully", "extraction_url", contentLocation)
+
+	return contentLocation, nil
+}
+
 // PollExtractionStatus polls the extraction status URL until completion or timeout
 // Returns the list of file URLs when extraction is complete
 // Per TORCH API: GET Content-Location URL until HTTP 200, handle HTTP 202 as in-progress

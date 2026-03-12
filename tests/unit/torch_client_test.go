@@ -1653,3 +1653,81 @@ func TestTORCHError_IsRetryable(t *testing.T) {
 		})
 	}
 }
+
+// =============================================
+// SubmitExtractionWithContent Tests
+// Target: Cover lines 195-197 and 201-203 in torch_client.go
+// =============================================
+
+// TestTORCHClient_SubmitExtractionWithContent_EmptyContent tests error handling for empty content
+// (covers lines 195-197 in torch_client.go)
+func TestTORCHClient_SubmitExtractionWithContent_EmptyContent(t *testing.T) {
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:  "http://localhost:8080",
+		Username: "testuser",
+		Password: "testpass",
+	}
+
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+	_, err := client.SubmitExtractionWithContent([]byte{})
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "CRTDL content is empty")
+}
+
+// TestTORCHClient_SubmitExtractionWithContent_InvalidJSON tests error handling for invalid JSON content
+// (covers lines 201-203 in torch_client.go)
+func TestTORCHClient_SubmitExtractionWithContent_InvalidJSON(t *testing.T) {
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:  "http://localhost:8080",
+		Username: "testuser",
+		Password: "testpass",
+	}
+
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+	_, err := client.SubmitExtractionWithContent([]byte("{invalid json"))
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not valid JSON")
+}
+
+// TestTORCHClient_SubmitExtractionWithContent_Success tests successful submission with content
+func TestTORCHClient_SubmitExtractionWithContent_Success(t *testing.T) {
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "POST", r.Method)
+		assert.Equal(t, "/fhir/$extract-data", r.URL.Path)
+
+		// Verify body is valid FHIR Parameters with base64 encoded CRTDL
+		var params map[string]any
+		err := json.NewDecoder(r.Body).Decode(&params)
+		require.NoError(t, err)
+		assert.Equal(t, "Parameters", params["resourceType"])
+
+		// Return 202 with Content-Location
+		w.Header().Set("Content-Location", serverURL+"/fhir/extraction/job-enriched123")
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:  server.URL,
+		Username: "testuser",
+		Password: "testpass",
+	}
+
+	crtdlContent := []byte(`{"cohortDefinition":{"inclusionCriteria":[]},"dataExtraction":{"attributeGroups":[]}}`)
+
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+	extractionURL, err := client.SubmitExtractionWithContent(crtdlContent)
+
+	assert.NoError(t, err)
+	assert.Equal(t, server.URL+"/fhir/extraction/job-enriched123", extractionURL)
+}

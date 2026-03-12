@@ -1,7 +1,7 @@
 # Makefile for Aether Test Infrastructure
 # Located in .github/test/
 
-.PHONY: help services build start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test flattener-up flattener-down flattener-logs blaze-up blaze-down blaze-logs validator-up validator-down validator-logs test-with-services download-testdata upload-testdata e2e-test e2e-test-flattening e2e-test-validation e2e-test-direct-load clean-test-data
+.PHONY: help services build start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test flattener-up flattener-down flattener-logs blaze-up blaze-down blaze-logs validator-up validator-down validator-logs minio-up minio-down minio-logs test-with-services download-testdata upload-testdata e2e-test e2e-test-flattening e2e-test-validation e2e-test-direct-load e2e-test-s3-upload clean-test-data
 
 # Default target
 .DEFAULT_GOAL := help
@@ -39,6 +39,9 @@ help:
 	@echo "  validator-up      Start mii-fhir-validator service"
 	@echo "  validator-down    Stop mii-fhir-validator service"
 	@echo "  validator-logs    Show mii-fhir-validator service logs"
+	@echo "  minio-up          Start MinIO S3-compatible object store"
+	@echo "  minio-down        Stop MinIO"
+	@echo "  minio-logs        Show MinIO logs"
 	@echo "  test-with-services Run all tests with required services"
 	@echo "  download-testdata Download test data (only if not present)"
 	@echo "  upload-testdata   Upload test data to TORCH (requires services)"
@@ -47,6 +50,7 @@ help:
 	@echo "  e2e-test-validation Run validation E2E test with pre-staged example data"
 	@echo "  e2e-test-direct-load Run direct resource load E2E test (torch → send)"
 	@echo "  build             Build aether binary"
+	@echo "  e2e-test-s3-upload Run S3 upload E2E test (torch → send via MinIO)"
 	@echo "  clean-test-data   Clean test data and temporary files"
 
 ## build: Build aether binary
@@ -261,6 +265,26 @@ e2e-test-validation:
 	@../scripts/run-validation-e2e-test.sh
 	@echo "✓ Validation E2E test complete"
 
+## minio-up: Start MinIO S3-compatible object store
+minio-up:
+	@echo "Starting MinIO..."
+	cd minio && docker compose up -d
+	@echo "✓ MinIO started"
+	@echo "  API: http://localhost:9000"
+	@echo "  Console: http://localhost:9001"
+	@echo "  Credentials: minioadmin/minioadmin"
+
+## minio-down: Stop MinIO
+minio-down:
+	@echo "Stopping MinIO..."
+	cd minio && docker compose down
+	@echo "✓ MinIO stopped"
+
+## minio-logs: Show MinIO logs
+minio-logs:
+	@echo "Showing MinIO logs..."
+	cd minio && docker compose logs -f
+
 ## e2e-test-direct-load: Run direct resource load E2E test (torch → send)
 e2e-test-direct-load: download-testdata
 	@echo "Running direct resource load E2E test..."
@@ -273,6 +297,19 @@ e2e-test-direct-load: download-testdata
 	@echo "Running direct load E2E test script..."
 	../scripts/run-direct-load-e2e-test.sh
 	@echo "✓ Direct resource load E2E test complete"
+
+## e2e-test-s3-upload: Run S3 upload E2E test (torch → send via MinIO)
+e2e-test-s3-upload: download-testdata
+	@echo "Running S3 upload E2E test..."
+	@if ! docker compose ps | grep -q "Up"; then \
+		echo "Starting all services..."; \
+		docker compose up --wait; \
+	fi
+	@echo "Uploading test data..."
+	@cd .. && ./scripts/upload-testdata.sh
+	@echo "Running S3 upload E2E test script..."
+	../scripts/run-s3-upload-e2e-test.sh
+	@echo "✓ S3 upload E2E test complete"
 
 ## clean-test-data: Clean test data and temporary files
 clean-test-data:

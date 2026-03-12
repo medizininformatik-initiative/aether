@@ -94,16 +94,18 @@ services:
     timeout: 30m
 
   # Send Step Configuration
-  # Supports two modes determined by the 'send_as' setting:
+  # Supports three modes determined by the 'send_as' setting:
   # - direct_resource_load: Sends NDJSON directly to a FHIR server using transaction bundles
   # - transfer_load: Prepares and sends to a transfer FHIR server using Binary/DocumentReference
+  # - s3_upload: Uploads files to an S3-compatible object store (AWS S3, MinIO, Ceph)
   send:
     # Send mode (required)
     # - "direct_resource_load": Upload FHIR resources directly to a FHIR server
     # - "transfer_load": Package files for DSF-based transfer (Binary/DocumentReference)
+    # - "s3_upload": Upload files to S3 bucket
     send_as: "transfer_load"
 
-    # FHIR server base URL (required)
+    # FHIR server base URL (required for direct_resource_load and transfer_load modes)
     url: "https://fhir-server.example.com/fhir"
 
     # Number of resources per transaction bundle (only for direct_resource_load mode)
@@ -130,6 +132,30 @@ services:
 
       # Organization identifier (used in DocumentReference.author)
       organization_identifier: "your-org.example.de"
+
+    # S3 Upload settings (only for s3_upload mode)
+    s3:
+      # Custom endpoint for S3-compatible stores (MinIO, Ceph, etc.)
+      # Leave empty for AWS S3
+      # endpoint: "http://localhost:9000"
+
+      # AWS region (default: eu-central-1)
+      region: "eu-central-1"
+
+      # S3 bucket name (required for s3_upload mode)
+      # Supports environment variables:
+      bucket: "${S3_BUCKET}"
+
+      # AWS credentials
+      # Use environment variables to avoid storing credentials in config files:
+      access_key_id: "${AWS_ACCESS_KEY_ID}"
+      secret_access_key: "${AWS_SECRET_ACCESS_KEY}"
+
+      # Use path-style addressing (required for MinIO and some S3-compatible stores)
+      use_path_style: false
+
+      # Upload timeout (default: 30m)
+      timeout: 30m
 
   # FHIR Validation Service (optional)
   # Validates FHIR resources against profiles before further processing
@@ -183,6 +209,7 @@ pipeline:
   #   Mode is determined by 'services.send.send_as':
   #   - direct_resource_load: Sends NDJSON directly to FHIR server using transaction bundles
   #   - transfer_load: Zips files, wraps in Binary/DocumentReference, POSTs to transfer server
+  #   - s3_upload: Uploads files directly to S3 bucket
   #
   # Wait step:
   #   Use 'wait' to pause the pipeline for inspection or manual modification.

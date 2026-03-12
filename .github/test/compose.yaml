@@ -9,6 +9,7 @@ include:
   - flattener/compose.yaml
   - blaze/compose.yaml
   - validator/compose.yaml
+  - minio/compose.yaml
 
 services:
   # E2E test runner - runs aether inside the Docker network
@@ -22,6 +23,7 @@ services:
       - ./aether-flattening.yaml:/app/aether-flattening.yaml:ro
       - ./aether-validation.yaml:/app/aether-validation.yaml:ro
       - ./aether-direct-load.yaml:/app/aether-direct-load.yaml:ro
+      - ./aether-s3-upload.yaml:/app/aether-s3-upload.yaml:ro
       - ./torch/queries:/app/torch/queries:ro
       - ./example-flattening:/app/example-flattening:ro
       - ./example-validation:/app/example-validation:ro
@@ -34,3 +36,4 @@ services:
       - fhir-flattener
       - fhir-validator
       - blaze-fhir
+      - minio

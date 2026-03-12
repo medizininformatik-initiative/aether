@@ -305,6 +305,11 @@ func (c *ProjectConfig) ValidateServiceConnectivity(transport *http.Transport) e
 			serviceURL = c.Services.Validation.URL
 			serviceName = "Validation"
 		case StepSend:
+			// S3 mode uses the AWS SDK for connectivity; a plain HTTP HEAD won't work
+			// because S3 requests require AWS Signature V4 signing
+			if c.Services.Send.SendAs == SendModeS3Upload {
+				continue
+			}
 			serviceURL = c.Services.GetServiceURL(StepSend)
 			serviceName = "Send"
 		case StepCSVConversion:

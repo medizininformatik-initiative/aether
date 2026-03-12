@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/pipeline"
+	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
 func TestExecuteSendStep_Success(t *testing.T) {
@@ -1622,6 +1624,301 @@ func TestExecuteSendStep_FHIR_CoreAndCompressed(t *testing.T) {
 	assert.Equal(t, "core-compressed", filesProcessed[0])
 }
 
+// ===== S3 Upload Send Tests =====
+
+func TestExecuteSendStep_S3_Success(t *testing.T) {
+	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+		return mock, nil
+	})
+	defer pipeline.ResetS3UploaderFactory()
+
+	tmpDir := t.TempDir()
+	jobID := "test-s3-success"
+	jobDir := filepath.Join(tmpDir, jobID)
+	inputDir := filepath.Join(jobDir, "pseudonymized")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "Patient.ndjson"), []byte(`{"resourceType":"Patient","id":"1"}`+"\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "Observation.ndjson"), []byte(`{"resourceType":"Observation","id":"obs1"}`+"\n"), 0644))
+
+	job := createS3SendTestJob(jobID, tmpDir)
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	require.NoError(t, err)
+
+	// Verify files were uploaded
+	assert.Len(t, mock.UploadedKeys, 2)
+	// Keys should be {job-id}/{filename}
+	for _, key := range mock.UploadedKeys {
+		assert.True(t, strings.HasPrefix(key, jobID+"/"), "key should start with job ID: %s", key)
+	}
+
+	// Verify step completed
+	var sendStep *models.PipelineStep
+	for i := range job.Steps {
+		if job.Steps[i].Name == models.StepSend {
+			sendStep = &job.Steps[i]
+			break
+		}
+	}
+	require.NotNil(t, sendStep)
+	assert.Equal(t, models.StepStatusCompleted, sendStep.Status)
+	assert.Equal(t, 2, sendStep.FilesProcessed)
+
+	// Verify manifest was created
+	manifestPath := filepath.Join(jobDir, "upload_manifest.json")
+	manifest, err := models.LoadUploadManifest(manifestPath)
+	require.NoError(t, err)
+	require.NotNil(t, manifest)
+	assert.Equal(t, jobID, manifest.JobID)
+	assert.Len(t, manifest.Files, 2)
+	assert.NotNil(t, manifest.CompletedAt)
+}
+
+func TestExecuteSendStep_S3_NoFiles(t *testing.T) {
+	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+		return mock, nil
+	})
+	defer pipeline.ResetS3UploaderFactory()
+
+	tmpDir := t.TempDir()
+	jobID := "test-s3-empty"
+	jobDir := filepath.Join(tmpDir, jobID)
+	inputDir := filepath.Join(jobDir, "pseudonymized")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+	// No files in directory
+
+	job := createS3SendTestJob(jobID, tmpDir)
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no files found")
+}
+
+func TestExecuteSendStep_S3_UploadError(t *testing.T) {
+	mock := &services.MockS3Uploader{
+		Bucket:    "test-bucket",
+		UploadErr: &services.S3Error{Message: "AccessDenied: access denied", ErrorType: models.ErrorTypeNonTransient},
+	}
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+		return mock, nil
+	})
+	defer pipeline.ResetS3UploaderFactory()
+
+	tmpDir := t.TempDir()
+	jobID := "test-s3-upload-error"
+	jobDir := filepath.Join(tmpDir, jobID)
+	inputDir := filepath.Join(jobDir, "pseudonymized")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte("data\n"), 0644))
+
+	job := createS3SendTestJob(jobID, tmpDir)
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to upload")
+
+	// Error should be classified as non-transient
+	var sendStep *models.PipelineStep
+	for i := range job.Steps {
+		if job.Steps[i].Name == models.StepSend {
+			sendStep = &job.Steps[i]
+			break
+		}
+	}
+	require.NotNil(t, sendStep)
+	assert.Equal(t, models.ErrorTypeNonTransient, sendStep.LastError.Type)
+}
+
+func TestExecuteSendStep_S3_ManifestRetry(t *testing.T) {
+	uploadCount := 0
+	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+		// Reset tracked keys on each factory call (new "session")
+		mock.UploadedKeys = nil
+		return mock, nil
+	})
+	defer pipeline.ResetS3UploaderFactory()
+
+	tmpDir := t.TempDir()
+	jobID := "test-s3-manifest-retry"
+	jobDir := filepath.Join(tmpDir, jobID)
+	inputDir := filepath.Join(jobDir, "pseudonymized")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+
+	file1 := filepath.Join(inputDir, "Patient.ndjson")
+	file2 := filepath.Join(inputDir, "Observation.ndjson")
+	require.NoError(t, os.WriteFile(file1, []byte("data1\n"), 0644))
+	require.NoError(t, os.WriteFile(file2, []byte("data2\n"), 0644))
+
+	// Pre-create a manifest that shows file1 already uploaded
+	manifest := models.NewUploadManifest(jobID, "test-bucket")
+	manifest.AddUploadedFile(file1, jobID+"/Patient.ndjson", "\"etag1\"", 6)
+	manifestPath := models.GetUploadManifestPath(jobDir)
+	require.NoError(t, models.SaveManifest(manifest, manifestPath))
+
+	job := createS3SendTestJob(jobID, tmpDir)
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	require.NoError(t, err)
+
+	// Only the second file should have been uploaded
+	_ = uploadCount
+	assert.Len(t, mock.UploadedKeys, 1, "only un-uploaded file should be sent")
+	assert.Contains(t, mock.UploadedKeys[0], "Observation.ndjson")
+
+	// Both files should count as processed
+	var sendStep *models.PipelineStep
+	for i := range job.Steps {
+		if job.Steps[i].Name == models.StepSend {
+			sendStep = &job.Steps[i]
+			break
+		}
+	}
+	require.NotNil(t, sendStep)
+	assert.Equal(t, 2, sendStep.FilesProcessed)
+}
+
+func TestExecuteSendStep_S3_SubdirectoryFiles(t *testing.T) {
+	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+		return mock, nil
+	})
+	defer pipeline.ResetS3UploaderFactory()
+
+	tmpDir := t.TempDir()
+	jobID := "test-s3-subdirs"
+	jobDir := filepath.Join(tmpDir, jobID)
+	inputDir := filepath.Join(jobDir, "pseudonymized")
+	subDir := filepath.Join(inputDir, "nested")
+	require.NoError(t, os.MkdirAll(subDir, 0755))
+
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "root.ndjson"), []byte("root\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(subDir, "nested.ndjson"), []byte("nested\n"), 0644))
+
+	job := createS3SendTestJob(jobID, tmpDir)
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	require.NoError(t, err)
+
+	assert.Len(t, mock.UploadedKeys, 2)
+	// Verify relative path structure is preserved in S3 keys
+	hasNested := false
+	for _, key := range mock.UploadedKeys {
+		if strings.Contains(key, "nested/nested.ndjson") {
+			hasNested = true
+		}
+	}
+	assert.True(t, hasNested, "nested directory structure should be preserved in S3 keys")
+}
+
+func TestExecuteSendStep_S3_InvalidConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	jobID := "test-s3-invalid-config"
+	jobDir := filepath.Join(tmpDir, jobID)
+
+	job := &models.PipelineJob{
+		JobID:       jobID,
+		InputSource: "/tmp/test",
+		InputType:   models.InputTypeLocal,
+		Status:      models.JobStatusInProgress,
+		CurrentStep: string(models.StepSend),
+		Config: models.ProjectConfig{
+			Pipeline: models.PipelineConfig{
+				EnabledSteps: []models.StepName{models.StepLocalImport, models.StepSend},
+			},
+			Services: models.ServiceConfig{
+				Send: models.SendConfig{
+					SendAs: models.SendModeS3Upload,
+					S3: models.S3Config{
+						Bucket: "", // Missing required field
+					},
+				},
+			},
+			JobsDir: tmpDir,
+		},
+		Steps: []models.PipelineStep{
+			{Name: models.StepSend, Status: models.StepStatusPending},
+		},
+	}
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bucket is required")
+}
+
+func TestExecuteSendStep_S3_TransientError(t *testing.T) {
+	mock := &services.MockS3Uploader{
+		Bucket:    "test-bucket",
+		UploadErr: &services.S3Error{Message: "SlowDown: rate exceeded", ErrorType: models.ErrorTypeTransient},
+	}
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+		return mock, nil
+	})
+	defer pipeline.ResetS3UploaderFactory()
+
+	tmpDir := t.TempDir()
+	jobID := "test-s3-transient"
+	jobDir := filepath.Join(tmpDir, jobID)
+	inputDir := filepath.Join(jobDir, "pseudonymized")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte("data\n"), 0644))
+
+	job := createS3SendTestJob(jobID, tmpDir)
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	require.Error(t, err)
+
+	// Error should be classified as transient
+	var sendStep *models.PipelineStep
+	for i := range job.Steps {
+		if job.Steps[i].Name == models.StepSend {
+			sendStep = &job.Steps[i]
+			break
+		}
+	}
+	require.NotNil(t, sendStep)
+	assert.Equal(t, models.ErrorTypeTransient, sendStep.LastError.Type)
+}
+
+func createS3SendTestJob(jobID, jobsDir string) *models.PipelineJob {
+	return &models.PipelineJob{
+		JobID:       jobID,
+		InputSource: "/tmp/test",
+		InputType:   models.InputTypeLocal,
+		Status:      models.JobStatusInProgress,
+		CurrentStep: string(models.StepSend),
+		Config: models.ProjectConfig{
+			Pipeline: models.PipelineConfig{
+				EnabledSteps: []models.StepName{
+					models.StepLocalImport,
+					models.StepDIMP,
+					models.StepSend,
+				},
+			},
+			Services: models.ServiceConfig{
+				Send: models.SendConfig{
+					SendAs: models.SendModeS3Upload,
+					S3: models.S3Config{
+						Region:          "eu-central-1",
+						Bucket:          "test-bucket",
+						AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+						SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+						Timeout:         30 * 60 * 1e9, // 30 minutes
+					},
+				},
+			},
+			JobsDir: jobsDir,
+		},
+		Steps: []models.PipelineStep{
+			{Name: models.StepSend, Status: models.StepStatusPending},
+		},
+	}
+}
+
 func createFHIRSendTestJob(serverURL, jobID, jobsDir string) *models.PipelineJob {
 	return &models.PipelineJob{
 		JobID:       jobID,
@@ -1817,4 +2114,94 @@ func TestExecuteSendStep_FHIR_CloseWarning(t *testing.T) {
 	err := pipeline.ExecuteSendStep(job, jobDir, logger)
 	require.NoError(t, err)
 	assert.Equal(t, 1, receivedResources)
+}
+
+func TestFormatSize_AllBranches(t *testing.T) {
+	tests := []struct {
+		name     string
+		bytes    int64
+		expected string
+	}{
+		{"bytes", 512, "512 B"},
+		{"kilobytes", 2048, "2.0 KB"},
+		{"megabytes", 5 * 1024 * 1024, "5.0 MB"},
+		{"gigabytes", 3 * 1024 * 1024 * 1024, "3.0 GB"},
+		{"zero", 0, "0 B"},
+		{"exactly_1KB", 1024, "1.0 KB"},
+		{"exactly_1MB", 1024 * 1024, "1.0 MB"},
+		{"exactly_1GB", 1024 * 1024 * 1024, "1.0 GB"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := pipeline.FormatSizeForTesting(tt.bytes)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExecuteSendStep_S3_UploaderFactoryError(t *testing.T) {
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+		return nil, fmt.Errorf("failed to initialize S3 client")
+	})
+	defer pipeline.ResetS3UploaderFactory()
+
+	tmpDir := t.TempDir()
+	jobID := "test-s3-factory-error"
+	jobDir := filepath.Join(tmpDir, jobID)
+	inputDir := filepath.Join(jobDir, "pseudonymized")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte("data\n"), 0644))
+
+	job := createS3SendTestJob(jobID, tmpDir)
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to create S3 uploader")
+}
+
+func TestExecuteSendStep_S3_CorruptedManifest(t *testing.T) {
+	// A corrupted manifest should trigger a warning and start fresh
+	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+		return mock, nil
+	})
+	defer pipeline.ResetS3UploaderFactory()
+
+	tmpDir := t.TempDir()
+	jobID := "test-s3-corrupted-manifest"
+	jobDir := filepath.Join(tmpDir, jobID)
+	inputDir := filepath.Join(jobDir, "pseudonymized")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte("data\n"), 0644))
+
+	// Write a corrupted manifest file
+	manifestPath := filepath.Join(jobDir, "upload_manifest.json")
+	require.NoError(t, os.WriteFile(manifestPath, []byte("{corrupted json"), 0644))
+
+	job := createS3SendTestJob(jobID, tmpDir)
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	// Should succeed despite the corrupted manifest (starts fresh)
+	require.NoError(t, err)
+	assert.Len(t, mock.UploadedKeys, 1)
+}
+
+func TestExecuteSendStep_S3_NonExistentInputDir(t *testing.T) {
+	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+		return mock, nil
+	})
+	defer pipeline.ResetS3UploaderFactory()
+
+	tmpDir := t.TempDir()
+	jobID := "test-s3-no-input-dir"
+	jobDir := filepath.Join(tmpDir, jobID)
+	// Don't create the input directory
+
+	job := createS3SendTestJob(jobID, tmpDir)
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to list input files")
 }

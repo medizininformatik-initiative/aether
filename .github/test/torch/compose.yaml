@@ -24,12 +24,10 @@ services:
     environment:
       TORCH_RESULTS_PERSISTENCE: PT12H30M5S
       TORCH_BUFFERSIZE: 100
-      # Connection Config
-      # Note: TORCH_BASE_URL should be the reverse proxy (nginx) for external access
-      # Internally TORCH uses torch:8080, but clients should use the proxy
-      TORCH_BASE_URL: http://torch:8080
-      # Proxy points to nginx reverse proxy which routes both API and file requests
-      TORCH_OUTPUT_FILE_SERVER_URL: http://torch-proxy:80
+      # Nginx config: file server URL for download URLs returned by TORCH
+      NGINX_FILELOCATION: http://torch-proxy:80
+      NGINX_SERVERNAME: http://torch-proxy:80
+      # FHIR server connection
       TORCH_FLARE_URL: http://torch-flare:8080
       TORCH_FHIR_URL: http://torch-hds:8080/fhir
       # Execution variables
@@ -41,11 +39,9 @@ services:
         -Dcom.sun.management.jmxremote.authenticate=false
         -Dcom.sun.management.jmxremote.ssl=false
         -Djava.rmi.server.hostname=localhost
-      TORCH_USE_CQL: true
-      TORCH_FHIR_DISABLE_ASYNC: true
+      TORCH_USECQL: true
       TORCH_BATCHSIZE: 500
-      TORCH_FHIR_PAGE_COUNT: 500
-      TORCH_FHIR_MAX_CONNECTIONS: 50
+      TORCH_FHIR_PAGECOUNT: 500
       TORCH_MAXCONCURRENCY: 4
       # Other
       LOG_LEVEL: trace

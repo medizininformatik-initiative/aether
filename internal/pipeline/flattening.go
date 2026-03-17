@@ -13,6 +13,14 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
+// groupBatch accumulates resources for a single attribute group until the batch
+// size threshold is reached, at which point it is flushed to the flattener service.
+type groupBatch struct {
+	resources    []map[string]any
+	byteSize     int
+	isFirstBatch bool // true until first flush
+}
+
 // ExecuteFlatteningStep transforms FHIR NDJSON data into CSV files using the fhir-flattener API
 // Reads from pseudonymized/ (if DIMP enabled) or import/ directory
 // Outputs to csv/ directory
@@ -102,21 +110,9 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 		return err
 	}
 
-	logger.Info("Loading FHIR resources from input files",
+	logger.Info("Streaming FHIR resources from input files",
 		"input_dir", inputDir,
 		"file_count", len(files),
-		"job_id", job.JobID)
-
-	// Load all resources from input files
-	allResources, err := LoadAllResources(files, logger, job.Config.Pipeline.MaxNDJSONLineSize())
-	if err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return fmt.Errorf("failed to load resources: %w", err)
-	}
-
-	logger.Info("Loaded FHIR resources",
-		"total_resources", len(allResources),
 		"job_id", job.JobID)
 
 	// Create clients
@@ -129,16 +125,13 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 	attributeGroups := services.GetAttributeGroups(crtdl)
 	fmt.Printf("Processing %d attribute group(s)...\n\n", len(attributeGroups))
 
-	totalFilesWritten := 0
+	// Pre-compute: build profileToGroup mapping and ViewDefinitions
+	profileToGroup := make(map[string]int)
+	viewDefs := make([]*models.ViewDefinition, len(attributeGroups))
+	headers := make([][]string, len(attributeGroups))
+	filenames := make([]string, len(attributeGroups))
 
-	// Process each attribute group
-	for _, group := range attributeGroups {
-		logger.Debug("Processing attribute group",
-			"group_name", group.Name,
-			"group_reference", group.GroupReference,
-			"job_id", job.JobID)
-
-		// Build ViewDefinition for this group
+	for i, group := range attributeGroups {
 		viewDef, err := viewDefBuilder.BuildViewDefinition(group)
 		if err != nil {
 			logger.Warn("Failed to build ViewDefinition for group, skipping",
@@ -148,7 +141,12 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 			continue
 		}
 
-		// Save ViewDefinition to disk for debugging/auditing (before flattener call)
+		viewDefs[i] = viewDef
+		profileToGroup[group.GroupReference] = i
+		headers[i] = services.ExtractColumnNames(*viewDef)
+		filenames[i] = services.BuildCSVFilename(group.Name)
+
+		// Save ViewDefinition to disk
 		viewDefFilename := services.BuildViewDefinitionFilename(group.Name)
 		if err := viewDefWriter.WriteViewDefinition(viewDefFilename, *viewDef); err != nil {
 			logger.Warn("Failed to save ViewDefinition, continuing",
@@ -156,48 +154,40 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 				"filename", viewDefFilename,
 				"error", err)
 		}
+	}
 
-		// Filter resources by profile URL
-		matchingResources := FilterResourcesByProfile(allResources, group.GroupReference)
-		if len(matchingResources) == 0 {
-			logger.Debug("No resources match profile",
-				"group_name", group.Name,
-				"profile", group.GroupReference)
+	// Stream resources and flatten in batches
+	totals, err := streamAndFlattenResources(
+		files,
+		attributeGroups,
+		profileToGroup,
+		viewDefs,
+		headers,
+		filenames,
+		flattenerClient,
+		csvWriter,
+		logger,
+		job.Config.Pipeline.MaxNDJSONLineSize(),
+		job.Config.Services.Flattening.GetBatchSizeBytes(),
+	)
+	if err != nil {
+		lib.LogStepFailed(logger, string(stepName), job.JobID, err, IsFlatteningErrorRetryable(err))
+		recordStepError(step, err, ClassifyFlatteningError(err))
+		return err
+	}
+
+	// Print per-group progress
+	totalFilesWritten := 0
+	for i, group := range attributeGroups {
+		if viewDefs[i] == nil {
+			continue
+		}
+		if totals[i] == 0 {
 			fmt.Printf("  ⊙ %s (no matching resources)\n", group.Name)
 			continue
 		}
-
-		logger.Debug("Found matching resources",
-			"group_name", group.Name,
-			"count", len(matchingResources))
-
-		// Call flattener service
-		csvData, err := flattenerClient.Flatten(*viewDef, matchingResources)
-		if err != nil {
-			lib.LogStepFailed(logger, string(stepName), job.JobID, err, IsFlatteningErrorRetryable(err))
-			recordStepError(step, err, ClassifyFlatteningError(err))
-			return fmt.Errorf("flattener failed for group '%s': %w", group.Name, err)
-		}
-
-		// Extract header from ViewDefinition
-		header := services.ExtractColumnNames(*viewDef)
-
-		// Write CSV file
-		filename := services.BuildCSVFilename(group.Name)
-		if err := csvWriter.WriteCSV(filename, header, csvData); err != nil {
-			lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-			recordStepError(step, err, models.ErrorTypeNonTransient)
-			return fmt.Errorf("failed to write CSV for group '%s': %w", group.Name, err)
-		}
-
 		totalFilesWritten++
-		fmt.Printf("  ✓ %s (%d resources → %s)\n", group.Name, len(matchingResources), filename)
-
-		logger.Debug("CSV file written",
-			"group_name", group.Name,
-			"filename", filename,
-			"resource_count", len(matchingResources),
-			"job_id", job.JobID)
+		fmt.Printf("  ✓ %s (%d resources → %s)\n", group.Name, totals[i], filenames[i])
 	}
 
 	step.Status = models.StepStatusCompleted
@@ -211,6 +201,201 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 		"files_written", totalFilesWritten,
 		"duration", duration,
 		"job_id", job.JobID)
+
+	return nil
+}
+
+// streamAndFlattenResources performs single-pass streaming over all input files,
+// routing each resource to per-group batches and flushing when the byte threshold
+// is exceeded. Returns per-group resource totals.
+func streamAndFlattenResources(
+	files []string,
+	groups []models.AttributeGroup,
+	profileToGroup map[string]int,
+	viewDefs []*models.ViewDefinition,
+	headers [][]string,
+	filenames []string,
+	flattenerClient *services.FlattenerClient,
+	csvWriter *services.CSVWriter,
+	logger *lib.Logger,
+	maxLineSize int,
+	batchSizeBytes int,
+) ([]int, error) {
+	numGroups := len(groups)
+	batches := make([]groupBatch, numGroups)
+	totals := make([]int, numGroups)
+
+	// Divide total memory budget across groups so peak usage stays within batchSizeBytes
+	perGroupBytes := batchSizeBytes / numGroups
+	if perGroupBytes < 1 {
+		perGroupBytes = 1
+	}
+
+	// Initialize all batches as first batch
+	for i := range batches {
+		batches[i].isFirstBatch = true
+	}
+
+	// Stream through all files
+	for _, filePath := range files {
+		reader, err := lib.OpenFileForReading(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load resources: %w", fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), fmt.Errorf("failed to open file: %w", err)))
+		}
+
+		scanner := lib.NewNDJSONScannerWithMaxSize(reader, maxLineSize)
+		lineNum := 0
+
+		for scanner.Scan() {
+			lineNum++
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+
+			var resource map[string]any
+			if err := json.Unmarshal([]byte(line), &resource); err != nil {
+				logger.Warn("Failed to parse resource",
+					"file", filepath.Base(filePath),
+					"line", lineNum,
+					"error", err)
+				continue
+			}
+
+			// If resource is a Bundle, extract and route individual entries
+			if resourceType, ok := resource["resourceType"].(string); ok && resourceType == "Bundle" {
+				entries, ok := resource["entry"].([]any)
+				if ok {
+					for _, entry := range entries {
+						entryMap, ok := entry.(map[string]any)
+						if !ok {
+							continue
+						}
+						entryResource, ok := entryMap["resource"].(map[string]any)
+						if !ok {
+							continue
+						}
+						// For Bundle entries, compute size via marshal
+						entryBytes, marshalErr := json.Marshal(entryResource)
+						if marshalErr != nil {
+							continue
+						}
+						groupIdx, matched := routeResourceToGroup(entryResource, profileToGroup, viewDefs)
+						if !matched {
+							continue
+						}
+						batches[groupIdx].resources = append(batches[groupIdx].resources, entryResource)
+						batches[groupIdx].byteSize += len(entryBytes)
+						totals[groupIdx]++
+
+						if batches[groupIdx].byteSize >= perGroupBytes {
+							if err := flushGroupBatch(&batches[groupIdx], viewDefs[groupIdx], headers[groupIdx], filenames[groupIdx], flattenerClient, csvWriter, logger, groups[groupIdx].Name); err != nil {
+								_ = reader.Close()
+								return nil, err
+							}
+						}
+					}
+				}
+			} else {
+				// Non-Bundle resource: use scanner bytes length for size tracking
+				resourceSize := len(scanner.Bytes())
+				groupIdx, matched := routeResourceToGroup(resource, profileToGroup, viewDefs)
+				if !matched {
+					continue
+				}
+				batches[groupIdx].resources = append(batches[groupIdx].resources, resource)
+				batches[groupIdx].byteSize += resourceSize
+				totals[groupIdx]++
+
+				if batches[groupIdx].byteSize >= perGroupBytes {
+					if err := flushGroupBatch(&batches[groupIdx], viewDefs[groupIdx], headers[groupIdx], filenames[groupIdx], flattenerClient, csvWriter, logger, groups[groupIdx].Name); err != nil {
+						_ = reader.Close()
+						return nil, err
+					}
+				}
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			_ = reader.Close()
+			return nil, fmt.Errorf("failed to load resources: %w", fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), fmt.Errorf("error reading file: %w", err)))
+		}
+
+		_ = reader.Close()
+	}
+
+	// Flush remaining non-empty batches
+	for i := range batches {
+		if len(batches[i].resources) > 0 {
+			if err := flushGroupBatch(&batches[i], viewDefs[i], headers[i], filenames[i], flattenerClient, csvWriter, logger, groups[i].Name); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return totals, nil
+}
+
+// routeResourceToGroup determines which group a resource belongs to based on
+// its meta.profile[0] URL. Returns the group index and whether a match was found.
+func routeResourceToGroup(resource map[string]any, profileToGroup map[string]int, viewDefs []*models.ViewDefinition) (int, bool) {
+	meta, ok := resource["meta"].(map[string]any)
+	if !ok {
+		return 0, false
+	}
+
+	profiles, ok := meta["profile"].([]any)
+	if !ok || len(profiles) == 0 {
+		return 0, false
+	}
+
+	firstProfile, ok := profiles[0].(string)
+	if !ok {
+		return 0, false
+	}
+
+	groupIdx, exists := profileToGroup[firstProfile]
+	if !exists {
+		return 0, false
+	}
+
+	// Skip groups where ViewDefinition build failed
+	if viewDefs[groupIdx] == nil {
+		return 0, false
+	}
+
+	return groupIdx, true
+}
+
+// flushGroupBatch sends the accumulated batch to the flattener and appends the result to CSV.
+func flushGroupBatch(
+	batch *groupBatch,
+	viewDef *models.ViewDefinition,
+	header []string,
+	filename string,
+	flattenerClient *services.FlattenerClient,
+	csvWriter *services.CSVWriter,
+	logger *lib.Logger,
+	groupName string,
+) error {
+	logger.Debug("Flushing batch",
+		"group_name", groupName,
+		"resource_count", len(batch.resources),
+		"byte_size", batch.byteSize)
+
+	csvData, err := flattenerClient.Flatten(*viewDef, batch.resources)
+	if err != nil {
+		return fmt.Errorf("flattener failed for group '%s': %w", groupName, err)
+	}
+
+	if err := csvWriter.AppendCSVData(filename, header, csvData, batch.isFirstBatch); err != nil {
+		return fmt.Errorf("failed to write CSV for group '%s': %w", groupName, err)
+	}
+
+	// Reset batch state
+	batch.resources = nil
+	batch.byteSize = 0
+	batch.isFirstBatch = false
 
 	return nil
 }

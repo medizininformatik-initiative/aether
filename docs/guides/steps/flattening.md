@@ -18,6 +18,7 @@ services:
     formats:
       - csv
     timeout: 30m
+    batch_size_mb: 500
 
 pipeline:
   enabled_steps:
@@ -34,14 +35,18 @@ pipeline:
 | `lookup_path` | string | - | Path to lookup table file |
 | `formats` | []string | ["csv"] | Output formats |
 | `timeout` | duration | 30m | Request timeout |
+| `batch_size_mb` | int | 500 | Total memory budget in MB, divided across groups (0 = default) |
 
 ## How it Works
 
 1. Parses CRTDL file to extract attribute groups
 2. Builds ViewDefinitions from lookup tables
-3. Filters resources by profile
-4. Sends data to fhir-flattener service
-5. Writes CSV files for each attribute group
+3. Streams FHIR resources from input files in a single pass
+4. Routes each resource to its attribute group based on `meta.profile[0]`
+5. When a group's batch exceeds `batch_size_mb`, flushes it to fhir-flattener
+6. Appends CSV output incrementally (one header, multiple data batches)
+
+Memory usage is bounded by `batch_size_mb` regardless of total dataset size — the budget is divided equally across attribute groups.
 
 ## Output
 

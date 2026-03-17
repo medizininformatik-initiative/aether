@@ -9,20 +9,30 @@ import (
 
 // FlatteningConfig holds configuration for the fhir-flattener service
 type FlatteningConfig struct {
-	ServiceURL string        `yaml:"service_url" json:"service_url"` // URL to fhir-flattener service
-	LookupPath string        `yaml:"lookup_path" json:"lookup_path"` // Path to flatten-lookup.json file
-	Formats    []string      `yaml:"formats" json:"formats"`         // Output formats: ["csv"] for now
-	Timeout    time.Duration `yaml:"timeout" json:"timeout"`         // Request timeout
+	ServiceURL  string        `yaml:"service_url" json:"service_url" mapstructure:"service_url"`       // URL to fhir-flattener service
+	LookupPath  string        `yaml:"lookup_path" json:"lookup_path" mapstructure:"lookup_path"`       // Path to flatten-lookup.json file
+	Formats     []string      `yaml:"formats" json:"formats" mapstructure:"formats"`                   // Output formats: ["csv"] for now
+	Timeout     time.Duration `yaml:"timeout" json:"timeout" mapstructure:"timeout"`                   // Request timeout
+	BatchSizeMB int           `yaml:"batch_size_mb" json:"batch_size_mb" mapstructure:"batch_size_mb"` // Total memory budget in MB for batched streaming (default 500)
 }
 
 // DefaultFlatteningConfig returns the default flattening configuration
 func DefaultFlatteningConfig() FlatteningConfig {
 	return FlatteningConfig{
-		ServiceURL: "",
-		LookupPath: "",
-		Formats:    []string{"csv"},
-		Timeout:    30 * time.Minute,
+		ServiceURL:  "",
+		LookupPath:  "",
+		Formats:     []string{"csv"},
+		Timeout:     30 * time.Minute,
+		BatchSizeMB: 500,
 	}
+}
+
+// GetBatchSizeBytes returns the total memory budget in bytes, defaulting to 500MB if not set
+func (c *FlatteningConfig) GetBatchSizeBytes() int {
+	if c.BatchSizeMB <= 0 {
+		return 500 * 1024 * 1024
+	}
+	return c.BatchSizeMB * 1024 * 1024
 }
 
 // Validate checks if the FlatteningConfig is valid when flattening is enabled

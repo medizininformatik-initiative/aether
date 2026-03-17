@@ -137,6 +137,29 @@ func TestDefaultFlatteningConfig(t *testing.T) {
 	assert.Empty(t, config.LookupPath)
 	assert.Equal(t, []string{"csv"}, config.Formats)
 	assert.Equal(t, 30*time.Minute, config.Timeout)
+	assert.Equal(t, 500, config.BatchSizeMB)
+}
+
+func TestGetBatchSizeBytes(t *testing.T) {
+	t.Run("default when zero", func(t *testing.T) {
+		config := models.FlatteningConfig{BatchSizeMB: 0}
+		assert.Equal(t, 500*1024*1024, config.GetBatchSizeBytes())
+	})
+
+	t.Run("default when negative", func(t *testing.T) {
+		config := models.FlatteningConfig{BatchSizeMB: -5}
+		assert.Equal(t, 500*1024*1024, config.GetBatchSizeBytes())
+	})
+
+	t.Run("custom value", func(t *testing.T) {
+		config := models.FlatteningConfig{BatchSizeMB: 20}
+		assert.Equal(t, 20*1024*1024, config.GetBatchSizeBytes())
+	})
+
+	t.Run("small value", func(t *testing.T) {
+		config := models.FlatteningConfig{BatchSizeMB: 1}
+		assert.Equal(t, 1*1024*1024, config.GetBatchSizeBytes())
+	})
 }
 
 func TestNewFlatteningRequest(t *testing.T) {

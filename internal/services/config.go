@@ -100,10 +100,11 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 				URL: ExpandEnvVars(viper.GetString("services.parquet_conversion.url")),
 			},
 			Flattening: models.FlatteningConfig{
-				ServiceURL: ExpandEnvVars(viper.GetString("services.flattening.service_url")),
-				LookupPath: ExpandEnvVars(viper.GetString("services.flattening.lookup_path")),
-				Formats:    viper.GetStringSlice("services.flattening.formats"),
-				Timeout:    viper.GetDuration("services.flattening.timeout"),
+				ServiceURL:  ExpandEnvVars(viper.GetString("services.flattening.service_url")),
+				LookupPath:  ExpandEnvVars(viper.GetString("services.flattening.lookup_path")),
+				Formats:     viper.GetStringSlice("services.flattening.formats"),
+				Timeout:     viper.GetDuration("services.flattening.timeout"),
+				BatchSizeMB: viper.GetInt("services.flattening.batch_size_mb"),
 			},
 			Send: models.SendConfig{
 				URL:       ExpandEnvVars(viper.GetString("services.send.url")),
@@ -195,6 +196,9 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 		if config.Compression.Level == "" {
 			config.Compression.Level = defaults.Compression.Level
 		}
+		if config.Services.Flattening.BatchSizeMB == 0 {
+			config.Services.Flattening.BatchSizeMB = defaults.Services.Flattening.BatchSizeMB
+		}
 	} else {
 		// Config was loaded, apply defaults only for truly missing values
 		if config.Retry.MaxAttempts == 0 {
@@ -250,6 +254,9 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 		}
 		if len(config.Services.Flattening.Formats) == 0 {
 			config.Services.Flattening.Formats = []string{"csv"}
+		}
+		if config.Services.Flattening.BatchSizeMB == 0 {
+			config.Services.Flattening.BatchSizeMB = 500
 		}
 		// Apply Send batch size default if not set
 		if config.Services.Send.BatchSize == 0 {

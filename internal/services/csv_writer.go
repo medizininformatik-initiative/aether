@@ -71,6 +71,76 @@ func (w *CSVWriter) WriteCSV(filename string, header []string, data string) erro
 	return nil
 }
 
+// AppendCSVData appends CSV data to a file. On the first batch, it creates the file
+// and writes the header followed by data rows. On subsequent batches, it appends
+// data rows only (no duplicate header).
+func (w *CSVWriter) AppendCSVData(filename string, header []string, data string, isFirstBatch bool) error {
+	outputPath := filepath.Join(w.outputDir, filename)
+
+	// Ensure output directory exists
+	if err := os.MkdirAll(w.outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	if isFirstBatch {
+		file, err := os.Create(outputPath)
+		if err != nil {
+			return fmt.Errorf("failed to create CSV file: %w", err)
+		}
+		defer func() { _ = file.Close() }()
+
+		writer := csv.NewWriter(file)
+		defer writer.Flush()
+
+		if len(header) > 0 {
+			if err := writer.Write(header); err != nil {
+				return fmt.Errorf("failed to write CSV header: %w", err)
+			}
+		}
+
+		if data != "" {
+			if err := w.writeCSVRows(writer, data); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
+	// Subsequent batch: append data rows only
+	if data == "" {
+		return nil
+	}
+
+	file, err := os.OpenFile(outputPath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open CSV file for append: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	return w.writeCSVRows(writer, data)
+}
+
+// writeCSVRows parses CSV data string and writes rows to the writer
+func (w *CSVWriter) writeCSVRows(writer *csv.Writer, data string) error {
+	dataReader := csv.NewReader(strings.NewReader(data))
+	records, err := dataReader.ReadAll()
+	if err != nil {
+		return fmt.Errorf("failed to parse CSV data from flattener: %w", err)
+	}
+
+	for _, record := range records {
+		if err := writer.Write(record); err != nil {
+			return fmt.Errorf("failed to write CSV row: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // WriteCSVDirect writes raw CSV data (with header already included) directly to a file
 func (w *CSVWriter) WriteCSVDirect(filename string, data string) error {
 	outputPath := filepath.Join(w.outputDir, filename)

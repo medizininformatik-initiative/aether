@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
@@ -19,8 +17,8 @@ import (
 //
 // Returns the created job with generated UUID and initialized steps
 func CreateJob(inputSource string, config models.ProjectConfig, logger *lib.Logger) (*models.PipelineJob, error) {
-	// Generate unique job ID
-	jobID := uuid.New().String()
+	// Generate unique job ID with human-readable timestamp prefix
+	jobID := models.GenerateJobID()
 
 	// Determine input type based on what was provided
 	var inputType models.InputType

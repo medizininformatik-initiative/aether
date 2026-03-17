@@ -20,8 +20,8 @@ echo "Pipeline: torch → send (s3_upload)"
 OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline start torch/queries/example-crtdl.json --config aether-s3-upload.yaml 2>&1) || true
 echo "$OUTPUT"
 
-# Extract job ID from output (format: "Created pipeline job: <uuid>")
-JOB_ID=$(echo "$OUTPUT" | grep -oP 'Created pipeline job: \K[a-f0-9-]+' || true)
+# Extract job ID from output (format: "Created pipeline job: <YYYYMMDD_HHMM_UUID or UUID>")
+JOB_ID=$(echo "$OUTPUT" | grep -oP 'Created pipeline job: \K[a-f0-9_-]+' || true)
 
 if [ -z "$JOB_ID" ]; then
     echo "Failed to extract job ID from output"

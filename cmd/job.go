@@ -31,7 +31,7 @@ var jobListCmd = &cobra.Command{
 	Long: `List all pipeline jobs in the jobs directory.
 
 Shows:
-  • Job ID (full UUID)
+  • Job ID (YYYYMMDD_HHMM_UUID or legacy UUID)
   • Status (✓ completed, → in_progress, ✗ failed, ○ pending)
   • Current step being executed
   • Total files processed
@@ -173,13 +173,13 @@ func runJobList(cmd *cobra.Command, args []string) error {
 	})
 
 	// Print table header
-	fmt.Printf("%-38s %-15s %-20s %-8s %s\n", "JOB ID", "STATUS", "STEP", "FILES", "AGE")
-	fmt.Println("------------------------------------------------------------------------------------------")
+	fmt.Printf("%-52s %-15s %-20s %-8s %s\n", "JOB ID", "STATUS", "STEP", "FILES", "AGE")
+	fmt.Println("--------------------------------------------------------------------------------------------------------------")
 
 	// Print jobs
 	for _, j := range jobs {
 		statusSymbol := getJobStatusSymbol(j.Status)
-		fmt.Printf("%-38s %s %-13s %-20s %-8d %s\n",
+		fmt.Printf("%-52s %s %-13s %-20s %-8d %s\n",
 			j.ID,
 			statusSymbol,
 			j.Status,

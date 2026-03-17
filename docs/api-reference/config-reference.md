@@ -10,9 +10,9 @@ services:
     base_url: string
     username: string
     password: string
-    extraction_timeout_minutes: integer  # default: 30
-    polling_interval_seconds: integer    # default: 5
-    max_polling_interval_seconds: integer # default: 30
+    extraction_timeout: duration  # default: PT30M
+    polling_interval: duration    # default: PT5S
+    max_polling_interval: duration # default: PT30S
 
   dimp:
     url: string
@@ -22,7 +22,7 @@ services:
     service_url: string
     lookup_path: string
     formats: [string]                    # ["csv"]
-    timeout: duration                    # default: 30m
+    timeout: duration                    # default: PT30M
     batch_size_mb: integer               # default: 500
 
   send:
@@ -88,9 +88,9 @@ services:
     base_url: "https://torch.example.org"
     username: "${TORCH_USER}"
     password: "${TORCH_PASSWORD}"
-    extraction_timeout_minutes: 30
-    polling_interval_seconds: 5
-    max_polling_interval_seconds: 30
+    extraction_timeout: PT30M
+    polling_interval: PT5S
+    max_polling_interval: PT30S
 ```
 
 | Option | Type | Default | Description |
@@ -98,9 +98,11 @@ services:
 | `base_url` | string | - | TORCH server URL (required if torch step enabled) |
 | `username` | string | - | Authentication username |
 | `password` | string | - | Authentication password |
-| `extraction_timeout_minutes` | int | 30 | Max wait time for extraction. Also serves as the safety net for transient polling errors — polling retries until this timeout is exceeded. |
-| `polling_interval_seconds` | int | 5 | Initial status check interval |
-| `max_polling_interval_seconds` | int | 30 | Max interval (exponential backoff cap) |
+| `extraction_timeout` | duration | PT30M | Max wait time for extraction. Also serves as the safety net for transient polling errors — polling retries until this timeout is exceeded. |
+| `polling_interval` | duration | PT5S | Initial status check interval |
+| `max_polling_interval` | duration | PT30S | Max interval (exponential backoff cap) |
+| `file_ready_retries` | int | 10 | Number of retries for file availability check |
+| `file_ready_interval` | duration | PT10S | Interval between file availability checks |
 
 ### DIMP
 
@@ -129,7 +131,7 @@ services:
     lookup_path: "/config/flatten-lookup.json"
     formats:
       - csv
-    timeout: 30m
+    timeout: PT30M
 ```
 
 | Option | Type | Default | Description |

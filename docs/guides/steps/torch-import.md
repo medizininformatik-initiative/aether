@@ -22,9 +22,9 @@ services:
     base_url: "https://your-torch-server.org"
     username: "your-username"
     password: "your-password"
-    extraction_timeout_minutes: 30  # default
-    polling_interval_seconds: 5     # default
-    max_polling_interval_seconds: 30 # default
+    extraction_timeout: PT30M  # default
+    polling_interval: PT5S     # default
+    max_polling_interval: PT30S # default
 
 pipeline:
   enabled_steps:
@@ -54,6 +54,6 @@ URLs containing `/fhir/extraction/` or `/fhir/result/` are automatically recogni
 | `base_url` | string | - | TORCH server URL (required) |
 | `username` | string | - | Authentication username |
 | `password` | string | - | Authentication password |
-| `extraction_timeout_minutes` | int | 30 | Max wait time for extraction |
-| `polling_interval_seconds` | int | 5 | Initial status check interval |
-| `max_polling_interval_seconds` | int | 30 | Max interval (exponential backoff) |
+| `extraction_timeout` | duration | PT30M | Max wait time for extraction |
+| `polling_interval` | duration | PT5S | Initial status check interval |
+| `max_polling_interval` | duration | PT30S | Max interval (exponential backoff) |

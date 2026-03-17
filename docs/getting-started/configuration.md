@@ -32,8 +32,8 @@ services:
     base_url: "https://your-torch-server.org"
     username: "your-username"
     password: "your-password"
-    extraction_timeout_minutes: 30
-    polling_interval_seconds: 5
+    extraction_timeout: PT30M
+    polling_interval: PT5S
 ```
 
 ### DIMP
@@ -54,7 +54,7 @@ services:
     lookup_path: "/path/to/flatten-lookup.json"
     formats:
       - csv
-    timeout: 30m
+    timeout: PT30M
 ```
 
 ### Send

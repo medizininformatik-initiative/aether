@@ -13,18 +13,27 @@ services:
     username: "test"
     password: "test"
 
-    # Maximum time to wait for extraction completion (in minutes)
-    # Default: 30 minutes (reasonable for typical cohort sizes)
-    extraction_timeout_minutes: 30
+    # Maximum time to wait for extraction completion
+    # Accepts ISO 8601 (e.g. PT30M) or Go format (e.g. 30m)
+    # Default: PT30M (30 minutes, reasonable for typical cohort sizes)
+    extraction_timeout: PT30M
 
-    # Initial polling interval when checking extraction status (in seconds)
-    # Default: 5 seconds
-    polling_interval_seconds: 5
+    # Initial polling interval when checking extraction status
+    # Default: PT5S
+    polling_interval: PT5S
 
-    # Maximum polling interval (exponential backoff cap, in seconds)
-    # Default: 30 seconds
-    max_polling_interval_seconds: 30
-  
+    # Maximum polling interval (exponential backoff cap)
+    # Default: PT30S
+    max_polling_interval: PT30S
+
+    # Number of retries waiting for files to become available after extraction
+    # Default: 10
+    # file_ready_retries: 10
+
+    # Interval between file availability checks
+    # Default: PT10S
+    # file_ready_interval: PT10S
+
   # DIMP Pseudonymization Service (optional)
   # Leave empty to skip pseudonymization step
   dimp:
@@ -90,8 +99,9 @@ services:
       - csv
 
     # Request timeout for the flattening service
-    # Default: 30m (30 minutes)
-    timeout: 30m
+    # Accepts ISO 8601 (e.g. PT30M) or Go format (e.g. 30m)
+    # Default: PT30M (30 minutes)
+    timeout: PT30M
 
     # Total memory budget in megabytes (MB) for streaming processing.
     # This budget is divided equally across attribute groups — each group flushes
@@ -161,8 +171,8 @@ services:
       # Use path-style addressing (required for MinIO and some S3-compatible stores)
       use_path_style: false
 
-      # Upload timeout (default: 30m)
-      timeout: 30m
+      # Upload timeout (default: PT30M)
+      timeout: PT30M
 
   # FHIR Validation Service (optional)
   # Validates FHIR resources against profiles before further processing

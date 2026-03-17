@@ -132,12 +132,12 @@ func TestPipeline_TORCHExtraction_EndToEnd(t *testing.T) {
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			TORCH: models.TORCHConfig{
-				BaseURL:                   server.URL,
-				Username:                  "testuser",
-				Password:                  "testpass",
-				ExtractionTimeoutMinutes:  1,
-				PollingIntervalSeconds:    1,
-				MaxPollingIntervalSeconds: 5,
+				BaseURL:            server.URL,
+				Username:           "testuser",
+				Password:           "testpass",
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 5 * time.Second,
 			},
 		},
 		Pipeline: models.PipelineConfig{
@@ -240,12 +240,12 @@ func TestPipeline_TORCHExtraction_EmptyResult(t *testing.T) {
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			TORCH: models.TORCHConfig{
-				BaseURL:                   server.URL,
-				Username:                  "testuser",
-				Password:                  "testpass",
-				ExtractionTimeoutMinutes:  1,
-				PollingIntervalSeconds:    1,
-				MaxPollingIntervalSeconds: 5,
+				BaseURL:            server.URL,
+				Username:           "testuser",
+				Password:           "testpass",
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 5 * time.Second,
 			},
 		},
 		Pipeline: models.PipelineConfig{
@@ -381,12 +381,12 @@ func TestPipeline_DirectTORCHURL_Download(t *testing.T) {
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			TORCH: models.TORCHConfig{
-				BaseURL:                   server.URL,
-				Username:                  "testuser",
-				Password:                  "testpass",
-				ExtractionTimeoutMinutes:  1,
-				PollingIntervalSeconds:    1,
-				MaxPollingIntervalSeconds: 5,
+				BaseURL:            server.URL,
+				Username:           "testuser",
+				Password:           "testpass",
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 5 * time.Second,
 			},
 		},
 		Pipeline: models.PipelineConfig{
@@ -475,12 +475,12 @@ func TestPipeline_DirectTORCHURL_EmptyResult(t *testing.T) {
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			TORCH: models.TORCHConfig{
-				BaseURL:                   server.URL,
-				Username:                  "testuser",
-				Password:                  "testpass",
-				ExtractionTimeoutMinutes:  1,
-				PollingIntervalSeconds:    1,
-				MaxPollingIntervalSeconds: 5,
+				BaseURL:            server.URL,
+				Username:           "testuser",
+				Password:           "testpass",
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 5 * time.Second,
 			},
 		},
 		Pipeline: models.PipelineConfig{
@@ -566,12 +566,12 @@ func TestPipeline_TORCHExtraction_PollingTimeout(t *testing.T) {
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			TORCH: models.TORCHConfig{
-				BaseURL:                   server.URL,
-				Username:                  "testuser",
-				Password:                  "testpass",
-				ExtractionTimeoutMinutes:  1, // Config value (will be overridden in direct client test)
-				PollingIntervalSeconds:    1,
-				MaxPollingIntervalSeconds: 2,
+				BaseURL:            server.URL,
+				Username:           "testuser",
+				Password:           "testpass",
+				ExtractionTimeout:  1 * time.Minute, // Config value (will be overridden in direct client test)
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 2 * time.Second,
 			},
 		},
 		Retry: models.RetryConfig{
@@ -728,12 +728,12 @@ func TestPipeline_TORCHExtraction_WithWaitStep_DataModification(t *testing.T) {
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			TORCH: models.TORCHConfig{
-				BaseURL:                   torchServer.URL,
-				Username:                  "testuser",
-				Password:                  "testpass",
-				ExtractionTimeoutMinutes:  1,
-				PollingIntervalSeconds:    1,
-				MaxPollingIntervalSeconds: 5,
+				BaseURL:            torchServer.URL,
+				Username:           "testuser",
+				Password:           "testpass",
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 5 * time.Second,
 			},
 			DIMP: models.DIMPConfig{
 				URL: dimpServer.URL + "/fhir",
@@ -954,12 +954,12 @@ func TestPipeline_TORCHExtraction_WithPreprocessing(t *testing.T) {
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			TORCH: models.TORCHConfig{
-				BaseURL:                   server.URL,
-				Username:                  "testuser",
-				Password:                  "testpass",
-				ExtractionTimeoutMinutes:  1,
-				PollingIntervalSeconds:    1,
-				MaxPollingIntervalSeconds: 5,
+				BaseURL:            server.URL,
+				Username:           "testuser",
+				Password:           "testpass",
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 5 * time.Second,
 			},
 			CRTDLPreprocessing: models.CRTDLPreprocessingConfig{
 				Enabled: true,
@@ -1130,12 +1130,12 @@ func TestPipeline_TORCHExtraction_JobResumption(t *testing.T) {
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			TORCH: models.TORCHConfig{
-				BaseURL:                   server.URL,
-				Username:                  "testuser",
-				Password:                  "testpass",
-				ExtractionTimeoutMinutes:  5,
-				PollingIntervalSeconds:    1,
-				MaxPollingIntervalSeconds: 5,
+				BaseURL:            server.URL,
+				Username:           "testuser",
+				Password:           "testpass",
+				ExtractionTimeout:  5 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 5 * time.Second,
 			},
 		},
 		Pipeline: models.PipelineConfig{
@@ -1264,12 +1264,12 @@ func TestPipeline_TORCHExtraction_PreprocessingError_InvalidEnrichmentsPath(t *t
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			TORCH: models.TORCHConfig{
-				BaseURL:                   server.URL,
-				Username:                  "testuser",
-				Password:                  "testpass",
-				ExtractionTimeoutMinutes:  1,
-				PollingIntervalSeconds:    1,
-				MaxPollingIntervalSeconds: 5,
+				BaseURL:            server.URL,
+				Username:           "testuser",
+				Password:           "testpass",
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 5 * time.Second,
 			},
 			CRTDLPreprocessing: models.CRTDLPreprocessingConfig{
 				Enabled:         true,
@@ -1395,12 +1395,12 @@ func TestPipeline_TORCHExtraction_PreprocessingDisabled_UsesOriginalCRTDL(t *tes
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			TORCH: models.TORCHConfig{
-				BaseURL:                   server.URL,
-				Username:                  "testuser",
-				Password:                  "testpass",
-				ExtractionTimeoutMinutes:  1,
-				PollingIntervalSeconds:    1,
-				MaxPollingIntervalSeconds: 5,
+				BaseURL:            server.URL,
+				Username:           "testuser",
+				Password:           "testpass",
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 5 * time.Second,
 			},
 			CRTDLPreprocessing: models.CRTDLPreprocessingConfig{
 				Enabled: false, // Disabled - should use original CRTDL
@@ -1473,12 +1473,12 @@ func TestPipeline_TORCHExtraction_PreprocessingError_InvalidCRTDL(t *testing.T) 
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			TORCH: models.TORCHConfig{
-				BaseURL:                   server.URL,
-				Username:                  "testuser",
-				Password:                  "testpass",
-				ExtractionTimeoutMinutes:  1,
-				PollingIntervalSeconds:    1,
-				MaxPollingIntervalSeconds: 5,
+				BaseURL:            server.URL,
+				Username:           "testuser",
+				Password:           "testpass",
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 5 * time.Second,
 			},
 			CRTDLPreprocessing: models.CRTDLPreprocessingConfig{
 				Enabled: true,
@@ -1624,12 +1624,12 @@ func TestPipeline_TORCHExtraction_PreprocessingEnabled_EmptyEnrichments(t *testi
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			TORCH: models.TORCHConfig{
-				BaseURL:                   server.URL,
-				Username:                  "testuser",
-				Password:                  "testpass",
-				ExtractionTimeoutMinutes:  1,
-				PollingIntervalSeconds:    1,
-				MaxPollingIntervalSeconds: 5,
+				BaseURL:            server.URL,
+				Username:           "testuser",
+				Password:           "testpass",
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 5 * time.Second,
 			},
 			CRTDLPreprocessing: models.CRTDLPreprocessingConfig{
 				Enabled:     true,

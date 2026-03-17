@@ -50,8 +50,8 @@ services:
     base_url: "https://your-torch-server.org"
     username: "your-username"
     password: "your-password"
-    extraction_timeout_minutes: 60   # Default is 30
-    polling_interval_seconds: 10     # Default is 5
+    extraction_timeout: PT1H     # Default is PT30M
+    polling_interval: PT10S      # Default is PT5S
 ```
 
 For extractions that may take several days (e.g., large patient cohorts), set `extraction_timeout_minutes` accordingly:
@@ -111,7 +111,7 @@ pipeline:
     - dimp
 ```
 
-The `extraction_timeout_minutes` and polling interval settings also apply.
+The `extraction_timeout` and polling interval settings also apply.
 
 #### Comparison: CRTDL vs TORCH URL vs HTTP
 

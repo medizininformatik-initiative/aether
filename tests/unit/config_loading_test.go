@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -461,9 +462,9 @@ services:
     base_url: "http://localhost:8080"
     username: "testuser"
     password: "testpass"
-    extraction_timeout_minutes: 30
-    polling_interval_seconds: 5
-    max_polling_interval_seconds: 30
+    extraction_timeout: PT30M
+    polling_interval: PT5S
+    max_polling_interval: PT30S
 
 pipeline:
   enabled_steps:
@@ -486,9 +487,9 @@ jobs_dir: "` + jobsDir + `"
 	assert.Equal(t, "http://localhost:8080", config.Services.TORCH.BaseURL)
 	assert.Equal(t, "testuser", config.Services.TORCH.Username)
 	assert.Equal(t, "testpass", config.Services.TORCH.Password)
-	assert.Equal(t, 30, config.Services.TORCH.ExtractionTimeoutMinutes)
-	assert.Equal(t, 5, config.Services.TORCH.PollingIntervalSeconds)
-	assert.Equal(t, 30, config.Services.TORCH.MaxPollingIntervalSeconds)
+	assert.Equal(t, 30*time.Minute, config.Services.TORCH.ExtractionTimeout)
+	assert.Equal(t, 5*time.Second, config.Services.TORCH.PollingInterval)
+	assert.Equal(t, 30*time.Second, config.Services.TORCH.MaxPollingInterval)
 
 	// Test validation passes with valid config
 	err = config.Services.TORCH.Validate()
@@ -608,7 +609,7 @@ services:
     base_url: "http://localhost:8080"
     username: "testuser"
     password: "testpass"
-    extraction_timeout_minutes: -1
+    extraction_timeout: -1m
 
 pipeline:
   enabled_steps:
@@ -624,7 +625,7 @@ jobs_dir: "` + jobsDir + `"
 	err := os.WriteFile(configFile, []byte(configContent), 0644)
 	require.NoError(t, err)
 
-	// LoadConfig validates config, zero timeout should cause error
+	// LoadConfig validates config, negative timeout should cause error
 	_, err = services.LoadConfig(configFile)
 	assert.Error(t, err, "Zero timeout should fail validation")
 	assert.Contains(t, err.Error(), "timeout")
@@ -642,7 +643,7 @@ services:
     base_url: "http://localhost:8080"
     username: "testuser"
     password: "testpass"
-    polling_interval_seconds: -1
+    polling_interval: -1s
 
 pipeline:
   enabled_steps:
@@ -676,8 +677,8 @@ services:
     base_url: "http://localhost:8080"
     username: "testuser"
     password: "testpass"
-    polling_interval_seconds: 10
-    max_polling_interval_seconds: 5
+    polling_interval: PT10S
+    max_polling_interval: PT5S
 
 pipeline:
   enabled_steps:
@@ -707,11 +708,11 @@ func TestTORCHConfig_WithDefaults(t *testing.T) {
 	assert.Equal(t, "", config.Services.TORCH.BaseURL, "BaseURL should default to empty")
 	assert.Equal(t, "", config.Services.TORCH.Username, "Username should default to empty")
 	assert.Equal(t, "", config.Services.TORCH.Password, "Password should default to empty")
-	assert.Equal(t, 30, config.Services.TORCH.ExtractionTimeoutMinutes, "Should default to 30 minutes")
-	assert.Equal(t, 5, config.Services.TORCH.PollingIntervalSeconds, "Should default to 5 seconds")
-	assert.Equal(t, 30, config.Services.TORCH.MaxPollingIntervalSeconds, "Should default to 30 seconds")
+	assert.Equal(t, 30*time.Minute, config.Services.TORCH.ExtractionTimeout, "Should default to 30 minutes")
+	assert.Equal(t, 5*time.Second, config.Services.TORCH.PollingInterval, "Should default to 5 seconds")
+	assert.Equal(t, 30*time.Second, config.Services.TORCH.MaxPollingInterval, "Should default to 30 seconds")
 	assert.Equal(t, 10, config.Services.TORCH.FileReadyRetries, "Should default to 10 retries")
-	assert.Equal(t, 10, config.Services.TORCH.FileReadyIntervalSeconds, "Should default to 10 seconds")
+	assert.Equal(t, 10*time.Second, config.Services.TORCH.FileReadyInterval, "Should default to 10 seconds")
 }
 
 func TestTORCHConfig_FileReadySettings(t *testing.T) {
@@ -726,11 +727,11 @@ services:
     base_url: "http://localhost:8080"
     username: "testuser"
     password: "testpass"
-    extraction_timeout_minutes: 30
-    polling_interval_seconds: 5
-    max_polling_interval_seconds: 30
+    extraction_timeout: PT30M
+    polling_interval: PT5S
+    max_polling_interval: PT30S
     file_ready_retries: 5
-    file_ready_interval_seconds: 3
+    file_ready_interval: PT3S
 
 pipeline:
   enabled_steps:
@@ -750,7 +751,7 @@ jobs_dir: "` + jobsDir + `"
 	require.NoError(t, err, "Config should load without error")
 
 	assert.Equal(t, 5, config.Services.TORCH.FileReadyRetries, "FileReadyRetries should be loaded")
-	assert.Equal(t, 3, config.Services.TORCH.FileReadyIntervalSeconds, "FileReadyIntervalSeconds should be loaded")
+	assert.Equal(t, 3*time.Second, config.Services.TORCH.FileReadyInterval, "FileReadyInterval should be loaded")
 }
 
 func TestTORCHConfig_FileReadySettingsDefault(t *testing.T) {
@@ -785,18 +786,18 @@ jobs_dir: "` + jobsDir + `"
 	require.NoError(t, err, "Config should load without error")
 
 	assert.Equal(t, 10, config.Services.TORCH.FileReadyRetries, "FileReadyRetries should default to 10")
-	assert.Equal(t, 10, config.Services.TORCH.FileReadyIntervalSeconds, "FileReadyIntervalSeconds should default to 10")
+	assert.Equal(t, 10*time.Second, config.Services.TORCH.FileReadyInterval, "FileReadyInterval should default to 10")
 }
 
 func TestTORCHConfig_ValidateMalformedURL(t *testing.T) {
 	// Test URL that causes url.Parse to fail (contains invalid characters)
 	config := models.TORCHConfig{
-		BaseURL:                   "http://[invalid",
-		Username:                  "user",
-		Password:                  "pass",
-		ExtractionTimeoutMinutes:  30,
-		PollingIntervalSeconds:    5,
-		MaxPollingIntervalSeconds: 30,
+		BaseURL:            "http://[invalid",
+		Username:           "user",
+		Password:           "pass",
+		ExtractionTimeout:  30 * time.Minute,
+		PollingInterval:    5 * time.Second,
+		MaxPollingInterval: 30 * time.Second,
 	}
 
 	err := config.Validate()
@@ -804,20 +805,19 @@ func TestTORCHConfig_ValidateMalformedURL(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid TORCH base_url")
 }
 
-func TestTORCHConfig_ValidatePollingIntervalTooHigh(t *testing.T) {
-	// Test polling interval above maximum (>60)
+func TestTORCHConfig_ValidateLargePollingInterval(t *testing.T) {
+	// Arbitrarily large polling intervals are now allowed
 	config := models.TORCHConfig{
-		BaseURL:                   "http://localhost:8080",
-		Username:                  "user",
-		Password:                  "pass",
-		ExtractionTimeoutMinutes:  30,
-		PollingIntervalSeconds:    61, // Invalid: > 60
-		MaxPollingIntervalSeconds: 61,
+		BaseURL:            "http://localhost:8080",
+		Username:           "user",
+		Password:           "pass",
+		ExtractionTimeout:  30 * time.Minute,
+		PollingInterval:    5 * time.Minute,
+		MaxPollingInterval: 5 * time.Minute,
 	}
 
 	err := config.Validate()
-	assert.Error(t, err, "Polling interval > 60 should fail validation")
-	assert.Contains(t, err.Error(), "polling_interval_seconds must be 1-60")
+	assert.NoError(t, err, "Large polling interval should be valid")
 }
 
 func TestTORCHConfig_ValidateEdgeCases(t *testing.T) {
@@ -830,50 +830,50 @@ func TestTORCHConfig_ValidateEdgeCases(t *testing.T) {
 		{
 			name: "Polling interval exactly 1 - valid",
 			config: models.TORCHConfig{
-				BaseURL:                   "http://localhost:8080",
-				ExtractionTimeoutMinutes:  1,
-				PollingIntervalSeconds:    1,
-				MaxPollingIntervalSeconds: 1,
+				BaseURL:            "http://localhost:8080",
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 1 * time.Second,
 			},
 			wantErr: false,
 		},
 		{
 			name: "Polling interval exactly 60 - valid",
 			config: models.TORCHConfig{
-				BaseURL:                   "http://localhost:8080",
-				ExtractionTimeoutMinutes:  1,
-				PollingIntervalSeconds:    60,
-				MaxPollingIntervalSeconds: 60,
+				BaseURL:            "http://localhost:8080",
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    60 * time.Second,
+				MaxPollingInterval: 60 * time.Second,
 			},
 			wantErr: false,
 		},
 		{
 			name: "Max polling equals min polling - valid",
 			config: models.TORCHConfig{
-				BaseURL:                   "http://localhost:8080",
-				ExtractionTimeoutMinutes:  1,
-				PollingIntervalSeconds:    10,
-				MaxPollingIntervalSeconds: 10,
+				BaseURL:            "http://localhost:8080",
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    10 * time.Second,
+				MaxPollingInterval: 10 * time.Second,
 			},
 			wantErr: false,
 		},
 		{
 			name: "HTTPS URL - valid",
 			config: models.TORCHConfig{
-				BaseURL:                   "https://torch.example.com",
-				ExtractionTimeoutMinutes:  30,
-				PollingIntervalSeconds:    5,
-				MaxPollingIntervalSeconds: 30,
+				BaseURL:            "https://torch.example.com",
+				ExtractionTimeout:  30 * time.Minute,
+				PollingInterval:    5 * time.Second,
+				MaxPollingInterval: 30 * time.Second,
 			},
 			wantErr: false,
 		},
 		{
 			name: "FTP URL - invalid scheme",
 			config: models.TORCHConfig{
-				BaseURL:                   "ftp://localhost",
-				ExtractionTimeoutMinutes:  30,
-				PollingIntervalSeconds:    5,
-				MaxPollingIntervalSeconds: 30,
+				BaseURL:            "ftp://localhost",
+				ExtractionTimeout:  30 * time.Minute,
+				PollingInterval:    5 * time.Second,
+				MaxPollingInterval: 30 * time.Second,
 			},
 			wantErr: true,
 			errMsg:  "must use http or https scheme",

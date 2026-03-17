@@ -2,6 +2,7 @@ package unit
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -192,12 +193,12 @@ func TestProjectConfig_Validate(t *testing.T) {
 			config: models.ProjectConfig{
 				Services: models.ServiceConfig{
 					TORCH: models.TORCHConfig{
-						BaseURL:                   "http://localhost:8080",
-						Username:                  "testuser",
-						Password:                  "testpass",
-						ExtractionTimeoutMinutes:  30,
-						PollingIntervalSeconds:    5,
-						MaxPollingIntervalSeconds: 30,
+						BaseURL:            "http://localhost:8080",
+						Username:           "testuser",
+						Password:           "testpass",
+						ExtractionTimeout:  30 * time.Minute,
+						PollingInterval:    5 * time.Second,
+						MaxPollingInterval: 30 * time.Second,
 					},
 				},
 				Pipeline: models.PipelineConfig{

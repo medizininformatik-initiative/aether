@@ -82,14 +82,14 @@ type ParquetConversionConfig struct {
 
 // TORCHConfig contains TORCH server connection and extraction behavior settings
 type TORCHConfig struct {
-	BaseURL                   string `yaml:"base_url" json:"base_url"`
-	Username                  string `yaml:"username" json:"username"`
-	Password                  string `yaml:"password" json:"password"`
-	ExtractionTimeoutMinutes  int    `yaml:"extraction_timeout_minutes" json:"extraction_timeout_minutes"`
-	PollingIntervalSeconds    int    `yaml:"polling_interval_seconds" json:"polling_interval_seconds"`
-	MaxPollingIntervalSeconds int    `yaml:"max_polling_interval_seconds" json:"max_polling_interval_seconds"`
-	FileReadyRetries          int    `yaml:"file_ready_retries" json:"file_ready_retries"`
-	FileReadyIntervalSeconds  int    `yaml:"file_ready_interval_seconds" json:"file_ready_interval_seconds"`
+	BaseURL            string        `yaml:"base_url" json:"base_url" mapstructure:"base_url"`
+	Username           string        `yaml:"username" json:"username" mapstructure:"username"`
+	Password           string        `yaml:"password" json:"password" mapstructure:"password"`
+	ExtractionTimeout  time.Duration `yaml:"extraction_timeout" json:"extraction_timeout" mapstructure:"extraction_timeout"`
+	PollingInterval    time.Duration `yaml:"polling_interval" json:"polling_interval" mapstructure:"polling_interval"`
+	MaxPollingInterval time.Duration `yaml:"max_polling_interval" json:"max_polling_interval" mapstructure:"max_polling_interval"`
+	FileReadyRetries   int           `yaml:"file_ready_retries" json:"file_ready_retries" mapstructure:"file_ready_retries"`
+	FileReadyInterval  time.Duration `yaml:"file_ready_interval" json:"file_ready_interval" mapstructure:"file_ready_interval"`
 }
 
 // SendMode defines the mode for sending data
@@ -359,14 +359,14 @@ func DefaultConfig() ProjectConfig {
 				URL: "",
 			},
 			TORCH: TORCHConfig{
-				BaseURL:                   "",
-				Username:                  "",
-				Password:                  "",
-				ExtractionTimeoutMinutes:  30,
-				PollingIntervalSeconds:    5,
-				MaxPollingIntervalSeconds: 30,
-				FileReadyRetries:          10,
-				FileReadyIntervalSeconds:  10,
+				BaseURL:            "",
+				Username:           "",
+				Password:           "",
+				ExtractionTimeout:  30 * time.Minute,
+				PollingInterval:    5 * time.Second,
+				MaxPollingInterval: 30 * time.Second,
+				FileReadyRetries:   10,
+				FileReadyInterval:  10 * time.Second,
 			},
 			Flattening:         DefaultFlatteningConfig(),
 			CRTDLPreprocessing: DefaultCRTDLPreprocessingConfig(),
@@ -402,17 +402,21 @@ func (c *TORCHConfig) Validate() error {
 
 	// Username and password are optional - TORCH may not require authentication in all environments
 
-	if c.ExtractionTimeoutMinutes <= 0 {
-		return fmt.Errorf("extraction_timeout_minutes must be > 0, got %d", c.ExtractionTimeoutMinutes)
+	if c.ExtractionTimeout <= 0 {
+		return fmt.Errorf("extraction_timeout must be > 0, got %s", c.ExtractionTimeout)
 	}
 
-	if c.PollingIntervalSeconds <= 0 || c.PollingIntervalSeconds > 60 {
-		return fmt.Errorf("polling_interval_seconds must be 1-60, got %d", c.PollingIntervalSeconds)
+	if c.PollingInterval < time.Second {
+		return fmt.Errorf("polling_interval must be >= 1s, got %s", c.PollingInterval)
 	}
 
-	if c.MaxPollingIntervalSeconds < c.PollingIntervalSeconds {
-		return fmt.Errorf("max_polling_interval_seconds (%d) must be >= polling_interval_seconds (%d)",
-			c.MaxPollingIntervalSeconds, c.PollingIntervalSeconds)
+	if c.MaxPollingInterval < c.PollingInterval {
+		return fmt.Errorf("max_polling_interval (%s) must be >= polling_interval (%s)",
+			c.MaxPollingInterval, c.PollingInterval)
+	}
+
+	if c.FileReadyInterval < 0 {
+		return fmt.Errorf("file_ready_interval must be >= 0, got %s", c.FileReadyInterval)
 	}
 
 	return nil

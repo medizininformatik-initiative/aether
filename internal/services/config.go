@@ -9,8 +9,25 @@ import (
 
 	"github.com/spf13/viper"
 
+	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 )
+
+// getDuration reads a viper key as a string and parses it as a duration,
+// supporting both ISO 8601 (e.g. "PT30M") and Go format (e.g. "30m").
+// Returns zero duration if the key is not set or empty.
+func getDuration(key string) time.Duration {
+	s := viper.GetString(key)
+	if s == "" {
+		return 0
+	}
+	d, err := lib.ParseDuration(s)
+	if err != nil {
+		// Fall back to viper's built-in parsing for numeric values
+		return viper.GetDuration(key)
+	}
+	return d
+}
 
 // viperGetBoolPtr returns a *bool if the key is explicitly set in config, or nil otherwise.
 func viperGetBoolPtr(key string) *bool {
@@ -74,14 +91,14 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			TORCH: models.TORCHConfig{
-				BaseURL:                   ExpandEnvVars(viper.GetString("services.torch.base_url")),
-				Username:                  ExpandEnvVars(viper.GetString("services.torch.username")),
-				Password:                  ExpandEnvVars(viper.GetString("services.torch.password")),
-				ExtractionTimeoutMinutes:  viper.GetInt("services.torch.extraction_timeout_minutes"),
-				PollingIntervalSeconds:    viper.GetInt("services.torch.polling_interval_seconds"),
-				MaxPollingIntervalSeconds: viper.GetInt("services.torch.max_polling_interval_seconds"),
-				FileReadyRetries:          viper.GetInt("services.torch.file_ready_retries"),
-				FileReadyIntervalSeconds:  viper.GetInt("services.torch.file_ready_interval_seconds"),
+				BaseURL:            ExpandEnvVars(viper.GetString("services.torch.base_url")),
+				Username:           ExpandEnvVars(viper.GetString("services.torch.username")),
+				Password:           ExpandEnvVars(viper.GetString("services.torch.password")),
+				ExtractionTimeout:  getDuration("services.torch.extraction_timeout"),
+				PollingInterval:    getDuration("services.torch.polling_interval"),
+				MaxPollingInterval: getDuration("services.torch.max_polling_interval"),
+				FileReadyRetries:   viper.GetInt("services.torch.file_ready_retries"),
+				FileReadyInterval:  getDuration("services.torch.file_ready_interval"),
 			},
 			DIMP: models.DIMPConfig{
 				URL:                    ExpandEnvVars(viper.GetString("services.dimp.url")),
@@ -103,7 +120,7 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 				ServiceURL:  ExpandEnvVars(viper.GetString("services.flattening.service_url")),
 				LookupPath:  ExpandEnvVars(viper.GetString("services.flattening.lookup_path")),
 				Formats:     viper.GetStringSlice("services.flattening.formats"),
-				Timeout:     viper.GetDuration("services.flattening.timeout"),
+				Timeout:     getDuration("services.flattening.timeout"),
 				BatchSizeMB: viper.GetInt("services.flattening.batch_size_mb"),
 			},
 			Send: models.SendConfig{
@@ -128,7 +145,7 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 					AccessKeyID:     ExpandEnvVars(viper.GetString("services.send.s3.access_key_id")),
 					SecretAccessKey: ExpandEnvVars(viper.GetString("services.send.s3.secret_access_key")),
 					UsePathStyle:    viper.GetBool("services.send.s3.use_path_style"),
-					Timeout:         viper.GetDuration("services.send.s3.timeout"),
+					Timeout:         getDuration("services.send.s3.timeout"),
 				},
 			},
 			LocalImport: models.LocalImportConfig{
@@ -214,20 +231,20 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 			config.JobsDir = "./jobs"
 		}
 		// Apply TORCH defaults for missing values
-		if config.Services.TORCH.ExtractionTimeoutMinutes == 0 {
-			config.Services.TORCH.ExtractionTimeoutMinutes = 30
+		if config.Services.TORCH.ExtractionTimeout == 0 {
+			config.Services.TORCH.ExtractionTimeout = 30 * time.Minute
 		}
-		if config.Services.TORCH.PollingIntervalSeconds == 0 {
-			config.Services.TORCH.PollingIntervalSeconds = 5
+		if config.Services.TORCH.PollingInterval == 0 {
+			config.Services.TORCH.PollingInterval = 5 * time.Second
 		}
-		if config.Services.TORCH.MaxPollingIntervalSeconds == 0 {
-			config.Services.TORCH.MaxPollingIntervalSeconds = 30
+		if config.Services.TORCH.MaxPollingInterval == 0 {
+			config.Services.TORCH.MaxPollingInterval = 30 * time.Second
 		}
 		if config.Services.TORCH.FileReadyRetries == 0 {
 			config.Services.TORCH.FileReadyRetries = 10
 		}
-		if config.Services.TORCH.FileReadyIntervalSeconds == 0 {
-			config.Services.TORCH.FileReadyIntervalSeconds = 10
+		if config.Services.TORCH.FileReadyInterval == 0 {
+			config.Services.TORCH.FileReadyInterval = 10 * time.Second
 		}
 		// Apply DIMP Bundle split threshold default if not set
 		if config.Services.DIMP.BundleSplitThresholdMB == 0 {

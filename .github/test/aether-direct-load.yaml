@@ -10,14 +10,14 @@ services:
     username: ""
     password: ""
 
-    # Maximum time to wait for extraction completion (in minutes)
-    extraction_timeout_minutes: 30
+    # Maximum time to wait for extraction completion (Go duration string, e.g. 30m)
+    extraction_timeout: PT30M
 
-    # Initial polling interval when checking extraction status (in seconds)
-    polling_interval_seconds: 5
+    # Initial polling interval when checking extraction status (Go duration string, e.g. 5s)
+    polling_interval: PT5S
 
     # Maximum polling interval (exponential backoff cap, in seconds)
-    max_polling_interval_seconds: 30
+    max_polling_interval: PT30S
 
   # Send step configuration - direct resource load to Blaze FHIR server
   send:

@@ -97,7 +97,7 @@ services:
 | `base_url` | string | - | TORCH server URL (required if torch step enabled) |
 | `username` | string | - | Authentication username |
 | `password` | string | - | Authentication password |
-| `extraction_timeout_minutes` | int | 30 | Max wait time for extraction |
+| `extraction_timeout_minutes` | int | 30 | Max wait time for extraction. Also serves as the safety net for transient polling errors — polling retries until this timeout is exceeded. |
 | `polling_interval_seconds` | int | 5 | Initial status check interval |
 | `max_polling_interval_seconds` | int | 30 | Max interval (exponential backoff cap) |
 

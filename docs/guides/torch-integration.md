@@ -54,6 +54,18 @@ services:
     polling_interval_seconds: 10     # Default is 5
 ```
 
+For extractions that may take several days (e.g., large patient cohorts), set `extraction_timeout_minutes` accordingly:
+
+```yaml
+services:
+  torch:
+    extraction_timeout_minutes: 4320  # 3 days
+```
+
+### Polling Resilience
+
+During status polling, transient HTTP errors (timeouts, connection resets) are treated as recoverable. If TORCH is temporarily unable to respond to status requests — for example, because it is saturated with CPU-intensive FHIR operations — aether logs a warning and continues polling with exponential backoff rather than failing the entire extraction. The `extraction_timeout_minutes` setting acts as the safety net: polling only stops when this overall timeout is exceeded.
+
 ### Direct TORCH URL Import
 
 If you already have a TORCH extraction or result URL, you can pass it directly to skip the CRTDL submission step:

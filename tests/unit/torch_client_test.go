@@ -1383,11 +1383,13 @@ func TestTORCHClient_SubmitExtraction_HttpDoError(t *testing.T) {
 	// Error should be a TORCHError with transient error type
 }
 
-// TestTORCHClient_PollExtractionStatus_HttpDoError verifies error handling when poll request fails
-// (covers lines 230-239 in torch_client.go)
+// TestTORCHClient_PollExtractionStatus_HttpDoError verifies that transient HTTP errors
+// during polling are retried until the extraction timeout is reached.
 func TestTORCHClient_PollExtractionStatus_HttpDoError(t *testing.T) {
 	// Create server that immediately closes connection
+	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
 		hj, ok := w.(http.Hijacker)
 		if ok {
 			conn, _, _ := hj.Hijack()
@@ -1397,20 +1399,62 @@ func TestTORCHClient_PollExtractionStatus_HttpDoError(t *testing.T) {
 	defer server.Close()
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	httpClient := services.NewHTTPClient(1*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:                   server.URL,
+		Username:                  "testuser",
+		Password:                  "testpass",
+		ExtractionTimeoutMinutes:  0, // Immediate timeout so the test completes quickly
+		PollingIntervalSeconds:    1,
+		MaxPollingIntervalSeconds: 1,
+	}
+
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+	_, err := client.PollExtractionStatus(server.URL+"/fhir/extraction/job-123", false)
+
+	assert.Error(t, err, "Should eventually fail with extraction timeout")
+	assert.ErrorIs(t, err, services.ErrExtractionTimeout)
+}
+
+// TestTORCHClient_PollExtractionStatus_HttpDoErrorThenRecovers verifies that transient HTTP errors
+// during polling are retried and polling succeeds once the server recovers.
+func TestTORCHClient_PollExtractionStatus_HttpDoErrorThenRecovers(t *testing.T) {
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		if requestCount <= 2 {
+			// First two requests: close connection to simulate transient error
+			hj, ok := w.(http.Hijacker)
+			if ok {
+				conn, _, _ := hj.Hijack()
+				_ = conn.Close()
+			}
+			return
+		}
+		// Third request: return completed result
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"output": [{"type": "data", "url": "/downloads/result.ndjson"}]}`))
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(2*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:                   server.URL,
 		Username:                  "testuser",
 		Password:                  "testpass",
 		ExtractionTimeoutMinutes:  1,
 		PollingIntervalSeconds:    1,
-		MaxPollingIntervalSeconds: 5,
+		MaxPollingIntervalSeconds: 2,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
-	_, err := client.PollExtractionStatus(server.URL+"/fhir/extraction/job-123", false)
+	fileURLs, err := client.PollExtractionStatus(server.URL+"/fhir/extraction/job-123", false)
 
-	assert.Error(t, err, "Should fail when poll request fails")
+	assert.NoError(t, err, "Should succeed after transient errors resolve")
+	assert.Len(t, fileURLs, 1, "Should return file URLs from successful response")
+	assert.Equal(t, 3, requestCount, "Should have retried through transient errors")
 }
 
 // TestTORCHClient_DownloadFile_HttpDoError verifies error handling when download request fails

@@ -342,13 +342,13 @@ func (c *TORCHClient) PollExtractionStatus(extractionURL string, showProgress bo
 		// Send request
 		resp, err := c.httpClient.client.Do(req)
 		if err != nil {
-			c.logger.Error("TORCH polling failed", "error", err, "attempt", pollConfig.PollCount)
-			return nil, &TORCHError{
-				Operation:  "poll",
-				StatusCode: 0,
-				Message:    err.Error(),
-				ErrorType:  models.ErrorTypeTransient,
-			}
+			// Treat transient HTTP errors (timeouts, connection resets) as recoverable
+			// during polling — the extraction may still be running on the server.
+			// The overall extraction timeout provides the safety net.
+			c.logger.Warn("TORCH poll request failed, will retry", "error", err, "attempt", pollConfig.PollCount)
+			time.Sleep(pollConfig.PollInterval)
+			pollConfig.UpdateInterval()
+			continue
 		}
 
 		// Handle response

@@ -14,12 +14,9 @@ import (
 
 // Validate checks if a PipelineJob has valid fields
 func (j *PipelineJob) Validate() error {
-	// Validate JobID is a valid UUID
-	if j.JobID == "" {
-		return errors.New("job_id is required")
-	}
-	if _, err := uuid.Parse(j.JobID); err != nil {
-		return fmt.Errorf("invalid job_id: must be a valid UUID: %w", err)
+	// Validate JobID (accepts both legacy UUID and new YYYYMMDD_HHMM_UUID format)
+	if err := ValidateJobID(j.JobID); err != nil {
+		return err
 	}
 
 	// Validate InputSource is not empty (unless using local_import with config directory)

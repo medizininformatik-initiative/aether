@@ -109,6 +109,104 @@ func TestCSVWriter_WriteCSVDirect(t *testing.T) {
 	})
 }
 
+func TestCSVWriter_AppendCSVData(t *testing.T) {
+	t.Run("first batch creates file with header and data", func(t *testing.T) {
+		tempDir := t.TempDir()
+		writer := services.NewCSVWriter(tempDir)
+
+		header := []string{"id", "name", "birthDate"}
+		data := "1,John,1990-01-01\n2,Jane,1985-05-15"
+
+		err := writer.AppendCSVData("patients.csv", header, data, true)
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(filepath.Join(tempDir, "patients.csv"))
+		require.NoError(t, err)
+
+		expected := "id,name,birthDate\n1,John,1990-01-01\n2,Jane,1985-05-15\n"
+		assert.Equal(t, expected, string(content))
+	})
+
+	t.Run("subsequent batch appends rows only without header", func(t *testing.T) {
+		tempDir := t.TempDir()
+		writer := services.NewCSVWriter(tempDir)
+
+		header := []string{"id", "name"}
+
+		// First batch
+		err := writer.AppendCSVData("test.csv", header, "1,Alice", true)
+		require.NoError(t, err)
+
+		// Second batch
+		err = writer.AppendCSVData("test.csv", header, "2,Bob", false)
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(filepath.Join(tempDir, "test.csv"))
+		require.NoError(t, err)
+
+		expected := "id,name\n1,Alice\n2,Bob\n"
+		assert.Equal(t, expected, string(content))
+	})
+
+	t.Run("first batch with empty data writes header only", func(t *testing.T) {
+		tempDir := t.TempDir()
+		writer := services.NewCSVWriter(tempDir)
+
+		header := []string{"id", "name"}
+
+		err := writer.AppendCSVData("empty.csv", header, "", true)
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(filepath.Join(tempDir, "empty.csv"))
+		require.NoError(t, err)
+
+		assert.Equal(t, "id,name\n", string(content))
+	})
+
+	t.Run("subsequent batch with empty data is no-op", func(t *testing.T) {
+		tempDir := t.TempDir()
+		writer := services.NewCSVWriter(tempDir)
+
+		header := []string{"id", "name"}
+
+		// First batch
+		err := writer.AppendCSVData("test.csv", header, "1,Alice", true)
+		require.NoError(t, err)
+
+		// Second batch with empty data
+		err = writer.AppendCSVData("test.csv", header, "", false)
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(filepath.Join(tempDir, "test.csv"))
+		require.NoError(t, err)
+
+		expected := "id,name\n1,Alice\n"
+		assert.Equal(t, expected, string(content))
+	})
+
+	t.Run("multiple appends accumulate correctly", func(t *testing.T) {
+		tempDir := t.TempDir()
+		writer := services.NewCSVWriter(tempDir)
+
+		header := []string{"id", "value"}
+
+		err := writer.AppendCSVData("multi.csv", header, "1,a", true)
+		require.NoError(t, err)
+
+		err = writer.AppendCSVData("multi.csv", header, "2,b\n3,c", false)
+		require.NoError(t, err)
+
+		err = writer.AppendCSVData("multi.csv", header, "4,d", false)
+		require.NoError(t, err)
+
+		content, err := os.ReadFile(filepath.Join(tempDir, "multi.csv"))
+		require.NoError(t, err)
+
+		expected := "id,value\n1,a\n2,b\n3,c\n4,d\n"
+		assert.Equal(t, expected, string(content))
+	})
+}
+
 func TestCSVWriter_WriteCSVErrors(t *testing.T) {
 	t.Run("invalid CSV data from flattener", func(t *testing.T) {
 		tempDir := t.TempDir()
@@ -210,6 +308,54 @@ func TestCountCSVRows(t *testing.T) {
 		count, err := services.CountCSVRows(csvData, true)
 		require.NoError(t, err)
 		assert.Equal(t, 0, count)
+	})
+}
+
+func TestCSVWriter_AppendCSVDataErrors(t *testing.T) {
+	t.Run("first batch MkdirAll error", func(t *testing.T) {
+		tempDir := t.TempDir()
+		blockingFile := filepath.Join(tempDir, "blocking_file")
+		require.NoError(t, os.WriteFile(blockingFile, []byte("content"), 0644))
+
+		invalidDir := filepath.Join(blockingFile, "subdir")
+		writer := services.NewCSVWriter(invalidDir)
+
+		err := writer.AppendCSVData("test.csv", []string{"id"}, "1", true)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to create output directory")
+	})
+
+	t.Run("first batch with invalid CSV data", func(t *testing.T) {
+		tempDir := t.TempDir()
+		writer := services.NewCSVWriter(tempDir)
+
+		err := writer.AppendCSVData("test.csv", []string{"id"}, `"unclosed`, true)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse CSV data")
+	})
+
+	t.Run("subsequent batch append to nonexistent file", func(t *testing.T) {
+		tempDir := t.TempDir()
+		writer := services.NewCSVWriter(tempDir)
+
+		// Don't create the file first, try to append directly
+		err := writer.AppendCSVData("nonexistent.csv", []string{"id"}, "1", false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to open CSV file for append")
+	})
+
+	t.Run("subsequent batch with invalid CSV data", func(t *testing.T) {
+		tempDir := t.TempDir()
+		writer := services.NewCSVWriter(tempDir)
+
+		// Create the file first with a valid first batch
+		err := writer.AppendCSVData("test.csv", []string{"id"}, "1", true)
+		require.NoError(t, err)
+
+		// Append invalid CSV data
+		err = writer.AppendCSVData("test.csv", []string{"id"}, `"unclosed`, false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse CSV data")
 	})
 }
 

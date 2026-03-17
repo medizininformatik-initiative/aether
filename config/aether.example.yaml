@@ -93,6 +93,13 @@ services:
     # Default: 30m (30 minutes)
     timeout: 30m
 
+    # Total memory budget in megabytes (MB) for streaming processing.
+    # This budget is divided equally across attribute groups — each group flushes
+    # to the flattener when its share is exceeded. For example, with batch_size_mb: 150
+    # and 3 groups, each group flushes at ~50 MB, keeping total memory near 150 MB.
+    # Default: 500 MB (0 means "use default")
+    batch_size_mb: 500
+
   # Send Step Configuration
   # Supports three modes determined by the 'send_as' setting:
   # - direct_resource_load: Sends NDJSON directly to a FHIR server using transaction bundles

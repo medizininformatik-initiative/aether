@@ -2603,3 +2603,70 @@ jobs_dir: "` + jobsDir + `"
 	require.NotNil(t, config.Services.Validation.FailOnError, "FailOnError should not be nil")
 	assert.False(t, *config.Services.Validation.FailOnError, "FailOnError should be false when explicitly set to false in config")
 }
+
+func TestConfigLoading_FlatteningBatchSizeMB(t *testing.T) {
+	t.Run("loads batch_size_mb from config", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		configFile := filepath.Join(tmpDir, "config.yaml")
+		jobsDir := filepath.Join(tmpDir, "jobs")
+		_ = os.MkdirAll(jobsDir, 0755)
+
+		configContent := `
+services:
+  flattening:
+    service_url: "http://localhost:8080"
+    lookup_path: "/path/to/lookup.json"
+    batch_size_mb: 25
+
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+		err := os.WriteFile(configFile, []byte(configContent), 0644)
+		require.NoError(t, err)
+
+		config, err := services.LoadConfig(configFile)
+		require.NoError(t, err)
+
+		assert.Equal(t, 25, config.Services.Flattening.BatchSizeMB)
+	})
+
+	t.Run("defaults to 500 when not set", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		configFile := filepath.Join(tmpDir, "config.yaml")
+		jobsDir := filepath.Join(tmpDir, "jobs")
+		_ = os.MkdirAll(jobsDir, 0755)
+
+		configContent := `
+services:
+  flattening:
+    service_url: "http://localhost:8080"
+    lookup_path: "/path/to/lookup.json"
+
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+		err := os.WriteFile(configFile, []byte(configContent), 0644)
+		require.NoError(t, err)
+
+		config, err := services.LoadConfig(configFile)
+		require.NoError(t, err)
+
+		assert.Equal(t, 500, config.Services.Flattening.BatchSizeMB)
+	})
+}

@@ -23,6 +23,7 @@ services:
     lookup_path: string
     formats: [string]                    # ["csv"]
     timeout: duration                    # default: 30m
+    batch_size_mb: integer               # default: 500
 
   send:
     send_as: string                      # "direct_resource_load" or "transfer_load"

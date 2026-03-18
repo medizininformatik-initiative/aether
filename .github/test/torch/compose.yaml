@@ -16,7 +16,7 @@ services:
         - torch
   torch:
     restart: unless-stopped
-    image: ghcr.io/medizininformatik-initiative/torch:1.0.0-test4@sha256:343c8e58af004af105b6f8a5b314cfc6faaa4132b0b5af86cd2ac45af3804187
+    image: ghcr.io/medizininformatik-initiative/torch:1.0.0-alpha.17@sha256:c732efad56d06821ac1102144a884bc5c09c322f26c8ac5f202295775e809d53
     # image: torch:latest
     networks: [ "aether", "torch" ]
     ports:
@@ -24,9 +24,9 @@ services:
     environment:
       TORCH_RESULTS_PERSISTENCE: PT12H30M5S
       TORCH_BUFFERSIZE: 100
-      # Nginx config: file server URL for download URLs returned by TORCH
-      NGINX_FILELOCATION: http://torch-proxy:80
-      NGINX_SERVERNAME: http://torch-proxy:80
+      # Connection Config
+      TORCH_BASE_URL: http://torch:8080
+      TORCH_OUTPUT_FILE_SERVER_URL: http://torch-proxy:80
       # FHIR server connection
       TORCH_FLARE_URL: http://torch-flare:8080
       TORCH_FHIR_URL: http://torch-hds:8080/fhir
@@ -39,9 +39,11 @@ services:
         -Dcom.sun.management.jmxremote.authenticate=false
         -Dcom.sun.management.jmxremote.ssl=false
         -Djava.rmi.server.hostname=localhost
-      TORCH_USECQL: true
+      TORCH_USE_CQL: true
+      TORCH_FHIR_DISABLE_ASYNC: true
       TORCH_BATCHSIZE: 500
-      TORCH_FHIR_PAGECOUNT: 500
+      TORCH_FHIR_PAGE_COUNT: 500
+      TORCH_FHIR_MAX_CONNECTIONS: 50
       TORCH_MAXCONCURRENCY: 4
       # Other
       LOG_LEVEL: trace

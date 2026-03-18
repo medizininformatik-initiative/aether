@@ -17,11 +17,52 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/pipeline"
 )
 
+// makeProvenance builds a Provenance resource for integration testing
+func makeProvenance(id string, targetRef string, groupID string) map[string]any {
+	return map[string]any{
+		"resourceType": "Provenance",
+		"id":           id,
+		"target": []any{
+			map[string]any{"reference": targetRef},
+		},
+		"entity": []any{
+			map[string]any{
+				"role": "source",
+				"what": map[string]any{
+					"identifier": map[string]any{
+						"system": models.AttributeGroupNamingSystem,
+						"value":  groupID,
+					},
+				},
+			},
+		},
+	}
+}
+
+// makeBundle creates a Bundle with given resources as entries
+func makeBundle(id string, resources ...map[string]any) map[string]any {
+	entries := make([]any, 0, len(resources))
+	for _, r := range resources {
+		entries = append(entries, map[string]any{
+			"resource": r,
+			"request": map[string]any{
+				"method": "PUT",
+				"url":    r["resourceType"].(string) + "/" + r["id"].(string),
+			},
+		})
+	}
+	return map[string]any{
+		"resourceType": "Bundle",
+		"id":           id,
+		"type":         "transaction",
+		"entry":        entries,
+	}
+}
+
 func TestExecuteFlatteningStep_FullPipeline(t *testing.T) {
 	// Create a mock fhir-flattener server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
-			// Return mock CSV data (without header)
 			w.Header().Set("Content-Type", "text/csv")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("1,John Doe,1990-01-15\n"))
@@ -36,17 +77,20 @@ func TestExecuteFlatteningStep_FullPipeline(t *testing.T) {
 	jobsDir := filepath.Join(tempDir, "jobs")
 	jobID := "test-flattening-job"
 	jobDir := filepath.Join(jobsDir, jobID)
-	inputDir := filepath.Join(jobDir, "import") // Input comes from import dir based on enabled steps
+	inputDir := filepath.Join(jobDir, "import")
 	outputDir := filepath.Join(jobDir, "csv")
 
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
-	// Create CRTDL file
+	groupID := "group-patient-1"
+
+	// Create CRTDL file with group ID
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
 	crtdlContent := `{
 		"dataExtraction": {
 			"attributeGroups": [
 				{
+					"id": "` + groupID + `",
 					"name": "Patients",
 					"groupReference": "https://example.com/Patient",
 					"attributes": [
@@ -81,10 +125,35 @@ func TestExecuteFlatteningStep_FullPipeline(t *testing.T) {
 	]`
 	require.NoError(t, os.WriteFile(lookupPath, []byte(lookupContent), 0644))
 
-	// Create input NDJSON file with FHIR resources
-	ndjsonContent := `{"resourceType":"Patient","id":"1","meta":{"profile":["https://example.com/Patient"]},"name":[{"text":"John Doe"}]}
-{"resourceType":"Patient","id":"2","meta":{"profile":["https://example.com/Patient"]},"name":[{"text":"Jane Smith"}]}`
-	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "patients.ndjson"), []byte(ndjsonContent), 0644))
+	// Create input NDJSON with Bundles containing Provenance resources
+	patient1 := map[string]any{
+		"resourceType": "Patient", "id": "1",
+		"meta": map[string]any{"profile": []any{"https://example.com/Patient"}},
+		"name": []any{map[string]any{"text": "John Doe"}},
+	}
+	patient2 := map[string]any{
+		"resourceType": "Patient", "id": "2",
+		"meta": map[string]any{"profile": []any{"https://example.com/Patient"}},
+		"name": []any{map[string]any{"text": "Jane Smith"}},
+	}
+	prov1 := makeProvenance("prov-1", "Patient/1", groupID)
+	prov2 := makeProvenance("prov-2", "Patient/2", groupID)
+
+	bundle1 := makeBundle("b1", patient1, prov1)
+	bundle2 := makeBundle("b2", patient2, prov2)
+
+	// Write bundles as NDJSON
+	f, err := os.Create(filepath.Join(inputDir, "patients.ndjson"))
+	require.NoError(t, err)
+	for _, b := range []map[string]any{bundle1, bundle2} {
+		data, err := json.Marshal(b)
+		require.NoError(t, err)
+		_, err = f.Write(data)
+		require.NoError(t, err)
+		_, err = f.WriteString("\n")
+		require.NoError(t, err)
+	}
+	require.NoError(t, f.Close())
 
 	// Create job configuration
 	job := &models.PipelineJob{
@@ -112,7 +181,7 @@ func TestExecuteFlatteningStep_FullPipeline(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 
 	// Execute flattening step
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err = pipeline.ExecuteFlatteningStep(job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Verify output files were created
@@ -222,6 +291,7 @@ func TestExecuteFlatteningStep_MissingLookupTables(t *testing.T) {
 	crtdlContent := `{
 		"dataExtraction": {
 			"attributeGroups": [{
+				"id": "group-1",
 				"name": "Test",
 				"groupReference": "https://example.com/Test",
 				"attributes": [{"attributeRef": "Test.id"}]
@@ -268,6 +338,7 @@ func TestExecuteFlatteningStep_NoInputFiles(t *testing.T) {
 	crtdlContent := `{
 		"dataExtraction": {
 			"attributeGroups": [{
+				"id": "group-1",
 				"name": "Test",
 				"groupReference": "https://example.com/Test",
 				"attributes": [{"attributeRef": "Test.id"}]
@@ -321,11 +392,14 @@ func TestExecuteFlatteningStep_FlattenerServiceError(t *testing.T) {
 	inputDir := filepath.Join(jobDir, "import")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
+	groupID := "group-patient"
+
 	// Create CRTDL
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
 	crtdlContent := `{
 		"dataExtraction": {
 			"attributeGroups": [{
+				"id": "` + groupID + `",
 				"name": "Test",
 				"groupReference": "https://example.com/Patient",
 				"attributes": [{"attributeRef": "Patient.id"}]
@@ -345,9 +419,17 @@ func TestExecuteFlatteningStep_FlattenerServiceError(t *testing.T) {
 	}]`
 	require.NoError(t, os.WriteFile(lookupPath, []byte(lookupContent), 0644))
 
-	// Create input file
-	ndjsonContent := `{"resourceType":"Patient","id":"1","meta":{"profile":["https://example.com/Patient"]}}`
-	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "patients.ndjson"), []byte(ndjsonContent), 0644))
+	// Create input Bundle with provenance
+	patient := map[string]any{
+		"resourceType": "Patient", "id": "1",
+		"meta": map[string]any{"profile": []any{"https://example.com/Patient"}},
+	}
+	prov := makeProvenance("prov-1", "Patient/1", groupID)
+	bundle := makeBundle("b1", patient, prov)
+
+	data, err := json.Marshal(bundle)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "patients.ndjson"), append(data, '\n'), 0644))
 
 	job := &models.PipelineJob{
 		JobID:       jobID,
@@ -371,51 +453,7 @@ func TestExecuteFlatteningStep_FlattenerServiceError(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err = pipeline.ExecuteFlatteningStep(job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "flattener failed")
-}
-
-func TestFilterResourcesByProfile(t *testing.T) {
-	tempDir := t.TempDir()
-
-	// Create test NDJSON file with multiple resource types
-	ndjsonContent := `{"resourceType":"Patient","id":"1","meta":{"profile":["https://example.com/Patient"]}}
-{"resourceType":"Condition","id":"2","meta":{"profile":["https://example.com/Condition"]}}
-{"resourceType":"Patient","id":"3","meta":{"profile":["https://example.com/Patient"]}}
-{"resourceType":"Observation","id":"4","meta":{}}`
-
-	ndjsonPath := filepath.Join(tempDir, "resources.ndjson")
-	require.NoError(t, os.WriteFile(ndjsonPath, []byte(ndjsonContent), 0644))
-
-	// Read the file and parse resources
-	content, err := os.ReadFile(ndjsonPath)
-	require.NoError(t, err)
-
-	var resources []map[string]any
-	for _, line := range []string{
-		`{"resourceType":"Patient","id":"1","meta":{"profile":["https://example.com/Patient"]}}`,
-		`{"resourceType":"Condition","id":"2","meta":{"profile":["https://example.com/Condition"]}}`,
-		`{"resourceType":"Patient","id":"3","meta":{"profile":["https://example.com/Patient"]}}`,
-		`{"resourceType":"Observation","id":"4","meta":{}}`,
-	} {
-		var resource map[string]any
-		require.NoError(t, json.Unmarshal([]byte(line), &resource))
-		resources = append(resources, resource)
-	}
-
-	assert.NotEmpty(t, content) // Use content to avoid unused variable
-
-	// Test filtering (this tests the internal filtering logic conceptually)
-	patientCount := 0
-	for _, r := range resources {
-		if meta, ok := r["meta"].(map[string]any); ok {
-			if profiles, ok := meta["profile"].([]any); ok && len(profiles) > 0 {
-				if profiles[0] == "https://example.com/Patient" {
-					patientCount++
-				}
-			}
-		}
-	}
-	assert.Equal(t, 2, patientCount)
 }

@@ -41,33 +41,62 @@ func writeTestNDJSON(t *testing.T, filename string, resources []map[string]any) 
 	}
 }
 
-func TestFilterResourcesByProfile(t *testing.T) {
-	t.Run("filters resources matching profile", func(t *testing.T) {
+// makeProvenance builds a Provenance resource for testing
+func makeProvenance(id string, targetRef string, groupID string) map[string]any {
+	return map[string]any{
+		"resourceType": "Provenance",
+		"id":           id,
+		"target": []any{
+			map[string]any{"reference": targetRef},
+		},
+		"entity": []any{
+			map[string]any{
+				"role": "source",
+				"what": map[string]any{
+					"identifier": map[string]any{
+						"system": models.AttributeGroupNamingSystem,
+						"value":  groupID,
+					},
+				},
+			},
+		},
+	}
+}
+
+// makeBundle creates a Bundle with the given entries
+func makeBundle(id string, entries ...map[string]any) map[string]any {
+	entryList := make([]any, 0, len(entries))
+	for _, e := range entries {
+		entryList = append(entryList, map[string]any{
+			"resource": e,
+			"request": map[string]any{
+				"method": "PUT",
+				"url":    e["resourceType"].(string) + "/" + e["id"].(string),
+			},
+		})
+	}
+	return map[string]any{
+		"resourceType": "Bundle",
+		"id":           id,
+		"type":         "transaction",
+		"entry":        entryList,
+	}
+}
+
+func TestFilterResourcesByProvenance(t *testing.T) {
+	t.Run("filters resources matching group via provenance", func(t *testing.T) {
 		resources := []map[string]any{
-			{
-				"resourceType": "Patient",
-				"id":           "1",
-				"meta": map[string]any{
-					"profile": []any{"http://example.org/Profile/Patient"},
-				},
-			},
-			{
-				"resourceType": "Patient",
-				"id":           "2",
-				"meta": map[string]any{
-					"profile": []any{"http://example.org/Profile/Patient"},
-				},
-			},
-			{
-				"resourceType": "Condition",
-				"id":           "3",
-				"meta": map[string]any{
-					"profile": []any{"http://example.org/Profile/Condition"},
-				},
-			},
+			{"resourceType": "Patient", "id": "1"},
+			{"resourceType": "Patient", "id": "2"},
+			{"resourceType": "Condition", "id": "3"},
+		}
+		index := models.ProvenanceIndex{
+			"Patient/1":   {"group-a"},
+			"Patient/2":   {"group-a"},
+			"Condition/3": {"group-b"},
 		}
 
-		result := pipeline.FilterResourcesByProfile(resources, "http://example.org/Profile/Patient")
+		result := pipeline.FilterResourcesByProvenance(resources, index, "group-a")
 		assert.Len(t, result, 2)
 		assert.Equal(t, "1", result[0]["id"])
 		assert.Equal(t, "2", result[1]["id"])
@@ -75,102 +104,60 @@ func TestFilterResourcesByProfile(t *testing.T) {
 
 	t.Run("returns empty for no matches", func(t *testing.T) {
 		resources := []map[string]any{
-			{
-				"resourceType": "Patient",
-				"id":           "1",
-				"meta": map[string]any{
-					"profile": []any{"http://example.org/Profile/Other"},
-				},
-			},
+			{"resourceType": "Patient", "id": "1"},
+		}
+		index := models.ProvenanceIndex{
+			"Patient/1": {"group-a"},
 		}
 
-		result := pipeline.FilterResourcesByProfile(resources, "http://example.org/Profile/Patient")
+		result := pipeline.FilterResourcesByProvenance(resources, index, "group-b")
 		assert.Empty(t, result)
 	})
 
-	t.Run("handles resource without meta", func(t *testing.T) {
+	t.Run("returns empty for empty provenance index", func(t *testing.T) {
 		resources := []map[string]any{
-			{
-				"resourceType": "Patient",
-				"id":           "1",
-			},
+			{"resourceType": "Patient", "id": "1"},
 		}
+		index := models.ProvenanceIndex{}
 
-		result := pipeline.FilterResourcesByProfile(resources, "http://example.org/Profile/Patient")
+		result := pipeline.FilterResourcesByProvenance(resources, index, "group-a")
 		assert.Empty(t, result)
 	})
 
-	t.Run("handles resource with meta but no profile", func(t *testing.T) {
+	t.Run("skips resources without resourceType or id", func(t *testing.T) {
 		resources := []map[string]any{
-			{
-				"resourceType": "Patient",
-				"id":           "1",
-				"meta": map[string]any{
-					"versionId": "1",
-				},
-			},
+			{"resourceType": "Patient"},           // missing id
+			{"id": "1"},                           // missing resourceType
+			{"resourceType": "Patient", "id": ""}, // empty id
+		}
+		index := models.ProvenanceIndex{
+			"Patient/1": {"group-a"},
 		}
 
-		result := pipeline.FilterResourcesByProfile(resources, "http://example.org/Profile/Patient")
+		result := pipeline.FilterResourcesByProvenance(resources, index, "group-a")
 		assert.Empty(t, result)
 	})
 
-	t.Run("handles resource with empty profile array", func(t *testing.T) {
+	t.Run("handles nil index", func(t *testing.T) {
 		resources := []map[string]any{
-			{
-				"resourceType": "Patient",
-				"id":           "1",
-				"meta": map[string]any{
-					"profile": []any{},
-				},
-			},
+			{"resourceType": "Patient", "id": "1"},
 		}
 
-		result := pipeline.FilterResourcesByProfile(resources, "http://example.org/Profile/Patient")
+		result := pipeline.FilterResourcesByProvenance(resources, nil, "group-a")
 		assert.Empty(t, result)
 	})
+}
 
-	t.Run("handles resource with non-string profile", func(t *testing.T) {
-		resources := []map[string]any{
-			{
-				"resourceType": "Patient",
-				"id":           "1",
-				"meta": map[string]any{
-					"profile": []any{123}, // not a string
-				},
-			},
-		}
-
-		result := pipeline.FilterResourcesByProfile(resources, "http://example.org/Profile/Patient")
-		assert.Empty(t, result)
+func TestResourceReference(t *testing.T) {
+	t.Run("builds reference from resource", func(t *testing.T) {
+		r := map[string]any{"resourceType": "Patient", "id": "123"}
+		assert.Equal(t, "Patient/123", pipeline.ResourceReference(r))
 	})
 
-	t.Run("handles meta that is not a map", func(t *testing.T) {
-		resources := []map[string]any{
-			{
-				"resourceType": "Patient",
-				"id":           "1",
-				"meta":         "not a map",
-			},
-		}
-
-		result := pipeline.FilterResourcesByProfile(resources, "http://example.org/Profile/Patient")
-		assert.Empty(t, result)
-	})
-
-	t.Run("handles profile that is not an array", func(t *testing.T) {
-		resources := []map[string]any{
-			{
-				"resourceType": "Patient",
-				"id":           "1",
-				"meta": map[string]any{
-					"profile": "not an array",
-				},
-			},
-		}
-
-		result := pipeline.FilterResourcesByProfile(resources, "http://example.org/Profile/Patient")
-		assert.Empty(t, result)
+	t.Run("returns empty for missing fields", func(t *testing.T) {
+		assert.Equal(t, "", pipeline.ResourceReference(map[string]any{"resourceType": "Patient"}))
+		assert.Equal(t, "", pipeline.ResourceReference(map[string]any{"id": "1"}))
+		assert.Equal(t, "", pipeline.ResourceReference(map[string]any{}))
 	})
 }
 
@@ -187,18 +174,18 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, resources)
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
 		assert.Equal(t, "1", result[0]["id"])
 		assert.Equal(t, "2", result[1]["id"])
+		assert.Empty(t, index)
 	})
 
 	t.Run("handles empty lines", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		filePath := filepath.Join(tmpDir, "test.ndjson")
 
-		// Write file with empty lines manually
 		content := `{"resourceType": "Patient", "id": "1"}
 
 {"resourceType": "Patient", "id": "2"}
@@ -206,40 +193,34 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		err := os.WriteFile(filePath, []byte(content), 0644)
 		require.NoError(t, err)
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
 	})
 
-	t.Run("extracts resources from Bundle", func(t *testing.T) {
+	t.Run("extracts clinical resources from Bundle and builds provenance index", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		filePath := filepath.Join(tmpDir, "bundle.ndjson")
 
-		bundle := map[string]any{
-			"resourceType": "Bundle",
-			"type":         "collection",
-			"entry": []any{
-				map[string]any{
-					"resource": map[string]any{
-						"resourceType": "Patient",
-						"id":           "1",
-					},
-				},
-				map[string]any{
-					"resource": map[string]any{
-						"resourceType": "Patient",
-						"id":           "2",
-					},
-				},
-			},
-		}
+		patient := map[string]any{"resourceType": "Patient", "id": "p1"}
+		condition := map[string]any{"resourceType": "Condition", "id": "c1"}
+		provPatient := makeProvenance("prov-1", "Patient/p1", "group-patient")
+		provCondition := makeProvenance("prov-2", "Condition/c1", "group-condition")
+
+		bundle := makeBundle("bundle-1", patient, condition, provPatient, provCondition)
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
+
+		// Only clinical resources returned, no Provenance
 		assert.Len(t, result, 2)
 		assert.Equal(t, "Patient", result[0]["resourceType"])
-		assert.Equal(t, "1", result[0]["id"])
+		assert.Equal(t, "Condition", result[1]["resourceType"])
+
+		// Provenance index maps targets to group IDs
+		assert.Equal(t, []string{"group-patient"}, index["Patient/p1"])
+		assert.Equal(t, []string{"group-condition"}, index["Condition/c1"])
 	})
 
 	t.Run("handles Bundle with invalid entry structure", func(t *testing.T) {
@@ -261,9 +242,8 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
-		// Should extract only the valid entry
 		assert.Len(t, result, 1)
 	})
 
@@ -282,7 +262,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		assert.Empty(t, result)
 	})
@@ -302,7 +282,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		assert.Empty(t, result)
 	})
@@ -318,14 +298,13 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
-		// Bundle without valid entries should result in empty resources
 		assert.Empty(t, result)
 	})
 
 	t.Run("returns error for nonexistent file", func(t *testing.T) {
-		_, err := pipeline.LoadResourcesFromFile("/nonexistent/path/file.ndjson", logger, lib.DefaultMaxNDJSONLineSize)
+		_, _, err := pipeline.LoadResourcesFromFile("/nonexistent/path/file.ndjson", logger, lib.DefaultMaxNDJSONLineSize)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to open file")
 	})
@@ -334,7 +313,6 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		tmpDir := t.TempDir()
 		filePath := filepath.Join(tmpDir, "invalid.ndjson")
 
-		// Write file with invalid JSON
 		content := `{"resourceType": "Patient", "id": "1"}
 {invalid json}
 {"resourceType": "Patient", "id": "2"}
@@ -342,32 +320,314 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		err := os.WriteFile(filePath, []byte(content), 0644)
 		require.NoError(t, err)
 
-		result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
-		// Should skip invalid line and continue
 		assert.Len(t, result, 2)
+	})
+
+	t.Run("provenance with multiple targets maps all to same group", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "multi-target.ndjson")
+
+		patient := map[string]any{"resourceType": "Patient", "id": "p1"}
+		obs := map[string]any{"resourceType": "Observation", "id": "o1"}
+
+		// Provenance with two targets
+		prov := map[string]any{
+			"resourceType": "Provenance",
+			"id":           "prov-multi",
+			"target": []any{
+				map[string]any{"reference": "Patient/p1"},
+				map[string]any{"reference": "Observation/o1"},
+			},
+			"entity": []any{
+				map[string]any{
+					"role": "source",
+					"what": map[string]any{
+						"identifier": map[string]any{
+							"system": models.AttributeGroupNamingSystem,
+							"value":  "group-x",
+						},
+					},
+				},
+			},
+		}
+
+		bundle := map[string]any{
+			"resourceType": "Bundle",
+			"id":           "b1",
+			"type":         "transaction",
+			"entry": []any{
+				map[string]any{"resource": patient},
+				map[string]any{"resource": obs},
+				map[string]any{"resource": prov},
+			},
+		}
+		writeTestNDJSON(t, filePath, []map[string]any{bundle})
+
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		require.NoError(t, err)
+		assert.Len(t, result, 2) // Patient + Observation, no Provenance
+		assert.Equal(t, []string{"group-x"}, index["Patient/p1"])
+		assert.Equal(t, []string{"group-x"}, index["Observation/o1"])
+	})
+
+	t.Run("provenance with empty targets produces no index entries", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "empty-targets.ndjson")
+
+		patient := map[string]any{"resourceType": "Patient", "id": "p1"}
+		prov := map[string]any{
+			"resourceType": "Provenance",
+			"id":           "prov-empty",
+			"target":       []any{},
+			"entity": []any{
+				map[string]any{
+					"role": "source",
+					"what": map[string]any{
+						"identifier": map[string]any{
+							"system": models.AttributeGroupNamingSystem,
+							"value":  "group-x",
+						},
+					},
+				},
+			},
+		}
+
+		bundle := map[string]any{
+			"resourceType": "Bundle",
+			"id":           "b1",
+			"type":         "transaction",
+			"entry": []any{
+				map[string]any{"resource": patient},
+				map[string]any{"resource": prov},
+			},
+		}
+		writeTestNDJSON(t, filePath, []map[string]any{bundle})
+
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		require.NoError(t, err)
+		assert.Len(t, result, 1)
+		assert.Empty(t, index)
+	})
+
+	t.Run("provenance with non-array target is ignored in index", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "bad-target.ndjson")
+
+		patient := map[string]any{"resourceType": "Patient", "id": "p1"}
+		// Provenance has valid entity but target is a string instead of []any
+		prov := map[string]any{
+			"resourceType": "Provenance",
+			"id":           "prov-bad-target",
+			"target":       "not-an-array",
+			"entity": []any{
+				map[string]any{
+					"role": "source",
+					"what": map[string]any{
+						"identifier": map[string]any{
+							"system": models.AttributeGroupNamingSystem,
+							"value":  "group-x",
+						},
+					},
+				},
+			},
+		}
+
+		bundle := makeBundle("b1", patient, prov)
+		writeTestNDJSON(t, filePath, []map[string]any{bundle})
+
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		require.NoError(t, err)
+		assert.Len(t, result, 1)
+		assert.Empty(t, index)
+	})
+
+	t.Run("provenance with non-map target entry is skipped", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "bad-target-entry.ndjson")
+
+		patient := map[string]any{"resourceType": "Patient", "id": "p1"}
+		prov := map[string]any{
+			"resourceType": "Provenance",
+			"id":           "prov-bad-entry",
+			"target": []any{
+				"not-a-map",
+				map[string]any{"reference": "Patient/p1"},
+			},
+			"entity": []any{
+				map[string]any{
+					"role": "source",
+					"what": map[string]any{
+						"identifier": map[string]any{
+							"system": models.AttributeGroupNamingSystem,
+							"value":  "group-x",
+						},
+					},
+				},
+			},
+		}
+
+		bundle := makeBundle("b1", patient, prov)
+		writeTestNDJSON(t, filePath, []map[string]any{bundle})
+
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		require.NoError(t, err)
+		assert.Len(t, result, 1)
+		// Only the valid target entry should be indexed
+		assert.Equal(t, []string{"group-x"}, index["Patient/p1"])
+	})
+
+	t.Run("provenance target with missing reference is skipped", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "no-ref.ndjson")
+
+		patient := map[string]any{"resourceType": "Patient", "id": "p1"}
+		prov := map[string]any{
+			"resourceType": "Provenance",
+			"id":           "prov-no-ref",
+			"target": []any{
+				map[string]any{"display": "no reference field"},
+				map[string]any{"reference": ""},
+				map[string]any{"reference": "Patient/p1"},
+			},
+			"entity": []any{
+				map[string]any{
+					"role": "source",
+					"what": map[string]any{
+						"identifier": map[string]any{
+							"system": models.AttributeGroupNamingSystem,
+							"value":  "group-x",
+						},
+					},
+				},
+			},
+		}
+
+		bundle := makeBundle("b1", patient, prov)
+		writeTestNDJSON(t, filePath, []map[string]any{bundle})
+
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		require.NoError(t, err)
+		assert.Len(t, result, 1)
+		// Only the valid reference should be indexed
+		assert.Equal(t, []string{"group-x"}, index["Patient/p1"])
+		assert.Len(t, index, 1)
+	})
+
+	t.Run("provenance with non-array entity is ignored", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "bad-entity.ndjson")
+
+		patient := map[string]any{"resourceType": "Patient", "id": "p1"}
+		prov := map[string]any{
+			"resourceType": "Provenance",
+			"id":           "prov-bad-entity",
+			"target":       []any{map[string]any{"reference": "Patient/p1"}},
+			"entity":       "not-an-array",
+		}
+
+		bundle := makeBundle("b1", patient, prov)
+		writeTestNDJSON(t, filePath, []map[string]any{bundle})
+
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		require.NoError(t, err)
+		assert.Len(t, result, 1)
+		assert.Empty(t, index)
+	})
+
+	t.Run("provenance entity with non-map what is skipped", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "bad-what.ndjson")
+
+		patient := map[string]any{"resourceType": "Patient", "id": "p1"}
+		prov := map[string]any{
+			"resourceType": "Provenance",
+			"id":           "prov-bad-what",
+			"target":       []any{map[string]any{"reference": "Patient/p1"}},
+			"entity": []any{
+				map[string]any{
+					"role": "source",
+					"what": "not-a-map",
+				},
+			},
+		}
+
+		bundle := makeBundle("b1", patient, prov)
+		writeTestNDJSON(t, filePath, []map[string]any{bundle})
+
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		require.NoError(t, err)
+		assert.Len(t, result, 1)
+		assert.Empty(t, index)
+	})
+
+	t.Run("provenance without attribute_group entity is ignored", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "no-group.ndjson")
+
+		patient := map[string]any{"resourceType": "Patient", "id": "p1"}
+		// Provenance with only extraction_id entity, no attribute_group
+		prov := map[string]any{
+			"resourceType": "Provenance",
+			"id":           "prov-no-group",
+			"target":       []any{map[string]any{"reference": "Patient/p1"}},
+			"entity": []any{
+				map[string]any{
+					"role": "source",
+					"what": map[string]any{
+						"identifier": map[string]any{
+							"system": "https://example.com/other-system",
+							"value":  "some-value",
+						},
+					},
+				},
+			},
+		}
+
+		bundle := map[string]any{
+			"resourceType": "Bundle",
+			"id":           "b1",
+			"type":         "transaction",
+			"entry": []any{
+				map[string]any{"resource": patient},
+				map[string]any{"resource": prov},
+			},
+		}
+		writeTestNDJSON(t, filePath, []map[string]any{bundle})
+
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		require.NoError(t, err)
+		assert.Len(t, result, 1)
+		assert.Empty(t, index)
 	})
 }
 
 func TestLoadAllResources(t *testing.T) {
 	logger := createFlatteningTestLogger()
 
-	t.Run("loads resources from multiple files", func(t *testing.T) {
+	t.Run("loads resources from multiple files and merges provenance", func(t *testing.T) {
 		tmpDir := t.TempDir()
 
 		file1 := filepath.Join(tmpDir, "file1.ndjson")
 		file2 := filepath.Join(tmpDir, "file2.ndjson")
 
-		writeTestNDJSON(t, file1, []map[string]any{
-			{"resourceType": "Patient", "id": "1"},
-		})
-		writeTestNDJSON(t, file2, []map[string]any{
-			{"resourceType": "Patient", "id": "2"},
-		})
+		p1 := map[string]any{"resourceType": "Patient", "id": "1"}
+		prov1 := makeProvenance("prov-1", "Patient/1", "group-a")
+		bundle1 := makeBundle("b1", p1, prov1)
 
-		result, err := pipeline.LoadAllResources([]string{file1, file2}, logger, lib.DefaultMaxNDJSONLineSize)
+		p2 := map[string]any{"resourceType": "Patient", "id": "2"}
+		prov2 := makeProvenance("prov-2", "Patient/2", "group-a")
+		bundle2 := makeBundle("b2", p2, prov2)
+
+		writeTestNDJSON(t, file1, []map[string]any{bundle1})
+		writeTestNDJSON(t, file2, []map[string]any{bundle2})
+
+		result, index, err := pipeline.LoadAllResources([]string{file1, file2}, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
+		assert.Equal(t, []string{"group-a"}, index["Patient/1"])
+		assert.Equal(t, []string{"group-a"}, index["Patient/2"])
 	})
 
 	t.Run("returns error if any file fails", func(t *testing.T) {
@@ -377,15 +637,16 @@ func TestLoadAllResources(t *testing.T) {
 			{"resourceType": "Patient", "id": "1"},
 		})
 
-		_, err := pipeline.LoadAllResources([]string{file1, "/nonexistent/file.ndjson"}, logger, lib.DefaultMaxNDJSONLineSize)
+		_, _, err := pipeline.LoadAllResources([]string{file1, "/nonexistent/file.ndjson"}, logger, lib.DefaultMaxNDJSONLineSize)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to load")
 	})
 
 	t.Run("handles empty file list", func(t *testing.T) {
-		result, err := pipeline.LoadAllResources([]string{}, logger, lib.DefaultMaxNDJSONLineSize)
+		result, index, err := pipeline.LoadAllResources([]string{}, logger, lib.DefaultMaxNDJSONLineSize)
 		require.NoError(t, err)
 		assert.Empty(t, result)
+		assert.Empty(t, index)
 	})
 }
 
@@ -491,12 +752,13 @@ func createFlatteningTestJob(serviceURL, lookupPath, crtdlPath string) *models.P
 	}
 }
 
-// Helper to write a valid CRTDL file
-func writeTestCRTDL(t *testing.T, path string, groupName, groupRef string) {
+// Helper to write a valid CRTDL file with group ID
+func writeTestCRTDL(t *testing.T, path string, groupID, groupName, groupRef string) {
 	crtdl := map[string]any{
 		"dataExtraction": map[string]any{
 			"attributeGroups": []map[string]any{
 				{
+					"id":             groupID,
 					"name":           groupName,
 					"groupReference": groupRef,
 					"attributes": []map[string]any{
@@ -540,7 +802,7 @@ func TestExecuteFlatteningStep_ConfigValidationError(t *testing.T) {
 	require.NoError(t, os.MkdirAll(jobDir, 0755))
 
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", "https://example.com/Patient")
+	writeTestCRTDL(t, crtdlPath, "group-1", "Patient", "https://example.com/Patient")
 
 	// Create job with invalid config (empty ServiceURL)
 	job := &models.PipelineJob{
@@ -578,7 +840,7 @@ func TestExecuteFlatteningStep_LookupValidationError(t *testing.T) {
 	require.NoError(t, os.MkdirAll(jobDir, 0755))
 
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", "https://example.com/Patient")
+	writeTestCRTDL(t, crtdlPath, "group-1", "Patient", "https://example.com/Patient")
 
 	// Create lookup table with duplicate URLs (validation error)
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -608,7 +870,6 @@ func TestExecuteFlatteningStep_LookupValidationError(t *testing.T) {
 }
 
 // TestExecuteFlatteningStep_ViewDefinitionBuildError tests line 141-146
-// When no matching lookup table is found, the group should be skipped with a warning
 func TestExecuteFlatteningStep_ViewDefinitionBuildError(t *testing.T) {
 	tempDir := t.TempDir()
 	jobID := "test-viewdef-error"
@@ -618,7 +879,7 @@ func TestExecuteFlatteningStep_ViewDefinitionBuildError(t *testing.T) {
 
 	// Create CRTDL referencing a profile that doesn't exist in lookup
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "UnknownType", "https://example.com/UnknownProfile")
+	writeTestCRTDL(t, crtdlPath, "group-1", "UnknownType", "https://example.com/UnknownProfile")
 
 	// Create lookup table for a different profile
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -641,8 +902,7 @@ func TestExecuteFlatteningStep_ViewDefinitionBuildError(t *testing.T) {
 	assert.Empty(t, csvFiles)
 }
 
-// TestExecuteFlatteningStep_NoMatchingResources tests line 151-156
-// When resources don't match the profile, they should be skipped
+// TestExecuteFlatteningStep_NoMatchingResources tests provenance-based filtering
 func TestExecuteFlatteningStep_NoMatchingResources(t *testing.T) {
 	tempDir := t.TempDir()
 	jobID := "test-no-matching"
@@ -651,15 +911,16 @@ func TestExecuteFlatteningStep_NoMatchingResources(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", "https://example.com/Patient")
+	writeTestCRTDL(t, crtdlPath, "group-1", "Patient", "https://example.com/Patient")
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, "https://example.com/Patient", "Patient")
 
-	// Create input NDJSON file with resources that have DIFFERENT profiles
-	ndjsonContent := `{"resourceType":"Patient","id":"1","meta":{"profile":["https://example.com/OtherProfile"]}}
-{"resourceType":"Patient","id":"2","meta":{"profile":["https://example.com/AnotherProfile"]}}`
-	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte(ndjsonContent), 0644))
+	// Create input with resources that have NO provenance mapping to "group-1"
+	patient := map[string]any{"resourceType": "Patient", "id": "1"}
+	prov := makeProvenance("prov-1", "Patient/1", "different-group-id")
+	bundle := makeBundle("b1", patient, prov)
+	writeTestNDJSON(t, filepath.Join(inputDir, "test.ndjson"), []map[string]any{bundle})
 
 	job := createFlatteningTestJob("http://localhost:8080", lookupPath, crtdlPath)
 
@@ -675,7 +936,6 @@ func TestExecuteFlatteningStep_NoMatchingResources(t *testing.T) {
 }
 
 // TestExecuteFlatteningStep_LoadAllResourcesError tests line 112-116
-// When loading resources fails, the step should error
 func TestExecuteFlatteningStep_LoadAllResourcesError(t *testing.T) {
 	tempDir := t.TempDir()
 	jobID := "test-load-error"
@@ -684,7 +944,7 @@ func TestExecuteFlatteningStep_LoadAllResourcesError(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", "https://example.com/Patient")
+	writeTestCRTDL(t, crtdlPath, "group-1", "Patient", "https://example.com/Patient")
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, "https://example.com/Patient", "Patient")
@@ -702,9 +962,7 @@ func TestExecuteFlatteningStep_LoadAllResourcesError(t *testing.T) {
 }
 
 // TestExecuteFlatteningStep_OutputDirCreationError tests line 84-88
-// When output directory cannot be created, the step should error
 func TestExecuteFlatteningStep_OutputDirCreationError(t *testing.T) {
-	// Skip on systems where we can't reliably test permission errors
 	if os.Getuid() == 0 {
 		t.Skip("Cannot test permission errors as root")
 	}
@@ -716,17 +974,15 @@ func TestExecuteFlatteningStep_OutputDirCreationError(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", "https://example.com/Patient")
+	writeTestCRTDL(t, crtdlPath, "group-1", "Patient", "https://example.com/Patient")
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, "https://example.com/Patient", "Patient")
 
 	// Create a file at the path where we want to create the csv directory
-	// This will cause MkdirAll to fail
 	csvPath := filepath.Join(jobDir, "csv")
 	require.NoError(t, os.WriteFile(csvPath, []byte("not a directory"), 0644))
 
-	// Create input file
 	ndjsonContent := `{"resourceType":"Patient","id":"1","meta":{"profile":["https://example.com/Patient"]}}`
 	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte(ndjsonContent), 0644))
 
@@ -738,38 +994,29 @@ func TestExecuteFlatteningStep_OutputDirCreationError(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to create output directory")
 }
 
-// TestLoadResourcesFromFile_ScannerError tests line 275-277
-// When scanner encounters an error, it should be returned
+// TestLoadResourcesFromFile_ScannerError tests the scanner.Err() path
 func TestLoadResourcesFromFile_ScannerError(t *testing.T) {
-	// This test covers the scanner.Err() path
-	// We test with a file that has extremely long lines that exceed scanner buffer
-	// However, we've set a 100MB buffer which is impractical to test
-	// Instead, test that a properly formatted file with valid content works
 	logger := createFlatteningTestLogger()
 
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "test.ndjson")
 
-	// Write a normal file and verify it works
 	resources := []map[string]any{
 		{"resourceType": "Patient", "id": "1"},
 	}
 	writeTestNDJSON(t, filePath, resources)
 
-	result, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+	result, _, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
 }
 
 // TestExecuteFlatteningStep_ViewDefinitionWriteError tests line 153-158
-// When ViewDefinition write fails, it should log warning and continue
 func TestExecuteFlatteningStep_ViewDefinitionWriteError(t *testing.T) {
-	// Skip on systems where we can't reliably test permission errors
 	if os.Getuid() == 0 {
 		t.Skip("Cannot test permission errors as root")
 	}
 
-	// Create mock flattener server that returns valid CSV data
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			w.Header().Set("Content-Type", "text/csv")
@@ -793,21 +1040,27 @@ func TestExecuteFlatteningStep_ViewDefinitionWriteError(t *testing.T) {
 	// Create viewdefinitions as a file instead of directory to cause MkdirAll to fail
 	require.NoError(t, os.WriteFile(viewDefDir, []byte("not a directory"), 0644))
 
+	groupID := "group-patient"
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", "https://example.com/Patient")
+	writeTestCRTDL(t, crtdlPath, groupID, "Patient", "https://example.com/Patient")
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, "https://example.com/Patient", "Patient")
 
-	// Create input NDJSON file with matching profile
-	ndjsonContent := `{"resourceType":"Patient","id":"1","meta":{"profile":["https://example.com/Patient"]}}`
-	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte(ndjsonContent), 0644))
+	// Create input Bundle with provenance mapping to the group
+	patient := map[string]any{
+		"resourceType": "Patient",
+		"id":           "1",
+		"meta":         map[string]any{"profile": []any{"https://example.com/Patient"}},
+	}
+	prov := makeProvenance("prov-1", "Patient/1", groupID)
+	bundle := makeBundle("b1", patient, prov)
+	writeTestNDJSON(t, filepath.Join(inputDir, "test.ndjson"), []map[string]any{bundle})
 
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
 
 	// Should complete successfully even though ViewDefinition write fails
-	// (non-fatal error, logged as warning and continues)
 	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
 	require.NoError(t, err)
 
@@ -818,14 +1071,11 @@ func TestExecuteFlatteningStep_ViewDefinitionWriteError(t *testing.T) {
 }
 
 // TestExecuteFlatteningStep_CSVWriteError tests line 176-180
-// When CSV writing fails, the step should return an error
 func TestExecuteFlatteningStep_CSVWriteError(t *testing.T) {
-	// Skip on systems where we can't reliably test permission errors
 	if os.Getuid() == 0 {
 		t.Skip("Cannot test permission errors as root")
 	}
 
-	// Create mock flattener server that returns valid CSV data
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			w.Header().Set("Content-Type", "text/csv")
@@ -845,20 +1095,26 @@ func TestExecuteFlatteningStep_CSVWriteError(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 	// Create csv directory with read-only permissions
 	require.NoError(t, os.MkdirAll(csvDir, 0555))
-	// Ensure cleanup restores permissions for t.TempDir cleanup
 	t.Cleanup(func() {
 		_ = os.Chmod(csvDir, 0755)
 	})
 
+	groupID := "group-patient"
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", "https://example.com/Patient")
+	writeTestCRTDL(t, crtdlPath, groupID, "Patient", "https://example.com/Patient")
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, "https://example.com/Patient", "Patient")
 
-	// Create input NDJSON file with matching profile
-	ndjsonContent := `{"resourceType":"Patient","id":"1","meta":{"profile":["https://example.com/Patient"]}}`
-	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte(ndjsonContent), 0644))
+	// Create input Bundle with provenance
+	patient := map[string]any{
+		"resourceType": "Patient",
+		"id":           "1",
+		"meta":         map[string]any{"profile": []any{"https://example.com/Patient"}},
+	}
+	prov := makeProvenance("prov-1", "Patient/1", groupID)
+	bundle := makeBundle("b1", patient, prov)
+	writeTestNDJSON(t, filepath.Join(inputDir, "test.ndjson"), []map[string]any{bundle})
 
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
@@ -893,24 +1149,27 @@ func TestExecuteFlatteningStep_MultipleBatches(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	profileURL := "https://example.com/Patient"
+	groupID := "group-patient"
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", profileURL)
+	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, profileURL, "Patient")
 
-	// Create many resources to exceed batch threshold
-	// Each resource is ~100 bytes; with batch_size_mb=1 (actually we'll use small byte threshold)
-	var resources []map[string]any
+	// Create many Bundles with Provenance to exceed batch threshold
+	var bundles []map[string]any
 	for i := 0; i < 50; i++ {
-		resources = append(resources, map[string]any{
+		patientID := fmt.Sprintf("patient-%d", i)
+		patient := map[string]any{
 			"resourceType": "Patient",
-			"id":           fmt.Sprintf("patient-%d", i),
+			"id":           patientID,
 			"meta":         map[string]any{"profile": []any{profileURL}},
 			"name":         []any{map[string]any{"family": "TestFamily", "given": []any{"TestGiven"}}},
-		})
+		}
+		prov := makeProvenance(fmt.Sprintf("prov-%d", i), "Patient/"+patientID, groupID)
+		bundles = append(bundles, makeBundle(fmt.Sprintf("b-%d", i), patient, prov))
 	}
-	writeTestNDJSON(t, filepath.Join(inputDir, "patients.ndjson"), resources)
+	writeTestNDJSON(t, filepath.Join(inputDir, "patients.ndjson"), bundles)
 
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	// Set a very small batch size to force multiple batches (1 byte = every resource triggers a flush)
@@ -955,14 +1214,21 @@ func TestExecuteFlatteningStep_FlattenerError(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	profileURL := "https://example.com/Patient"
+	groupID := "group-patient"
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", profileURL)
+	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, profileURL, "Patient")
 
-	ndjsonContent := `{"resourceType":"Patient","id":"1","meta":{"profile":["https://example.com/Patient"]}}`
-	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte(ndjsonContent), 0644))
+	// Create Bundle with Provenance so resource is routed to the flattener
+	patient := map[string]any{
+		"resourceType": "Patient", "id": "1",
+		"meta": map[string]any{"profile": []any{profileURL}},
+	}
+	prov := makeProvenance("prov-1", "Patient/1", groupID)
+	bundle := makeBundle("b1", patient, prov)
+	writeTestNDJSON(t, filepath.Join(inputDir, "test.ndjson"), []map[string]any{bundle})
 
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
@@ -993,33 +1259,19 @@ func TestExecuteFlatteningStep_BundleExtraction(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	profileURL := "https://example.com/Patient"
+	groupID := "group-patient"
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", profileURL)
+	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, profileURL, "Patient")
 
-	// Create a Bundle containing Patient resources
-	bundle := map[string]any{
-		"resourceType": "Bundle",
-		"type":         "collection",
-		"entry": []any{
-			map[string]any{
-				"resource": map[string]any{
-					"resourceType": "Patient",
-					"id":           "bundled-1",
-					"meta":         map[string]any{"profile": []any{profileURL}},
-				},
-			},
-			map[string]any{
-				"resource": map[string]any{
-					"resourceType": "Patient",
-					"id":           "bundled-2",
-					"meta":         map[string]any{"profile": []any{profileURL}},
-				},
-			},
-		},
-	}
+	// Create a Bundle containing Patient resources with Provenance
+	p1 := map[string]any{"resourceType": "Patient", "id": "bundled-1", "meta": map[string]any{"profile": []any{profileURL}}}
+	p2 := map[string]any{"resourceType": "Patient", "id": "bundled-2", "meta": map[string]any{"profile": []any{profileURL}}}
+	prov1 := makeProvenance("prov-1", "Patient/bundled-1", groupID)
+	prov2 := makeProvenance("prov-2", "Patient/bundled-2", groupID)
+	bundle := makeBundle("b1", p1, p2, prov1, prov2)
 	writeTestNDJSON(t, filepath.Join(inputDir, "bundle.ndjson"), []map[string]any{bundle})
 
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
@@ -1063,8 +1315,9 @@ func TestExecuteFlatteningStep_StreamingEdgeCases(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	profileURL := "https://example.com/Patient"
+	groupID := "group-patient"
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", profileURL)
+	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, profileURL, "Patient")
@@ -1072,25 +1325,22 @@ func TestExecuteFlatteningStep_StreamingEdgeCases(t *testing.T) {
 	// NDJSON with many edge cases:
 	// - empty lines (skipped)
 	// - invalid JSON (skipped with warning)
-	// - resource without meta (no match)
-	// - resource with meta as non-map (no match)
-	// - resource with profiles as non-array (no match)
-	// - resource with non-string profile entry (no match)
-	// - valid matching resource (processed)
-	// - Bundle with invalid entry (not a map)
-	// - Bundle with entry missing resource field
-	// - Bundle with entry where resource is not a map
-	// - Bundle with valid matching entry (processed)
+	// - standalone resources without provenance (no match - provenance routing)
+	// - Bundle with invalid entries (skipped gracefully)
+	// - Bundle with valid entries + Provenance (processed)
+	validBundle := makeBundle("b-valid",
+		map[string]any{"resourceType": "Patient", "id": "valid", "meta": map[string]any{"profile": []any{profileURL}}},
+		makeProvenance("prov-valid", "Patient/valid", groupID),
+	)
+	validBundleJSON, _ := json.Marshal(validBundle)
+
 	ndjsonContent := strings.Join([]string{
 		``,               // empty line
 		`{invalid json}`, // invalid JSON
-		`{"resourceType":"Patient","id":"no-meta"}`,                                                  // no meta
-		`{"resourceType":"Patient","id":"meta-string","meta":"not a map"}`,                           // meta not a map
-		`{"resourceType":"Patient","id":"profiles-string","meta":{"profile":"not an array"}}`,        // profiles not array
-		`{"resourceType":"Patient","id":"profile-int","meta":{"profile":[123]}}`,                     // non-string profile
-		`{"resourceType":"Patient","id":"empty-profiles","meta":{"profile":[]}}`,                     // empty profiles
-		fmt.Sprintf(`{"resourceType":"Patient","id":"valid","meta":{"profile":["%s"]}}`, profileURL), // valid match
-		fmt.Sprintf(`{"resourceType":"Bundle","type":"collection","entry":["not a map",{"fullUrl":"urn:1"},{"resource":"not a map"},{"resource":{"resourceType":"Patient","id":"bundle-valid","meta":{"profile":["%s"]}}}]}`, profileURL), // Bundle with edge cases
+		`{"resourceType":"Patient","id":"no-provenance"}`,                                                                  // no provenance mapping
+		`{"resourceType":"Patient","id":"meta-string","meta":"not a map"}`,                                                 // meta not a map
+		`{"resourceType":"Bundle","type":"collection","entry":["not a map",{"fullUrl":"urn:1"},{"resource":"not a map"}]}`, // Bundle with only invalid entries
+		string(validBundleJSON), // Bundle with valid entry + Provenance
 	}, "\n")
 	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "edges.ndjson"), []byte(ndjsonContent), 0644))
 
@@ -1100,7 +1350,7 @@ func TestExecuteFlatteningStep_StreamingEdgeCases(t *testing.T) {
 	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
 	require.NoError(t, err)
 
-	// Flattener should be called once (both valid resources in one batch)
+	// Flattener should be called once (only the valid Bundle entry with provenance)
 	assert.GreaterOrEqual(t, flattenCalls, 1)
 
 	// CSV should exist with data
@@ -1132,28 +1382,47 @@ func TestExecuteFlatteningStep_BatchFlushOnThreshold(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	profileURL := "https://example.com/Patient"
+	groupID := "group-patient"
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", profileURL)
+	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, profileURL, "Patient")
 
-	// Create non-Bundle resources large enough to exceed the 1MB batch threshold.
-	// Each resource is ~10KB (padded with a large name), so ~110 resources ≈ 1.1MB.
+	// Create Bundles with large resources and Provenance to exceed the 1MB batch threshold.
 	longName := strings.Repeat("X", 10000)
-	var lines []string
-	for i := 0; i < 110; i++ {
-		lines = append(lines, fmt.Sprintf(`{"resourceType":"Patient","id":"p%d","meta":{"profile":["%s"]},"name":[{"family":"%s_%d"}]}`, i, profileURL, longName, i))
-	}
-	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "patients.ndjson"), []byte(strings.Join(lines, "\n")), 0644))
 
-	// Also create a Bundle with entries large enough to trigger a mid-Bundle flush
-	var entries []string
+	// Create Bundles with individual patients + Provenance (each ~10KB)
+	var bundles []map[string]any
 	for i := 0; i < 110; i++ {
-		entries = append(entries, fmt.Sprintf(`{"resource":{"resourceType":"Patient","id":"bp%d","meta":{"profile":["%s"]},"name":[{"family":"%s_%d"}]}}`, i, profileURL, longName, i))
+		patientID := fmt.Sprintf("p%d", i)
+		patient := map[string]any{
+			"resourceType": "Patient",
+			"id":           patientID,
+			"meta":         map[string]any{"profile": []any{profileURL}},
+			"name":         []any{map[string]any{"family": fmt.Sprintf("%s_%d", longName, i)}},
+		}
+		prov := makeProvenance(fmt.Sprintf("prov-%d", i), "Patient/"+patientID, groupID)
+		bundles = append(bundles, makeBundle(fmt.Sprintf("b-%d", i), patient, prov))
 	}
-	bundleLine := fmt.Sprintf(`{"resourceType":"Bundle","type":"collection","entry":[%s]}`, strings.Join(entries, ","))
-	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "bundle.ndjson"), []byte(bundleLine), 0644))
+	writeTestNDJSON(t, filepath.Join(inputDir, "patients.ndjson"), bundles)
+
+	// Also create a single large Bundle with many entries + Provenance to trigger a mid-Bundle flush
+	var bundleEntries []map[string]any
+	for i := 0; i < 110; i++ {
+		patientID := fmt.Sprintf("bp%d", i)
+		bundleEntries = append(bundleEntries,
+			map[string]any{
+				"resourceType": "Patient",
+				"id":           patientID,
+				"meta":         map[string]any{"profile": []any{profileURL}},
+				"name":         []any{map[string]any{"family": fmt.Sprintf("%s_%d", longName, i)}},
+			},
+			makeProvenance(fmt.Sprintf("bprov-%d", i), "Patient/"+patientID, groupID),
+		)
+	}
+	bigBundle := makeBundle("big-bundle", bundleEntries...)
+	writeTestNDJSON(t, filepath.Join(inputDir, "bundle.ndjson"), []map[string]any{bigBundle})
 
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	job.Config.Services.Flattening.BatchSizeMB = 1 // 1MB threshold
@@ -1194,19 +1463,22 @@ func TestExecuteFlatteningStep_NilViewDefSkipped(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	profileURL := "https://example.com/Patient"
+	groupID := "group-patient"
 
 	// CRTDL references a profile, but the lookup table has NO matching entry for it.
 	// This means the ViewDefinition build will fail, leaving viewDefs[0] == nil.
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", profileURL)
+	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	// Write lookup for a completely different profile
 	writeTestLookupTable(t, lookupPath, "https://example.com/Observation", "Observation")
 
-	// Resource that would match the group's profileURL — but viewDef is nil
-	ndjsonContent := fmt.Sprintf(`{"resourceType":"Patient","id":"1","meta":{"profile":["%s"]}}`, profileURL)
-	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte(ndjsonContent), 0644))
+	// Resource with provenance mapping to group — but viewDef is nil so it should be skipped
+	patient := map[string]any{"resourceType": "Patient", "id": "1", "meta": map[string]any{"profile": []any{profileURL}}}
+	prov := makeProvenance("prov-1", "Patient/1", groupID)
+	bundle := makeBundle("b1", patient, prov)
+	writeTestNDJSON(t, filepath.Join(inputDir, "test.ndjson"), []map[string]any{bundle})
 
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
@@ -1234,15 +1506,18 @@ func TestExecuteFlatteningStep_BundleEntryUnmatchedProfile(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	profileURL := "https://example.com/Patient"
+	groupID := "group-patient"
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", profileURL)
+	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, profileURL, "Patient")
 
-	// Bundle with entries that have an unmatched profile
-	bundle := `{"resourceType":"Bundle","type":"collection","entry":[{"resource":{"resourceType":"Patient","id":"1","meta":{"profile":["https://example.com/DifferentProfile"]}}}]}`
-	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "bundle.ndjson"), []byte(bundle), 0644))
+	// Bundle with Provenance that maps to a DIFFERENT group ID (not in CRTDL)
+	patient := map[string]any{"resourceType": "Patient", "id": "1", "meta": map[string]any{"profile": []any{profileURL}}}
+	prov := makeProvenance("prov-1", "Patient/1", "different-group-id")
+	bundle := makeBundle("b1", patient, prov)
+	writeTestNDJSON(t, filepath.Join(inputDir, "bundle.ndjson"), []map[string]any{bundle})
 
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
@@ -1267,26 +1542,34 @@ func TestExecuteFlatteningStep_FlattenerErrorDuringFlush(t *testing.T) {
 	tempDir := t.TempDir()
 
 	profileURL := "https://example.com/Patient"
+	groupID := "group-patient"
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", profileURL)
+	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, profileURL, "Patient")
 
 	longName := strings.Repeat("Y", 10000)
 
-	t.Run("non-bundle flush error", func(t *testing.T) {
+	t.Run("bundle flush error with individual bundles", func(t *testing.T) {
 		jobID := "test-flush-error-nonbundle"
 		jobDir := filepath.Join(tempDir, "jobs", jobID)
 		inputDir := filepath.Join(jobDir, "import")
 		require.NoError(t, os.MkdirAll(inputDir, 0755))
 
-		// Create enough non-Bundle resources to exceed 1MB batch threshold
-		var lines []string
+		// Create enough Bundles with Provenance to exceed 1MB batch threshold
+		var bundles []map[string]any
 		for i := 0; i < 110; i++ {
-			lines = append(lines, fmt.Sprintf(`{"resourceType":"Patient","id":"p%d","meta":{"profile":["%s"]},"name":[{"family":"%s_%d"}]}`, i, profileURL, longName, i))
+			patientID := fmt.Sprintf("p%d", i)
+			patient := map[string]any{
+				"resourceType": "Patient", "id": patientID,
+				"meta": map[string]any{"profile": []any{profileURL}},
+				"name": []any{map[string]any{"family": fmt.Sprintf("%s_%d", longName, i)}},
+			}
+			prov := makeProvenance(fmt.Sprintf("prov-%d", i), "Patient/"+patientID, groupID)
+			bundles = append(bundles, makeBundle(fmt.Sprintf("b-%d", i), patient, prov))
 		}
-		require.NoError(t, os.WriteFile(filepath.Join(inputDir, "patients.ndjson"), []byte(strings.Join(lines, "\n")), 0644))
+		writeTestNDJSON(t, filepath.Join(inputDir, "patients.ndjson"), bundles)
 
 		job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 		job.Config.Services.Flattening.BatchSizeMB = 1
@@ -1297,19 +1580,27 @@ func TestExecuteFlatteningStep_FlattenerErrorDuringFlush(t *testing.T) {
 		assert.Contains(t, err.Error(), "flattener failed for group")
 	})
 
-	t.Run("bundle flush error", func(t *testing.T) {
+	t.Run("bundle flush error with single large bundle", func(t *testing.T) {
 		jobID := "test-flush-error-bundle"
 		jobDir := filepath.Join(tempDir, "jobs", jobID)
 		inputDir := filepath.Join(jobDir, "import")
 		require.NoError(t, os.MkdirAll(inputDir, 0755))
 
-		// Create a Bundle with enough large entries to exceed 1MB
-		var entries []string
+		// Create a single large Bundle with enough entries + Provenance to exceed 1MB
+		var entries []map[string]any
 		for i := 0; i < 110; i++ {
-			entries = append(entries, fmt.Sprintf(`{"resource":{"resourceType":"Patient","id":"bp%d","meta":{"profile":["%s"]},"name":[{"family":"%s_%d"}]}}`, i, profileURL, longName, i))
+			patientID := fmt.Sprintf("bp%d", i)
+			entries = append(entries,
+				map[string]any{
+					"resourceType": "Patient", "id": patientID,
+					"meta": map[string]any{"profile": []any{profileURL}},
+					"name": []any{map[string]any{"family": fmt.Sprintf("%s_%d", longName, i)}},
+				},
+				makeProvenance(fmt.Sprintf("bprov-%d", i), "Patient/"+patientID, groupID),
+			)
 		}
-		bundleLine := fmt.Sprintf(`{"resourceType":"Bundle","type":"collection","entry":[%s]}`, strings.Join(entries, ","))
-		require.NoError(t, os.WriteFile(filepath.Join(inputDir, "bundle.ndjson"), []byte(bundleLine), 0644))
+		bigBundle := makeBundle("big-bundle", entries...)
+		writeTestNDJSON(t, filepath.Join(inputDir, "bundle.ndjson"), []map[string]any{bigBundle})
 
 		job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 		job.Config.Services.Flattening.BatchSizeMB = 1
@@ -1341,7 +1632,7 @@ func TestExecuteFlatteningStep_OpenFileError(t *testing.T) {
 
 	profileURL := "https://example.com/Patient"
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", profileURL)
+	writeTestCRTDL(t, crtdlPath, "group-patient", "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, profileURL, "Patient")
@@ -1361,6 +1652,76 @@ func TestExecuteFlatteningStep_OpenFileError(t *testing.T) {
 
 // TestExecuteFlatteningStep_UnknownProfile verifies resources with unknown profiles
 // are silently skipped during streaming
+// TestExecuteFlatteningStep_ProvenanceInPseudonymizedDir verifies that provenance is scanned
+// from the input directory (pseudonymized/) when DIMP preserves Provenance.entity.
+func TestExecuteFlatteningStep_ProvenanceInPseudonymizedDir(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/fhir/ViewDefinition/$run" {
+			w.Header().Set("Content-Type", "text/csv")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("1,John Doe\n"))
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	jobID := "test-provenance-pseudonymized"
+	jobDir := filepath.Join(tempDir, "jobs", jobID)
+	pseudonymizedDir := filepath.Join(jobDir, "pseudonymized")
+	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
+
+	groupID := "group-patient"
+	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	writeTestCRTDL(t, crtdlPath, groupID, "Patient", "https://example.com/Patient")
+	lookupPath := filepath.Join(tempDir, "lookup.json")
+	writeTestLookupTable(t, lookupPath, "https://example.com/Patient", "Patient")
+
+	// pseudonymized/ has Bundles WITH Provenance (DIMP preserves Provenance.entity)
+	patient := map[string]any{
+		"resourceType": "Patient", "id": "hashed-1",
+		"meta": map[string]any{"profile": []any{"https://example.com/Patient"}},
+	}
+	prov := makeProvenance("prov-1", "Patient/hashed-1", groupID)
+
+	bundle := makeBundle("b1", patient, prov)
+	writeTestNDJSON(t, filepath.Join(pseudonymizedDir, "data.ndjson"), []map[string]any{bundle})
+
+	// Configure pipeline: torch -> dimp -> flattening, so inputDir resolves to pseudonymized/
+	job := &models.PipelineJob{
+		JobID:       jobID,
+		Status:      models.JobStatusInProgress,
+		InputSource: crtdlPath,
+		InputType:   models.InputTypeCRTDL,
+		Config: models.ProjectConfig{
+			Services: models.ServiceConfig{
+				Flattening: models.FlatteningConfig{
+					ServiceURL: server.URL,
+					LookupPath: lookupPath,
+					Formats:    []string{"csv"},
+					Timeout:    30 * 1000000000,
+				},
+			},
+			Pipeline: models.PipelineConfig{
+				EnabledSteps: []models.StepName{models.StepTorchImport, models.StepDIMP, models.StepFlattening},
+			},
+			Retry: models.RetryConfig{MaxAttempts: 1},
+		},
+		Steps: []models.PipelineStep{},
+	}
+
+	logger := createFlatteningTestLogger()
+
+	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	require.NoError(t, err)
+
+	// CSV output should be produced — provenance is in the pseudonymized input
+	csvFiles, err := filepath.Glob(filepath.Join(jobDir, "csv", "*.csv"))
+	require.NoError(t, err)
+	assert.NotEmpty(t, csvFiles, "expected CSV output when provenance is in pseudonymized/")
+}
+
 func TestExecuteFlatteningStep_UnknownProfile(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Should never be called if all resources have unknown profiles
@@ -1375,14 +1736,15 @@ func TestExecuteFlatteningStep_UnknownProfile(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	crtdlPath := filepath.Join(tempDir, "test.crtdl")
-	writeTestCRTDL(t, crtdlPath, "Patient", "https://example.com/Patient")
+	writeTestCRTDL(t, crtdlPath, "group-patient", "Patient", "https://example.com/Patient")
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, "https://example.com/Patient", "Patient")
 
-	// Resources with a DIFFERENT profile that doesn't match any group
-	ndjsonContent := `{"resourceType":"Patient","id":"1","meta":{"profile":["https://example.com/UnknownProfile"]}}`
-	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte(ndjsonContent), 0644))
+	// Bundle with resource but no provenance mapping — resource won't match any group
+	patient := map[string]any{"resourceType": "Patient", "id": "1", "meta": map[string]any{"profile": []any{"https://example.com/UnknownProfile"}}}
+	bundle := makeBundle("b1", patient)
+	writeTestNDJSON(t, filepath.Join(inputDir, "test.ndjson"), []map[string]any{bundle})
 
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()

@@ -20,6 +20,7 @@ func TestParseCRTDL(t *testing.T) {
 			"dataExtraction": {
 				"attributeGroups": [
 					{
+						"id": "group-1",
 						"name": "Patients",
 						"groupReference": "https://example.com/Patient",
 						"attributes": [
@@ -37,6 +38,7 @@ func TestParseCRTDL(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, doc)
 		assert.Len(t, doc.DataExtraction.AttributeGroups, 1)
+		assert.Equal(t, "group-1", doc.DataExtraction.AttributeGroups[0].ID)
 		assert.Equal(t, "Patients", doc.DataExtraction.AttributeGroups[0].Name)
 		assert.Equal(t, "https://example.com/Patient", doc.DataExtraction.AttributeGroups[0].GroupReference)
 		assert.Len(t, doc.DataExtraction.AttributeGroups[0].Attributes, 2)
@@ -49,11 +51,13 @@ func TestParseCRTDL(t *testing.T) {
 			"dataExtraction": {
 				"attributeGroups": [
 					{
+						"id": "group-1",
 						"name": "Patients",
 						"groupReference": "https://example.com/Patient",
 						"attributes": [{"attributeRef": "Patient.id", "mustHave": true}]
 					},
 					{
+						"id": "group-2",
 						"name": "Conditions",
 						"groupReference": "https://example.com/Condition",
 						"attributes": [{"attributeRef": "Condition.code", "mustHave": true}]
@@ -98,12 +102,33 @@ func TestParseCRTDL(t *testing.T) {
 		assert.Contains(t, err.Error(), "at least one attributeGroup")
 	})
 
+	t.Run("missing id", func(t *testing.T) {
+		tempDir := t.TempDir()
+		crtdlPath := filepath.Join(tempDir, "test.crtdl")
+		crtdlJSON := `{
+			"dataExtraction": {
+				"attributeGroups": [{
+					"name": "Patients",
+					"groupReference": "https://example.com/Patient",
+					"attributes": [{"attributeRef": "Patient.id", "mustHave": true}]
+				}]
+			}
+		}`
+		err := os.WriteFile(crtdlPath, []byte(crtdlJSON), 0644)
+		require.NoError(t, err)
+
+		_, err = services.ParseCRTDL(crtdlPath)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "missing 'id' field")
+	})
+
 	t.Run("missing name", func(t *testing.T) {
 		tempDir := t.TempDir()
 		crtdlPath := filepath.Join(tempDir, "test.crtdl")
 		crtdlJSON := `{
 			"dataExtraction": {
 				"attributeGroups": [{
+					"id": "group-1",
 					"groupReference": "https://example.com/Patient",
 					"attributes": [{"attributeRef": "Patient.id", "mustHave": true}]
 				}]
@@ -123,6 +148,7 @@ func TestParseCRTDL(t *testing.T) {
 		crtdlJSON := `{
 			"dataExtraction": {
 				"attributeGroups": [{
+					"id": "group-1",
 					"name": "Patients",
 					"attributes": [{"attributeRef": "Patient.id", "mustHave": true}]
 				}]
@@ -142,6 +168,7 @@ func TestParseCRTDL(t *testing.T) {
 		crtdlJSON := `{
 			"dataExtraction": {
 				"attributeGroups": [{
+					"id": "group-1",
 					"name": "Patients",
 					"groupReference": "https://example.com/Patient",
 					"attributes": []
@@ -162,6 +189,7 @@ func TestParseCRTDL(t *testing.T) {
 		crtdlJSON := `{
 			"dataExtraction": {
 				"attributeGroups": [{
+					"id": "group-1",
 					"name": "Patients",
 					"groupReference": "https://example.com/Patient",
 					"attributes": [{"mustHave": true}]

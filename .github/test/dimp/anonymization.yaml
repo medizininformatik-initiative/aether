@@ -21,12 +21,20 @@ fhirPathRules:
     otherValues: redact
   - path: nodesByType('Address')
     method: redact
-  - path: Resource.id
-    method: cryptoHash
-  - path: Bundle.entry.fullUrl
-    method: cryptoHash
   - path: Bundle.entry.request.url
     method: cryptoHash
+    truncateToMaxLength: 32
+  - path: Resource.id
+    method: cryptoHash
+    truncateToMaxLength: 32
+  - path: Provenance.target.reference
+    method: cryptoHash
+    truncateToMaxLength: 32
+  - path: Provenance.entity
+    method: keep
+  - path: Bundle.entry.fullUrl
+    method: cryptoHash
+    truncateToMaxLength: 32
   - path: Location.name
     method: redact
   - path: Location.alias
@@ -99,6 +107,7 @@ fhirPathRules:
     method: redact
   - path: nodesByType('Reference').reference
     method: cryptoHash
+    truncateToMaxLength: 32
   - path: nodesByType('Narrative')
     method: redact
   - path: nodesByType('base64Binary')

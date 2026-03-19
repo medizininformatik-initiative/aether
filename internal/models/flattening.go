@@ -7,6 +7,15 @@ import (
 	"time"
 )
 
+// AttributeGroupNamingSystem is the FHIR NamingSystem URL used by Torch in Provenance
+// resources to identify which CRTDL attribute group a clinical resource belongs to.
+const AttributeGroupNamingSystem = "https://www.medizininformatik-initiative.de/fhir/fdpg/NamingSystem/attribute_group"
+
+// ProvenanceIndex maps resource references ("ResourceType/id") to CRTDL attribute group IDs.
+// A resource can belong to multiple attribute groups (e.g. two Procedure groups with different
+// attribute selections), so each reference maps to a slice of group IDs.
+type ProvenanceIndex map[string][]string
+
 // FlatteningConfig holds configuration for the fhir-flattener service
 type FlatteningConfig struct {
 	ServiceURL  string        `yaml:"service_url" json:"service_url" mapstructure:"service_url"`       // URL to fhir-flattener service
@@ -137,7 +146,7 @@ type DataExtraction struct {
 
 // AttributeGroup represents an attributeGroup in the CRTDL dataExtraction
 type AttributeGroup struct {
-	ID             string      `json:"id,omitempty"`   // Optional ID
+	ID             string      `json:"id"`             // Required: used for provenance-based resource routing
 	Name           string      `json:"name"`           // Group name (used for CSV filename)
 	GroupReference string      `json:"groupReference"` // Profile URL for resource matching
 	Attributes     []Attribute `json:"attributes"`     // List of attributes to extract

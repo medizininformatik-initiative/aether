@@ -115,6 +115,19 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 		"file_count", len(files),
 		"job_id", job.JobID)
 
+	// Pass 1: scan input files for provenance index
+	provenanceIndex, err := scanProvenanceIndex(files, logger, job.Config.Pipeline.MaxNDJSONLineSize())
+	if err != nil {
+		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
+		recordStepError(step, err, models.ErrorTypeNonTransient)
+		return fmt.Errorf("failed to load resources: %w", err)
+	}
+
+	logger.Info("Built provenance index",
+		"provenance_entries", len(provenanceIndex),
+		"provenance_source", inputDir,
+		"job_id", job.JobID)
+
 	// Create clients
 	flattenerTransport, _ := services.BuildTLSTransport(job.Config.TLS, logger)
 	flattenerClient := services.NewFlattenerClient(job.Config.Services.Flattening, flattenerTransport, logger)
@@ -125,8 +138,8 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 	attributeGroups := services.GetAttributeGroups(crtdl)
 	fmt.Printf("Processing %d attribute group(s)...\n\n", len(attributeGroups))
 
-	// Pre-compute: build profileToGroup mapping and ViewDefinitions
-	profileToGroup := make(map[string]int)
+	// Pre-compute: build groupIDToIndex mapping and ViewDefinitions
+	groupIDToIndex := make(map[string]int)
 	viewDefs := make([]*models.ViewDefinition, len(attributeGroups))
 	headers := make([][]string, len(attributeGroups))
 	filenames := make([]string, len(attributeGroups))
@@ -142,7 +155,7 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 		}
 
 		viewDefs[i] = viewDef
-		profileToGroup[group.GroupReference] = i
+		groupIDToIndex[group.ID] = i
 		headers[i] = services.ExtractColumnNames(*viewDef)
 		filenames[i] = services.BuildCSVFilename(group.Name)
 
@@ -156,11 +169,12 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 		}
 	}
 
-	// Stream resources and flatten in batches
+	// Pass 2: stream resources and flatten in batches using provenance routing
 	totals, err := streamAndFlattenResources(
 		files,
 		attributeGroups,
-		profileToGroup,
+		provenanceIndex,
+		groupIDToIndex,
 		viewDefs,
 		headers,
 		filenames,
@@ -205,13 +219,61 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 	return nil
 }
 
+// scanProvenanceIndex performs a lightweight first pass over all input files,
+// extracting only Provenance resources from Bundles to build the provenance index.
+// Clinical resources are discarded to keep memory usage minimal.
+func scanProvenanceIndex(files []string, logger *lib.Logger, maxLineSize int) (models.ProvenanceIndex, error) {
+	mergedIndex := make(models.ProvenanceIndex)
+
+	for _, filePath := range files {
+		reader, err := lib.OpenFileForReading(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), fmt.Errorf("failed to open file: %w", err))
+		}
+
+		scanner := lib.NewNDJSONScannerWithMaxSize(reader, maxLineSize)
+		lineNum := 0
+
+		for scanner.Scan() {
+			lineNum++
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+
+			var resource map[string]any
+			if err := json.Unmarshal([]byte(line), &resource); err != nil {
+				continue // skip invalid JSON during provenance scan
+			}
+
+			// Only Bundles contain Provenance resources
+			if resourceType, ok := resource["resourceType"].(string); ok && resourceType == "Bundle" {
+				_, bundleIndex := extractBundleResources(resource)
+				for k, v := range bundleIndex {
+					mergedIndex[k] = append(mergedIndex[k], v...)
+				}
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			_ = reader.Close()
+			return nil, fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), fmt.Errorf("error reading file: %w", err))
+		}
+
+		_ = reader.Close()
+	}
+
+	return mergedIndex, nil
+}
+
 // streamAndFlattenResources performs single-pass streaming over all input files,
-// routing each resource to per-group batches and flushing when the byte threshold
-// is exceeded. Returns per-group resource totals.
+// routing each resource to per-group batches via provenance index and flushing
+// when the byte threshold is exceeded. Returns per-group resource totals.
 func streamAndFlattenResources(
 	files []string,
 	groups []models.AttributeGroup,
-	profileToGroup map[string]int,
+	provenanceIndex models.ProvenanceIndex,
+	groupIDToIndex map[string]int,
 	viewDefs []*models.ViewDefinition,
 	headers [][]string,
 	filenames []string,
@@ -262,28 +324,15 @@ func streamAndFlattenResources(
 				continue
 			}
 
-			// If resource is a Bundle, extract and route individual entries
+			// If resource is a Bundle, extract clinical entries (skip Provenance)
 			if resourceType, ok := resource["resourceType"].(string); ok && resourceType == "Bundle" {
-				entries, ok := resource["entry"].([]any)
-				if ok {
-					for _, entry := range entries {
-						entryMap, ok := entry.(map[string]any)
-						if !ok {
-							continue
-						}
-						entryResource, ok := entryMap["resource"].(map[string]any)
-						if !ok {
-							continue
-						}
-						// For Bundle entries, compute size via marshal
-						entryBytes, marshalErr := json.Marshal(entryResource)
-						if marshalErr != nil {
-							continue
-						}
-						groupIdx, matched := routeResourceToGroup(entryResource, profileToGroup, viewDefs)
-						if !matched {
-							continue
-						}
+				clinicalResources, _ := extractBundleResources(resource)
+				for _, entryResource := range clinicalResources {
+					entryBytes, marshalErr := json.Marshal(entryResource)
+					if marshalErr != nil {
+						continue
+					}
+					for _, groupIdx := range routeResourceToGroups(entryResource, provenanceIndex, groupIDToIndex, viewDefs) {
 						batches[groupIdx].resources = append(batches[groupIdx].resources, entryResource)
 						batches[groupIdx].byteSize += len(entryBytes)
 						totals[groupIdx]++
@@ -297,20 +346,18 @@ func streamAndFlattenResources(
 					}
 				}
 			} else {
-				// Non-Bundle resource: use scanner bytes length for size tracking
+				// Non-Bundle resource: route via provenance index
 				resourceSize := len(scanner.Bytes())
-				groupIdx, matched := routeResourceToGroup(resource, profileToGroup, viewDefs)
-				if !matched {
-					continue
-				}
-				batches[groupIdx].resources = append(batches[groupIdx].resources, resource)
-				batches[groupIdx].byteSize += resourceSize
-				totals[groupIdx]++
+				for _, groupIdx := range routeResourceToGroups(resource, provenanceIndex, groupIDToIndex, viewDefs) {
+					batches[groupIdx].resources = append(batches[groupIdx].resources, resource)
+					batches[groupIdx].byteSize += resourceSize
+					totals[groupIdx]++
 
-				if batches[groupIdx].byteSize >= perGroupBytes {
-					if err := flushGroupBatch(&batches[groupIdx], viewDefs[groupIdx], headers[groupIdx], filenames[groupIdx], flattenerClient, csvWriter, logger, groups[groupIdx].Name); err != nil {
-						_ = reader.Close()
-						return nil, err
+					if batches[groupIdx].byteSize >= perGroupBytes {
+						if err := flushGroupBatch(&batches[groupIdx], viewDefs[groupIdx], headers[groupIdx], filenames[groupIdx], flattenerClient, csvWriter, logger, groups[groupIdx].Name); err != nil {
+							_ = reader.Close()
+							return nil, err
+						}
 					}
 				}
 			}
@@ -336,35 +383,32 @@ func streamAndFlattenResources(
 	return totals, nil
 }
 
-// routeResourceToGroup determines which group a resource belongs to based on
-// its meta.profile[0] URL. Returns the group index and whether a match was found.
-func routeResourceToGroup(resource map[string]any, profileToGroup map[string]int, viewDefs []*models.ViewDefinition) (int, bool) {
-	meta, ok := resource["meta"].(map[string]any)
-	if !ok {
-		return 0, false
+// routeResourceToGroups determines which groups a resource belongs to based on
+// the provenance index. Returns the group indices for all matching groups.
+func routeResourceToGroups(resource map[string]any, provenanceIndex models.ProvenanceIndex, groupIDToIndex map[string]int, viewDefs []*models.ViewDefinition) []int {
+	ref := ResourceReference(resource)
+	if ref == "" {
+		return nil
 	}
 
-	profiles, ok := meta["profile"].([]any)
-	if !ok || len(profiles) == 0 {
-		return 0, false
-	}
-
-	firstProfile, ok := profiles[0].(string)
-	if !ok {
-		return 0, false
-	}
-
-	groupIdx, exists := profileToGroup[firstProfile]
+	groupIDs, exists := provenanceIndex[ref]
 	if !exists {
-		return 0, false
+		return nil
 	}
 
-	// Skip groups where ViewDefinition build failed
-	if viewDefs[groupIdx] == nil {
-		return 0, false
+	var indices []int
+	for _, groupID := range groupIDs {
+		groupIdx, exists := groupIDToIndex[groupID]
+		if !exists {
+			continue
+		}
+		if viewDefs[groupIdx] == nil {
+			continue
+		}
+		indices = append(indices, groupIdx)
 	}
 
-	return groupIdx, true
+	return indices
 }
 
 // flushGroupBatch sends the accumulated batch to the flattener and appends the result to CSV.
@@ -400,32 +444,40 @@ func flushGroupBatch(
 	return nil
 }
 
-// LoadAllResources loads all FHIR resources from the given NDJSON files
-func LoadAllResources(files []string, logger *lib.Logger, maxLineSize int) ([]map[string]any, error) {
+// LoadAllResources loads all FHIR resources from the given NDJSON files.
+// Returns clinical resources (excluding Provenance) and a provenance index
+// that maps resource references to CRTDL attribute group IDs.
+func LoadAllResources(files []string, logger *lib.Logger, maxLineSize int) ([]map[string]any, models.ProvenanceIndex, error) {
 	var allResources []map[string]any
+	mergedIndex := make(models.ProvenanceIndex)
 
 	for _, filePath := range files {
-		resources, err := LoadResourcesFromFile(filePath, logger, maxLineSize)
+		resources, index, err := LoadResourcesFromFile(filePath, logger, maxLineSize)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), err)
+			return nil, nil, fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), err)
 		}
 		allResources = append(allResources, resources...)
+		for k, v := range index {
+			mergedIndex[k] = append(mergedIndex[k], v...)
+		}
 	}
 
-	return allResources, nil
+	return allResources, mergedIndex, nil
 }
 
-// LoadResourcesFromFile loads FHIR resources from a single NDJSON file
-// Handles both compressed (.ndjson.zst) and uncompressed (.ndjson) files
-func LoadResourcesFromFile(filePath string, logger *lib.Logger, maxLineSize int) ([]map[string]any, error) {
-	// Use lib.OpenFileForReading to auto-detect compression
+// LoadResourcesFromFile loads FHIR resources from a single NDJSON file.
+// Handles both compressed (.ndjson.zst) and uncompressed (.ndjson) files.
+// For Bundles, Provenance resources are separated into a provenance index
+// and excluded from the returned resource list.
+func LoadResourcesFromFile(filePath string, logger *lib.Logger, maxLineSize int) ([]map[string]any, models.ProvenanceIndex, error) {
 	reader, err := lib.OpenFileForReading(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
+		return nil, nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer func() { _ = reader.Close() }()
 
 	var resources []map[string]any
+	index := make(models.ProvenanceIndex)
 	scanner := lib.NewNDJSONScannerWithMaxSize(reader, maxLineSize)
 
 	lineNum := 0
@@ -445,20 +497,12 @@ func LoadResourcesFromFile(filePath string, logger *lib.Logger, maxLineSize int)
 			continue
 		}
 
-		// If resource is a Bundle, extract individual resources from entries
+		// If resource is a Bundle, extract clinical resources and build provenance index
 		if resourceType, ok := resource["resourceType"].(string); ok && resourceType == "Bundle" {
-			entries, ok := resource["entry"].([]any)
-			if ok {
-				for _, entry := range entries {
-					entryMap, ok := entry.(map[string]any)
-					if !ok {
-						continue
-					}
-					entryResource, ok := entryMap["resource"].(map[string]any)
-					if ok {
-						resources = append(resources, entryResource)
-					}
-				}
+			bundleResources, bundleIndex := extractBundleResources(resource)
+			resources = append(resources, bundleResources...)
+			for k, v := range bundleIndex {
+				index[k] = append(index[k], v...)
 			}
 		} else {
 			resources = append(resources, resource)
@@ -466,38 +510,140 @@ func LoadResourcesFromFile(filePath string, logger *lib.Logger, maxLineSize int)
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading file: %w", err)
+		return nil, nil, fmt.Errorf("error reading file: %w", err)
 	}
 
-	return resources, nil
+	return resources, index, nil
 }
 
-// FilterResourcesByProfile filters resources by matching meta.profile[0] to the profile URL
-func FilterResourcesByProfile(resources []map[string]any, profileURL string) []map[string]any {
+// extractBundleResources separates Bundle entries into clinical resources and a provenance index.
+// Provenance resources are used to build the index and excluded from the returned resources.
+func extractBundleResources(bundle map[string]any) ([]map[string]any, models.ProvenanceIndex) {
+	entries, ok := bundle["entry"].([]any)
+	if !ok {
+		return nil, nil
+	}
+
+	var resources []map[string]any
+	var provenances []map[string]any
+
+	for _, entry := range entries {
+		entryMap, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		entryResource, ok := entryMap["resource"].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		if rt, ok := entryResource["resourceType"].(string); ok && rt == "Provenance" {
+			provenances = append(provenances, entryResource)
+		} else {
+			resources = append(resources, entryResource)
+		}
+	}
+
+	index := buildProvenanceIndex(provenances)
+	return resources, index
+}
+
+// buildProvenanceIndex creates a mapping from resource references to CRTDL attribute group IDs.
+// Each Provenance resource's target references are mapped to the attribute group ID found
+// in its entity with the attribute_group NamingSystem.
+func buildProvenanceIndex(provenances []map[string]any) models.ProvenanceIndex {
+	index := make(models.ProvenanceIndex)
+
+	for _, prov := range provenances {
+		groupID := extractAttributeGroupID(prov)
+		if groupID == "" {
+			continue
+		}
+
+		targets, ok := prov["target"].([]any)
+		if !ok {
+			continue
+		}
+
+		for _, target := range targets {
+			targetMap, ok := target.(map[string]any)
+			if !ok {
+				continue
+			}
+			ref, ok := targetMap["reference"].(string)
+			if !ok || ref == "" {
+				continue
+			}
+			index[ref] = append(index[ref], groupID)
+		}
+	}
+
+	return index
+}
+
+// extractAttributeGroupID finds the CRTDL attribute group ID from a Provenance resource's entities.
+// Looks for an entity with role "source" and the attribute_group NamingSystem.
+func extractAttributeGroupID(provenance map[string]any) string {
+	entities, ok := provenance["entity"].([]any)
+	if !ok {
+		return ""
+	}
+
+	for _, entity := range entities {
+		entityMap, ok := entity.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		what, ok := entityMap["what"].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		identifier, ok := what["identifier"].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		system, _ := identifier["system"].(string)
+		if system == models.AttributeGroupNamingSystem {
+			value, _ := identifier["value"].(string)
+			return value
+		}
+	}
+
+	return ""
+}
+
+// FilterResourcesByProvenance returns resources whose "ResourceType/id" reference
+// maps to the given attribute group ID in the provenance index.
+func FilterResourcesByProvenance(resources []map[string]any, index models.ProvenanceIndex, groupID string) []map[string]any {
 	var matching []map[string]any
 
 	for _, resource := range resources {
-		meta, ok := resource["meta"].(map[string]any)
-		if !ok {
+		ref := ResourceReference(resource)
+		if ref == "" {
 			continue
 		}
-
-		profiles, ok := meta["profile"].([]any)
-		if !ok || len(profiles) == 0 {
-			continue
-		}
-
-		firstProfile, ok := profiles[0].(string)
-		if !ok {
-			continue
-		}
-
-		if firstProfile == profileURL {
-			matching = append(matching, resource)
+		for _, gid := range index[ref] {
+			if gid == groupID {
+				matching = append(matching, resource)
+				break
+			}
 		}
 	}
 
 	return matching
+}
+
+// ResourceReference builds a "ResourceType/id" reference string from a FHIR resource.
+func ResourceReference(resource map[string]any) string {
+	rt, _ := resource["resourceType"].(string)
+	id, _ := resource["id"].(string)
+	if rt == "" || id == "" {
+		return ""
+	}
+	return rt + "/" + id
 }
 
 // IsFlatteningErrorRetryable checks if a flattening error should be retried

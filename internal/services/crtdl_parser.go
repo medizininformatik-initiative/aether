@@ -35,6 +35,9 @@ func ValidateCRTDL(doc *models.CRTDLDocument) error {
 	}
 
 	for i, group := range doc.DataExtraction.AttributeGroups {
+		if group.ID == "" {
+			return fmt.Errorf("attributeGroup at index %d missing 'id' field", i)
+		}
 		if group.Name == "" {
 			return fmt.Errorf("attributeGroup at index %d missing 'name' field", i)
 		}

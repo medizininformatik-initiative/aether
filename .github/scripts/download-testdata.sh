@@ -46,8 +46,8 @@ rm -f "${TEMP_ARCHIVE}"
 # Verify checksums if checksums file exists
 if [[ -f "${DATA_DIR}/checksums.sha256" ]]; then
     echo "Verifying checksums..."
-    cd "${BASE_DIR}"
-    if sha256sum -c testdata/checksums.sha256 --ignore-missing; then
+    cd "${DATA_DIR}"
+    if sha256sum -c checksums.sha256 --ignore-missing; then
         echo "All checksums verified successfully"
     else
         echo "Warning: Checksum verification failed!"

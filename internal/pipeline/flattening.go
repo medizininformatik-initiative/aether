@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -130,7 +131,7 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 
 	// Create clients
 	flattenerTransport, _ := services.BuildTLSTransport(job.Config.TLS, logger)
-	flattenerClient := services.NewFlattenerClient(job.Config.Services.Flattening, flattenerTransport, logger)
+	flattenerClient := services.NewFlattenerClient(job.Config.Services.Flattening, job.Config.Retry, flattenerTransport, logger)
 	viewDefBuilder := services.NewViewDefinitionBuilder(lookupTables)
 	csvWriter := services.NewCSVWriter(outputDir)
 	viewDefWriter := services.NewViewDefinitionWriter(viewDefDir)
@@ -648,7 +649,8 @@ func ResourceReference(resource map[string]any) string {
 
 // IsFlatteningErrorRetryable checks if a flattening error should be retried
 func IsFlatteningErrorRetryable(err error) bool {
-	if flattenerErr, ok := err.(*services.FlattenerError); ok {
+	var flattenerErr *services.FlattenerError
+	if errors.As(err, &flattenerErr) {
 		return flattenerErr.IsRetryable()
 	}
 	return lib.IsNetworkError(err)
@@ -656,7 +658,8 @@ func IsFlatteningErrorRetryable(err error) bool {
 
 // ClassifyFlatteningError classifies a flattening error as transient or non-transient
 func ClassifyFlatteningError(err error) models.ErrorType {
-	if flattenerErr, ok := err.(*services.FlattenerError); ok {
+	var flattenerErr *services.FlattenerError
+	if errors.As(err, &flattenerErr) {
 		return flattenerErr.ErrorType
 	}
 	if lib.IsNetworkError(err) {

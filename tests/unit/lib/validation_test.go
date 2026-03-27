@@ -129,10 +129,6 @@ func TestValidation_PipelineSequence(t *testing.T) {
 	canRun, _ = lib.CanRunStep(job, models.StepDIMP)
 	assert.True(t, canRun)
 
-	// Complete DIMP
-	dimpStep, _ := models.GetStepByName(job, models.StepDIMP)
-	dimpStep = models.CompleteStep(dimpStep, 10, 900)
-	job = models.ReplaceStep(job, dimpStep)
 }
 
 // Helper: Create a test job with given steps

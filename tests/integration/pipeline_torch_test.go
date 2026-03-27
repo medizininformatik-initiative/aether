@@ -1038,12 +1038,16 @@ func TestPipeline_TORCHExtraction_WithPreprocessing(t *testing.T) {
 	assert.Contains(t, attributeRefs, "Patient.identifier:PseudonymisierterIdentifier", "Should have enriched PseudonymisierterIdentifier")
 	assert.Contains(t, attributeRefs, "Patient.birthDate", "Should have enriched birthDate")
 
-	// Verify enriched CRTDL was saved to job directory
-	enrichedPath := filepath.Join(jobsDir, job.JobID, "enriched-crtdl.json")
-	enrichedContent, err := os.ReadFile(enrichedPath)
-	require.NoError(t, err, "Enriched CRTDL should be saved to job directory")
-	assert.Contains(t, string(enrichedContent), "Patient.identifier:PseudonymisierterIdentifier",
-		"Saved enriched CRTDL should contain the enrichment attribute")
+	// Verify enriched CRTDL was saved to job directory as enriched-crtdl.json
+	crtdlJobPath := filepath.Join(jobsDir, job.JobID, "enriched-crtdl.json")
+	savedContent, err := os.ReadFile(crtdlJobPath)
+	require.NoError(t, err, "Enriched CRTDL should be saved to job directory as enriched-crtdl.json")
+	assert.Contains(t, string(savedContent), "Patient.identifier:PseudonymisierterIdentifier",
+		"Saved CRTDL should contain the enrichment attribute")
+
+	// Verify job.InputSource was updated to point to the job-local copy
+	assert.Equal(t, crtdlJobPath, updatedJob.InputSource,
+		"job.InputSource should point to enriched-crtdl.json in the job directory")
 
 	t.Logf("SUCCESS: CRTDL preprocessing enriched document before TORCH submission")
 	t.Logf("Original attributes: 2, Enriched attributes: 4")
@@ -1445,10 +1449,18 @@ func TestPipeline_TORCHExtraction_PreprocessingDisabled_UsesOriginalCRTDL(t *tes
 	// Original CRTDL only has 1 attribute
 	assert.Len(t, attributes, 1, "Original CRTDL should have only 1 attribute (no enrichment)")
 
-	// Verify NO enriched CRTDL file was saved (preprocessing was disabled)
-	enrichedPath := filepath.Join(jobsDir, job.JobID, "enriched-crtdl.json")
-	_, err = os.Stat(enrichedPath)
-	assert.True(t, os.IsNotExist(err), "Enriched CRTDL should NOT be saved when preprocessing is disabled")
+	// Verify original CRTDL was copied to job directory as crtdl.json
+	crtdlJobPath := filepath.Join(jobsDir, job.JobID, "crtdl.json")
+	savedContent, readErr := os.ReadFile(crtdlJobPath)
+	require.NoError(t, readErr, "CRTDL should be copied to job directory as crtdl.json")
+
+	originalContent, _ := os.ReadFile(crtdlPath)
+	assert.JSONEq(t, string(originalContent), string(savedContent),
+		"Copied CRTDL should match the original when preprocessing is disabled")
+
+	// Verify job.InputSource was updated to point to the job-local copy
+	assert.Equal(t, crtdlJobPath, updatedJob.InputSource,
+		"job.InputSource should point to crtdl.json in the job directory")
 }
 
 // TestPipeline_TORCHExtraction_PreprocessingError_InvalidCRTDL tests error handling when CRTDL parsing fails
@@ -1675,10 +1687,18 @@ func TestPipeline_TORCHExtraction_PreprocessingEnabled_EmptyEnrichments(t *testi
 	require.NoError(t, err)
 	assert.Equal(t, originalContent, decodedBytes, "When no enrichments configured, original file content should be submitted")
 
-	// Verify NO enriched CRTDL file was saved (no enrichments applied)
-	enrichedPath := filepath.Join(jobsDir, job.JobID, "enriched-crtdl.json")
-	_, err = os.Stat(enrichedPath)
-	assert.True(t, os.IsNotExist(err), "Enriched CRTDL should NOT be saved when no enrichments are applied")
+	// Verify original CRTDL was copied to job directory as crtdl.json (even with empty enrichments)
+	crtdlJobPath := filepath.Join(jobsDir, job.JobID, "crtdl.json")
+	savedContent, readErr := os.ReadFile(crtdlJobPath)
+	require.NoError(t, readErr, "CRTDL should be copied to job directory as crtdl.json")
 
-	t.Logf("SUCCESS: With empty enrichments, original CRTDL content was submitted")
+	originalFileContent, _ := os.ReadFile(crtdlPath)
+	assert.JSONEq(t, string(originalFileContent), string(savedContent),
+		"Copied CRTDL should match the original when no enrichments are applied")
+
+	// Verify job.InputSource was updated to point to the job-local copy
+	assert.Equal(t, crtdlJobPath, updatedJob.InputSource,
+		"job.InputSource should point to crtdl.json in the job directory")
+
+	t.Logf("SUCCESS: With empty enrichments, original CRTDL content was submitted and saved to job dir")
 }

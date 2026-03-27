@@ -108,7 +108,7 @@ fi
 echo ""
 echo "Verifying CRTDL preprocessing..."
 
-# Check that enriched-crtdl.json was created
+# Check that enriched-crtdl.json was created (enrichments are enabled in e2e config)
 if docker compose exec -T aether-runner sh -c "test -f /app/jobs/$JOB_ID/enriched-crtdl.json"; then
     echo "✓ enriched-crtdl.json exists"
 

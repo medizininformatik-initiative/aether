@@ -24,14 +24,6 @@ services:
     url: "http://fhir-pseudonymizer:8080/fhir"
     bundle_split_threshold_mb: 10
 
-  # CSV Conversion Service (not running in test environment)
-  csv_conversion:
-    url: ""
-
-  # Parquet Conversion Service (not running in test environment)
-  parquet_conversion:
-    url: ""
-
   # Flattening Service (FHIR to CSV transformation)
   flattening:
     service_url: "http://fhir-flattener:8000"
@@ -59,7 +51,7 @@ services:
 
 pipeline:
   # List of steps to execute in order
-  # Options: import, dimp, validation, csv_conversion, parquet_conversion
+  # Options: import, dimp, validation, flattening, wait, send
   # NOTE: 'import' must always be the first step
   enabled_steps:
     - torch
@@ -67,9 +59,6 @@ pipeline:
     - dimp
     - flattening
     - send
-    # - csv_conversion  # Commented out - service not running
-    # - parquet_conversion  # Commented out - service not running
-
 retry:
   # Maximum number of retry attempts for transient errors (network, 5xx)
   # Range: 1-10

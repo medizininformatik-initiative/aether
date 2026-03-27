@@ -159,7 +159,7 @@ func (c *ProjectConfig) Validate() error {
 	for _, step := range c.Pipeline.EnabledSteps {
 		if !c.Services.HasServiceURL(step) {
 			switch step {
-			case StepDIMP, StepValidation, StepCSVConversion, StepParquetConversion, StepSend:
+			case StepDIMP, StepValidation, StepSend:
 				return fmt.Errorf("service URL required for enabled step '%s'", step)
 			}
 		}
@@ -192,17 +192,6 @@ func (c *ProjectConfig) Validate() error {
 			return fmt.Errorf("invalid validation url: %w", err)
 		}
 	}
-	if c.Services.CSVConversion.URL != "" {
-		if _, err := url.Parse(c.Services.CSVConversion.URL); err != nil {
-			return fmt.Errorf("invalid csv_conversion url: %w", err)
-		}
-	}
-	if c.Services.ParquetConversion.URL != "" {
-		if _, err := url.Parse(c.Services.ParquetConversion.URL); err != nil {
-			return fmt.Errorf("invalid parquet_conversion url: %w", err)
-		}
-	}
-
 	// Validate retry configuration
 	if c.Retry.MaxAttempts < 1 || c.Retry.MaxAttempts > 10 {
 		return errors.New("max_attempts must be between 1 and 10")
@@ -309,12 +298,6 @@ func (c *ProjectConfig) ValidateServiceConnectivity(transport *http.Transport) e
 			}
 			serviceURL = c.Services.GetServiceURL(StepSend)
 			serviceName = "Send"
-		case StepCSVConversion:
-			serviceURL = c.Services.CSVConversion.URL
-			serviceName = "CSV Conversion"
-		case StepParquetConversion:
-			serviceURL = c.Services.ParquetConversion.URL
-			serviceName = "Parquet Conversion"
 		default:
 			continue // Skip steps that don't require external services
 		}

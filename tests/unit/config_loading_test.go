@@ -27,18 +27,16 @@ func TestConfigLoading_MultipleEnabledSteps(t *testing.T) {
 services:
   dimp:
     url: "http://localhost:32861/fhir"
-  csv_conversion:
-    url: "http://localhost:9000/csv"
-  parquet_conversion:
-    url: "http://localhost:9000/parquet"
+  flattening:
+    service_url: "http://localhost:8000"
+    lookup_path: "/tmp/lookup.json"
 
 pipeline:
   enabled_steps:
     - local_import
     - dimp
     - validation
-    - csv_conversion
-    - parquet_conversion
+    - flattening
 
 retry:
   max_attempts: 5
@@ -54,12 +52,11 @@ jobs_dir: "` + jobsDir + `"
 	require.NoError(t, err, "Config should load without error")
 
 	// Verify ALL steps are loaded
-	assert.Len(t, config.Pipeline.EnabledSteps, 5, "Should have 5 enabled steps")
+	assert.Len(t, config.Pipeline.EnabledSteps, 4, "Should have 4 enabled steps")
 	assert.Equal(t, models.StepLocalImport, config.Pipeline.EnabledSteps[0])
 	assert.Equal(t, models.StepDIMP, config.Pipeline.EnabledSteps[1])
 	assert.Equal(t, models.StepValidation, config.Pipeline.EnabledSteps[2])
-	assert.Equal(t, models.StepCSVConversion, config.Pipeline.EnabledSteps[3])
-	assert.Equal(t, models.StepParquetConversion, config.Pipeline.EnabledSteps[4])
+	assert.Equal(t, models.StepFlattening, config.Pipeline.EnabledSteps[3])
 }
 
 // TestConfigLoading_ServiceURLs verifies all service URLs are loaded correctly
@@ -70,17 +67,15 @@ func TestConfigLoading_ServiceURLs(t *testing.T) {
 	_ = os.MkdirAll(jobsDir, 0755)
 
 	expectedDIMPUrl := "http://dimp.example.com:8080/fhir"
-	expectedCSVUrl := "http://csv.example.com:9000/convert"
-	expectedParquetUrl := "http://parquet.example.com:9001/convert"
+	expectedFlatteningUrl := "http://flattener.example.com:8000"
 
 	configContent := `
 services:
   dimp:
     url: "` + expectedDIMPUrl + `"
-  csv_conversion:
-    url: "` + expectedCSVUrl + `"
-  parquet_conversion:
-    url: "` + expectedParquetUrl + `"
+  flattening:
+    service_url: "` + expectedFlatteningUrl + `"
+    lookup_path: "/tmp/lookup.json"
 
 pipeline:
   enabled_steps:
@@ -101,8 +96,7 @@ jobs_dir: "` + jobsDir + `"
 
 	// Verify all service URLs are loaded exactly as specified
 	assert.Equal(t, expectedDIMPUrl, config.Services.DIMP.URL, "DIMP URL should be loaded correctly")
-	assert.Equal(t, expectedCSVUrl, config.Services.CSVConversion.URL, "CSV URL should be loaded correctly")
-	assert.Equal(t, expectedParquetUrl, config.Services.ParquetConversion.URL, "Parquet URL should be loaded correctly")
+	assert.Equal(t, expectedFlatteningUrl, config.Services.Flattening.ServiceURL, "Flattening URL should be loaded correctly")
 }
 
 // TestConfigLoading_RetrySettings verifies retry configuration is loaded
@@ -179,8 +173,6 @@ func TestConfigLoading_EmptyServiceURLs(t *testing.T) {
 	configContent := `
 services:
   dimp_url: ""
-  csv_conversion_url: ""
-  parquet_conversion_url: ""
 
 pipeline:
   enabled_steps:
@@ -200,8 +192,6 @@ jobs_dir: "` + jobsDir + `"
 	require.NoError(t, err)
 
 	assert.Empty(t, config.Services.DIMP.URL, "Empty DIMP URL should remain empty")
-	assert.Empty(t, config.Services.CSVConversion.URL, "Empty CSV URL should remain empty")
-	assert.Empty(t, config.Services.ParquetConversion.URL, "Empty Parquet URL should remain empty")
 }
 
 // TestConfigLoading_PartialServiceURLs verifies mixed empty and non-empty URLs
@@ -215,10 +205,6 @@ func TestConfigLoading_PartialServiceURLs(t *testing.T) {
 services:
   dimp:
     url: "http://localhost:32861/fhir"
-  csv_conversion:
-    url: ""
-  parquet_conversion:
-    url: "http://localhost:9001/parquet"
 
 pipeline:
   enabled_steps:
@@ -239,8 +225,6 @@ jobs_dir: "` + jobsDir + `"
 	require.NoError(t, err)
 
 	assert.Equal(t, "http://localhost:32861/fhir", config.Services.DIMP.URL, "DIMP URL should be loaded")
-	assert.Empty(t, config.Services.CSVConversion.URL, "Empty CSV URL should remain empty")
-	assert.Equal(t, "http://localhost:9001/parquet", config.Services.ParquetConversion.URL, "Parquet URL should be loaded")
 }
 
 // TestConfigLoading_NoConfigFile verifies error when specific config file doesn't exist
@@ -267,18 +251,16 @@ func TestConfigLoading_StepOrder(t *testing.T) {
 services:
   dimp:
     url: "http://localhost:32861/fhir"
-  csv_conversion:
-    url: "http://localhost:9000/csv"
-  parquet_conversion:
-    url: "http://localhost:9001/parquet"
+  flattening:
+    service_url: "http://localhost:8000"
+    lookup_path: "/tmp/lookup.json"
 
 pipeline:
   enabled_steps:
     - local_import
     - validation
     - dimp
-    - parquet_conversion
-    - csv_conversion
+    - flattening
 
 retry:
   max_attempts: 5
@@ -294,12 +276,11 @@ jobs_dir: "` + jobsDir + `"
 	require.NoError(t, err)
 
 	// Verify steps are in the exact order specified in YAML
-	require.Len(t, config.Pipeline.EnabledSteps, 5)
+	require.Len(t, config.Pipeline.EnabledSteps, 4)
 	assert.Equal(t, models.StepLocalImport, config.Pipeline.EnabledSteps[0])
 	assert.Equal(t, models.StepValidation, config.Pipeline.EnabledSteps[1])
 	assert.Equal(t, models.StepDIMP, config.Pipeline.EnabledSteps[2])
-	assert.Equal(t, models.StepParquetConversion, config.Pipeline.EnabledSteps[3])
-	assert.Equal(t, models.StepCSVConversion, config.Pipeline.EnabledSteps[4])
+	assert.Equal(t, models.StepFlattening, config.Pipeline.EnabledSteps[3])
 }
 
 // TestConfigLoading_MinimalConfig verifies minimal valid config loads
@@ -331,8 +312,6 @@ jobs_dir: "` + jobsDir + `"
 	assert.Len(t, config.Pipeline.EnabledSteps, 1)
 	assert.Equal(t, models.StepLocalImport, config.Pipeline.EnabledSteps[0])
 	assert.Empty(t, config.Services.DIMP.URL)
-	assert.Empty(t, config.Services.CSVConversion.URL)
-	assert.Empty(t, config.Services.ParquetConversion.URL)
 }
 
 // TestConfigValidation_InvalidDIMPUrl verifies invalid DIMP service URL is rejected
@@ -346,10 +325,6 @@ func TestConfigValidation_InvalidDIMPUrl(t *testing.T) {
 services:
   dimp:
     url: "http://[invalid:url"
-  csv_conversion:
-    url: ""
-  parquet_conversion:
-    url: ""
 
 pipeline:
   enabled_steps:
@@ -370,80 +345,6 @@ jobs_dir: "` + jobsDir + `"
 	assert.Error(t, err, "Invalid DIMP URL should fail during config loading")
 	assert.Nil(t, config)
 	assert.Contains(t, err.Error(), "invalid dimp url")
-}
-
-// TestConfigValidation_InvalidCSVUrl verifies invalid CSV conversion service URL is rejected
-func TestConfigValidation_InvalidCSVUrl(t *testing.T) {
-	tmpDir := t.TempDir()
-	configFile := filepath.Join(tmpDir, "config.yaml")
-	jobsDir := filepath.Join(tmpDir, "jobs")
-	_ = os.MkdirAll(jobsDir, 0755)
-
-	configContent := `
-services:
-  dimp:
-    url: ""
-  csv_conversion:
-    url: "invalid://url format:"
-  parquet_conversion:
-    url: ""
-
-pipeline:
-  enabled_steps:
-    - local_import
-
-retry:
-  max_attempts: 3
-  initial_backoff_ms: 500
-  max_backoff_ms: 10000
-
-jobs_dir: "` + jobsDir + `"
-`
-	err := os.WriteFile(configFile, []byte(configContent), 0644)
-	require.NoError(t, err)
-
-	// LoadConfig validates during loading, so it should fail with invalid URL
-	config, err := services.LoadConfig(configFile)
-	assert.Error(t, err, "Invalid CSV conversion URL should fail during config loading")
-	assert.Nil(t, config)
-	assert.Contains(t, err.Error(), "invalid csv_conversion url")
-}
-
-// TestConfigValidation_InvalidParquetUrl verifies invalid Parquet conversion service URL is rejected
-func TestConfigValidation_InvalidParquetUrl(t *testing.T) {
-	tmpDir := t.TempDir()
-	configFile := filepath.Join(tmpDir, "config.yaml")
-	jobsDir := filepath.Join(tmpDir, "jobs")
-	_ = os.MkdirAll(jobsDir, 0755)
-
-	configContent := `
-services:
-  dimp:
-    url: ""
-  csv_conversion:
-    url: ""
-  parquet_conversion:
-    url: "http://[invalid:url"
-
-pipeline:
-  enabled_steps:
-    - local_import
-
-retry:
-  max_attempts: 3
-  initial_backoff_ms: 500
-  max_backoff_ms: 10000
-
-jobs_dir: "` + jobsDir + `"
-`
-	err := os.WriteFile(configFile, []byte(configContent), 0644)
-	require.NoError(t, err)
-
-	// LoadConfig validates during loading, so it should fail with invalid URL
-	config, err := services.LoadConfig(configFile)
-	assert.Error(t, err, "Invalid Parquet conversion URL should fail during config loading")
-	assert.Nil(t, config)
-	assert.Contains(t, err.Error(), "invalid parquet_conversion url")
 }
 
 // Unit tests for TORCHConfig validation
@@ -902,12 +803,6 @@ func TestGetServiceURL(t *testing.T) {
 			DIMP: models.DIMPConfig{
 				URL: "http://dimp.example.com:8080",
 			},
-			CSVConversion: models.CSVConversionConfig{
-				URL: "http://csv.example.com:9000",
-			},
-			ParquetConversion: models.ParquetConversionConfig{
-				URL: "http://parquet.example.com:9001",
-			},
 			Flattening: models.FlatteningConfig{
 				ServiceURL: "http://flattener.example.com:8000",
 			},
@@ -924,12 +819,6 @@ func TestGetServiceURL(t *testing.T) {
 
 	// Test DIMP URL
 	assert.Equal(t, "http://dimp.example.com:8080", config.Services.GetServiceURL(models.StepDIMP))
-
-	// Test CSV URL
-	assert.Equal(t, "http://csv.example.com:9000", config.Services.GetServiceURL(models.StepCSVConversion))
-
-	// Test Parquet URL
-	assert.Equal(t, "http://parquet.example.com:9001", config.Services.GetServiceURL(models.StepParquetConversion))
 
 	// Test Flattening URL
 	assert.Equal(t, "http://flattener.example.com:8000", config.Services.GetServiceURL(models.StepFlattening))
@@ -971,7 +860,7 @@ func TestGetNextStep(t *testing.T) {
 				models.StepLocalImport,
 				models.StepValidation,
 				models.StepDIMP,
-				models.StepCSVConversion,
+				models.StepFlattening,
 			},
 		},
 	}
@@ -983,13 +872,10 @@ func TestGetNextStep(t *testing.T) {
 	assert.Equal(t, models.StepDIMP, config.Pipeline.GetNextStep(models.StepValidation))
 
 	// Test getting next step from DIMP
-	assert.Equal(t, models.StepCSVConversion, config.Pipeline.GetNextStep(models.StepDIMP))
+	assert.Equal(t, models.StepFlattening, config.Pipeline.GetNextStep(models.StepDIMP))
 
 	// Test getting next step from last step (should return empty)
-	assert.Equal(t, models.StepName(""), config.Pipeline.GetNextStep(models.StepCSVConversion))
-
-	// Test getting next step for non-existent step (should return empty)
-	assert.Equal(t, models.StepName(""), config.Pipeline.GetNextStep(models.StepParquetConversion))
+	assert.Equal(t, models.StepName(""), config.Pipeline.GetNextStep(models.StepFlattening))
 }
 
 // TestHasServiceURL verifies service URL presence checks
@@ -1014,38 +900,6 @@ func TestHasServiceURL(t *testing.T) {
 				DIMP: models.DIMPConfig{URL: ""},
 			},
 			step:   models.StepDIMP,
-			hasURL: false,
-		},
-		{
-			name: "CSV Conversion with URL",
-			config: models.ServiceConfig{
-				CSVConversion: models.CSVConversionConfig{URL: "http://csv.example.com"},
-			},
-			step:   models.StepCSVConversion,
-			hasURL: true,
-		},
-		{
-			name: "CSV Conversion without URL",
-			config: models.ServiceConfig{
-				CSVConversion: models.CSVConversionConfig{URL: ""},
-			},
-			step:   models.StepCSVConversion,
-			hasURL: false,
-		},
-		{
-			name: "Parquet Conversion with URL",
-			config: models.ServiceConfig{
-				ParquetConversion: models.ParquetConversionConfig{URL: "http://parquet.example.com"},
-			},
-			step:   models.StepParquetConversion,
-			hasURL: true,
-		},
-		{
-			name: "Parquet Conversion without URL",
-			config: models.ServiceConfig{
-				ParquetConversion: models.ParquetConversionConfig{URL: ""},
-			},
-			step:   models.StepParquetConversion,
 			hasURL: false,
 		},
 		{
@@ -1081,9 +935,6 @@ func TestConfigValidation_MissingServiceURLForEnabledStep(t *testing.T) {
 			config: models.ProjectConfig{
 				Services: models.ServiceConfig{
 					DIMP: models.DIMPConfig{URL: ""},
-					CSVConversion: models.CSVConversionConfig{
-						URL: "http://csv.example.com",
-					},
 				},
 				Pipeline: models.PipelineConfig{
 					EnabledSteps: []models.StepName{
@@ -1099,51 +950,6 @@ func TestConfigValidation_MissingServiceURLForEnabledStep(t *testing.T) {
 				JobsDir: "/tmp/jobs",
 			},
 			errorText: "service URL required for enabled step 'dimp'",
-		},
-		{
-			name: "CSV Conversion enabled without URL",
-			config: models.ProjectConfig{
-				Services: models.ServiceConfig{
-					DIMP: models.DIMPConfig{
-						URL: "http://dimp.example.com",
-					},
-					CSVConversion: models.CSVConversionConfig{URL: ""},
-				},
-				Pipeline: models.PipelineConfig{
-					EnabledSteps: []models.StepName{
-						models.StepLocalImport,
-						models.StepCSVConversion,
-					},
-				},
-				Retry: models.RetryConfig{
-					MaxAttempts:      5,
-					InitialBackoffMs: 1000,
-					MaxBackoffMs:     30000,
-				},
-				JobsDir: "/tmp/jobs",
-			},
-			errorText: "service URL required for enabled step 'csv_conversion'",
-		},
-		{
-			name: "Parquet Conversion enabled without URL",
-			config: models.ProjectConfig{
-				Services: models.ServiceConfig{
-					ParquetConversion: models.ParquetConversionConfig{URL: ""},
-				},
-				Pipeline: models.PipelineConfig{
-					EnabledSteps: []models.StepName{
-						models.StepLocalImport,
-						models.StepParquetConversion,
-					},
-				},
-				Retry: models.RetryConfig{
-					MaxAttempts:      5,
-					InitialBackoffMs: 1000,
-					MaxBackoffMs:     30000,
-				},
-				JobsDir: "/tmp/jobs",
-			},
-			errorText: "service URL required for enabled step 'parquet_conversion'",
 		},
 	}
 
@@ -1164,34 +970,16 @@ func TestValidateServiceConnectivity_AllServicesAvailable(t *testing.T) {
 	}))
 	defer dimpServer.Close()
 
-	csvServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer csvServer.Close()
-
-	parquetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer parquetServer.Close()
-
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			DIMP: models.DIMPConfig{
 				URL: dimpServer.URL,
-			},
-			CSVConversion: models.CSVConversionConfig{
-				URL: csvServer.URL,
-			},
-			ParquetConversion: models.ParquetConversionConfig{
-				URL: parquetServer.URL,
 			},
 		},
 		Pipeline: models.PipelineConfig{
 			EnabledSteps: []models.StepName{
 				models.StepLocalImport,
 				models.StepDIMP,
-				models.StepCSVConversion,
-				models.StepParquetConversion,
 			},
 		},
 		Retry: models.RetryConfig{
@@ -1242,18 +1030,10 @@ func TestValidateServiceConnectivity_WithCustomTransport(t *testing.T) {
 
 // TestValidateServiceConnectivity_DIMMServiceUnreachable verifies error when DIMP service is unreachable
 func TestValidateServiceConnectivity_DIMMServiceUnreachable(t *testing.T) {
-	csvServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer csvServer.Close()
-
 	config := models.ProjectConfig{
 		Services: models.ServiceConfig{
 			DIMP: models.DIMPConfig{
 				URL: "http://localhost:9999", // Unreachable
-			},
-			CSVConversion: models.CSVConversionConfig{
-				URL: csvServer.URL,
 			},
 		},
 		Pipeline: models.PipelineConfig{
@@ -1274,78 +1054,6 @@ func TestValidateServiceConnectivity_DIMMServiceUnreachable(t *testing.T) {
 	err := config.ValidateServiceConnectivity(nil)
 	assert.Error(t, err, "Should fail when DIMP service is unreachable")
 	assert.Contains(t, err.Error(), "DIMP")
-}
-
-// TestValidateServiceConnectivity_CSVServiceUnreachable verifies error when CSV service is unreachable
-func TestValidateServiceConnectivity_CSVServiceUnreachable(t *testing.T) {
-	dimpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer dimpServer.Close()
-
-	config := models.ProjectConfig{
-		Services: models.ServiceConfig{
-			DIMP: models.DIMPConfig{
-				URL: dimpServer.URL,
-			},
-			CSVConversion: models.CSVConversionConfig{
-				URL: "http://localhost:9998", // Unreachable
-			},
-		},
-		Pipeline: models.PipelineConfig{
-			EnabledSteps: []models.StepName{
-				models.StepLocalImport,
-				models.StepCSVConversion,
-			},
-		},
-		Retry: models.RetryConfig{
-			MaxAttempts:      5,
-			InitialBackoffMs: 1000,
-			MaxBackoffMs:     30000,
-		},
-		JobsDir: "/tmp/jobs",
-	}
-
-	// ValidateServiceConnectivity should fail when CSV service is unreachable
-	err := config.ValidateServiceConnectivity(nil)
-	assert.Error(t, err, "Should fail when CSV conversion service is unreachable")
-	assert.Contains(t, err.Error(), "CSV Conversion")
-}
-
-// TestValidateServiceConnectivity_ParquetServiceUnreachable verifies error when Parquet service is unreachable
-func TestValidateServiceConnectivity_ParquetServiceUnreachable(t *testing.T) {
-	dimpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer dimpServer.Close()
-
-	config := models.ProjectConfig{
-		Services: models.ServiceConfig{
-			DIMP: models.DIMPConfig{
-				URL: dimpServer.URL,
-			},
-			ParquetConversion: models.ParquetConversionConfig{
-				URL: "http://localhost:9997", // Unreachable
-			},
-		},
-		Pipeline: models.PipelineConfig{
-			EnabledSteps: []models.StepName{
-				models.StepLocalImport,
-				models.StepParquetConversion,
-			},
-		},
-		Retry: models.RetryConfig{
-			MaxAttempts:      5,
-			InitialBackoffMs: 1000,
-			MaxBackoffMs:     30000,
-		},
-		JobsDir: "/tmp/jobs",
-	}
-
-	// ValidateServiceConnectivity should fail when Parquet service is unreachable
-	err := config.ValidateServiceConnectivity(nil)
-	assert.Error(t, err, "Should fail when Parquet conversion service is unreachable")
-	assert.Contains(t, err.Error(), "Parquet Conversion")
 }
 
 // TestValidateServiceConnectivity_SendServiceAvailable verifies connectivity check with Send service available

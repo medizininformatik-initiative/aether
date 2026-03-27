@@ -20,16 +20,14 @@ type PipelineStep struct {
 type StepName string
 
 const (
-	StepTorchImport       StepName = "torch"        // TORCH import via CRTDL or direct TORCH URL
-	StepLocalImport       StepName = "local_import" // Import from local directory
-	StepHttpImport        StepName = "http_import"  // Import from HTTP URL
-	StepDIMP              StepName = "dimp"
-	StepValidation        StepName = "validation"
-	StepCSVConversion     StepName = "csv_conversion"
-	StepParquetConversion StepName = "parquet_conversion"
-	StepWait              StepName = "wait"       // Pause pipeline for user inspection/modification
-	StepFlattening        StepName = "flattening" // Transform FHIR data to CSV using fhir-flattener
-	StepSend              StepName = "send"       // Prepare and send data to DSF transfer server
+	StepTorchImport StepName = "torch"        // TORCH import via CRTDL or direct TORCH URL
+	StepLocalImport StepName = "local_import" // Import from local directory
+	StepHttpImport  StepName = "http_import"  // Import from HTTP URL
+	StepDIMP        StepName = "dimp"
+	StepValidation  StepName = "validation"
+	StepWait        StepName = "wait"       // Pause pipeline for user inspection/modification
+	StepFlattening  StepName = "flattening" // Transform FHIR data to CSV using fhir-flattener
+	StepSend        StepName = "send"       // Prepare and send data to DSF transfer server
 )
 
 // StepStatus defines the execution state of a pipeline step
@@ -70,7 +68,7 @@ const (
 // IsValidStepName checks if the step name is recognized
 func IsValidStepName(name StepName) bool {
 	switch name {
-	case StepTorchImport, StepLocalImport, StepHttpImport, StepDIMP, StepValidation, StepCSVConversion, StepParquetConversion, StepWait, StepFlattening, StepSend:
+	case StepTorchImport, StepLocalImport, StepHttpImport, StepDIMP, StepValidation, StepWait, StepFlattening, StepSend:
 		return true
 	default:
 		return false

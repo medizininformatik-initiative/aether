@@ -41,8 +41,6 @@ func DefaultCompressionConfig() CompressionConfig {
 // ServiceConfig contains connection details for external HTTP services
 type ServiceConfig struct {
 	DIMP               DIMPConfig               `yaml:"dimp" json:"dimp"`
-	CSVConversion      CSVConversionConfig      `yaml:"csv_conversion" json:"csv_conversion"`
-	ParquetConversion  ParquetConversionConfig  `yaml:"parquet_conversion" json:"parquet_conversion"`
 	TORCH              TORCHConfig              `yaml:"torch" json:"torch"`
 	Flattening         FlatteningConfig         `yaml:"flattening" json:"flattening"`
 	CRTDLPreprocessing CRTDLPreprocessingConfig `yaml:"crtdl_preprocessing" json:"crtdl_preprocessing" mapstructure:"crtdl_preprocessing"`
@@ -68,16 +66,6 @@ type LocalImportConfig struct {
 type DIMPConfig struct {
 	URL                    string `yaml:"url" json:"url"`
 	BundleSplitThresholdMB int    `yaml:"bundle_split_threshold_mb" json:"bundle_split_threshold_mb"` // Default 10MB - threshold for splitting large Bundles to prevent HTTP 413 errors
-}
-
-// CSVConversionConfig contains CSV conversion service settings
-type CSVConversionConfig struct {
-	URL string `yaml:"url" json:"url"`
-}
-
-// ParquetConversionConfig contains Parquet conversion service settings
-type ParquetConversionConfig struct {
-	URL string `yaml:"url" json:"url"`
 }
 
 // TORCHConfig contains TORCH server connection and extraction behavior settings
@@ -352,12 +340,6 @@ func DefaultConfig() ProjectConfig {
 				URL:                    "",
 				BundleSplitThresholdMB: 10, // 10MB default threshold for Bundle splitting
 			},
-			CSVConversion: CSVConversionConfig{
-				URL: "",
-			},
-			ParquetConversion: ParquetConversionConfig{
-				URL: "",
-			},
 			TORCH: TORCHConfig{
 				BaseURL:            "",
 				Username:           "",
@@ -451,10 +433,6 @@ func (c *ServiceConfig) HasServiceURL(step StepName) bool {
 	switch step {
 	case StepDIMP:
 		return c.DIMP.URL != ""
-	case StepCSVConversion:
-		return c.CSVConversion.URL != ""
-	case StepParquetConversion:
-		return c.ParquetConversion.URL != ""
 	case StepFlattening:
 		return c.Flattening.ServiceURL != ""
 	case StepSend:
@@ -469,10 +447,6 @@ func (c *ServiceConfig) GetServiceURL(step StepName) string {
 	switch step {
 	case StepDIMP:
 		return c.DIMP.URL
-	case StepCSVConversion:
-		return c.CSVConversion.URL
-	case StepParquetConversion:
-		return c.ParquetConversion.URL
 	case StepFlattening:
 		return c.Flattening.ServiceURL
 	case StepSend:

@@ -279,10 +279,6 @@ services:
   dimp:
     url: "http://dimp:8080"
     bundle_split_threshold_mb: 20
-  csv_conversion:
-    url: "http://csv:8080"
-  parquet_conversion:
-    url: "http://parquet:8080"
 `
 	require.NoError(t, os.WriteFile(configFile, []byte(configContent), 0644))
 
@@ -294,8 +290,6 @@ services:
 	// Verify all services loaded
 	assert.Equal(t, "http://dimp:8080", config.Services.DIMP.URL)
 	assert.Equal(t, 20, config.Services.DIMP.BundleSplitThresholdMB)
-	assert.Equal(t, "http://csv:8080", config.Services.CSVConversion.URL)
-	assert.Equal(t, "http://parquet:8080", config.Services.ParquetConversion.URL)
 }
 
 // TestLoadConfig_ExplicitDIMPURL tests that explicit DIMP URL is preserved from config

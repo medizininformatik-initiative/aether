@@ -155,15 +155,13 @@ func EnsureJobDirs(jobsBaseDir string, jobID string) (map[models.StepName]string
 	jobDir := GetJobDir(jobsBaseDir, jobID)
 
 	dirs := map[models.StepName]string{
-		models.StepTorchImport:       filepath.Join(jobDir, "import"),
-		models.StepLocalImport:       filepath.Join(jobDir, "import"),
-		models.StepHttpImport:        filepath.Join(jobDir, "import"),
-		models.StepDIMP:              filepath.Join(jobDir, "pseudonymized"),
-		models.StepValidation:        filepath.Join(jobDir, "validation"),
-		models.StepCSVConversion:     filepath.Join(jobDir, "csv"),
-		models.StepParquetConversion: filepath.Join(jobDir, "parquet"),
-		models.StepFlattening:        filepath.Join(jobDir, "csv"),
-		models.StepSend:              filepath.Join(jobDir, "send"),
+		models.StepTorchImport: filepath.Join(jobDir, "import"),
+		models.StepLocalImport: filepath.Join(jobDir, "import"),
+		models.StepHttpImport:  filepath.Join(jobDir, "import"),
+		models.StepDIMP:        filepath.Join(jobDir, "pseudonymized"),
+		models.StepValidation:  filepath.Join(jobDir, "validation"),
+		models.StepFlattening:  filepath.Join(jobDir, "csv"),
+		models.StepSend:        filepath.Join(jobDir, "send"),
 	}
 
 	for _, dir := range dirs {
@@ -186,10 +184,8 @@ func GetJobOutputDir(jobsBaseDir string, jobID string, step models.StepName) str
 		return filepath.Join(jobDir, "pseudonymized")
 	case models.StepValidation:
 		return filepath.Join(jobDir, "validation")
-	case models.StepCSVConversion, models.StepFlattening:
+	case models.StepFlattening:
 		return filepath.Join(jobDir, "csv")
-	case models.StepParquetConversion:
-		return filepath.Join(jobDir, "parquet")
 	case models.StepSend:
 		return filepath.Join(jobDir, "send")
 	case models.StepWait:

@@ -70,7 +70,7 @@ Integration tests for multi-step pipeline execution.
 #### TestPipelineMultiStep_StepSequencing
 Verifies that `GetNextStep()` returns steps in the correct order.
 
-- Tests that import → dimp → validation → csv_conversion works correctly
+- Tests that import → dimp → validation → flattening works correctly
 - Tests that the last step returns empty string (no more steps)
 
 #### TestPipelineMultiStep_OnlyImportEnabled
@@ -85,7 +85,7 @@ Verifies pipeline works correctly when only import is enabled.
 
 - Writes a YAML config with multiple steps
 - Loads config via `LoadConfig()`
-- Verifies ALL steps are present (import, dimp, csv_conversion)
+- Verifies ALL steps are present (import, dimp, flattening)
 - Verifies service URLs are loaded correctly
 
 #### TestPipelineMultiStep_JobStatePersistedBetweenSteps
@@ -104,14 +104,14 @@ Unit tests specifically for configuration loading (the root cause of the bug).
 #### TestConfigLoading_MultipleEnabledSteps ⭐
 **Critical regression test** - Verifies viper doesn't drop enabled steps when loading YAML.
 
-- Tests loading 5 enabled steps: import, dimp, validation, csv_conversion, parquet_conversion
-- Verifies ALL 5 steps are present in loaded config
+- Tests loading 4 enabled steps: import, dimp, validation, flattening
+- Verifies ALL 4 steps are present in loaded config
 - **This test would have caught the viper.Unmarshal bug**
 
 #### TestConfigLoading_ServiceURLs
 Verifies all service URLs are loaded correctly from YAML.
 
-- Tests DIMP URL, CSV URL, and Parquet URL
+- Tests DIMP URL and Flattening URL
 - Verifies exact values match what's in the config file
 
 #### TestConfigLoading_RetrySettings

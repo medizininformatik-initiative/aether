@@ -304,7 +304,7 @@ func (c *TORCHClient) PollExtractionStatus(extractionURL string, showProgress bo
 	c.logger.Info("Polling TORCH extraction status", "url", extractionURL)
 
 	// Setup polling configuration
-	pollConfig := NewPollConfig(c.config.ExtractionTimeoutMinutes, c.config.PollingIntervalSeconds, c.config.MaxPollingIntervalSeconds)
+	pollConfig := NewPollConfig(c.config)
 
 	// Start spinner for polling (duration unknown)
 	var spinner *ui.Spinner
@@ -701,10 +701,7 @@ func (c *TORCHClient) waitForFileAvailability(fileURL string) error {
 		return nil
 	}
 
-	interval := time.Duration(c.config.FileReadyIntervalSeconds) * time.Second
-	if interval <= 0 {
-		interval = 10 * time.Second
-	}
+	interval := c.config.FileReadyInterval
 
 	for attempt := 1; attempt <= c.config.FileReadyRetries; attempt++ {
 		available, err := c.checkFileAvailable(fileURL)

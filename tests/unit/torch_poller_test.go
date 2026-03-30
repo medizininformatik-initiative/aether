@@ -15,8 +15,17 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
+func newTestTORCHConfig(timeout, pollInterval, maxPollInterval time.Duration) models.TORCHConfig {
+	return models.TORCHConfig{
+		BaseURL:            "http://localhost:8080",
+		ExtractionTimeout:  timeout,
+		PollingInterval:    pollInterval,
+		MaxPollingInterval: maxPollInterval,
+	}
+}
+
 func TestNewPollConfig(t *testing.T) {
-	config := services.NewPollConfig(5, 2, 30)
+	config := services.NewPollConfig(newTestTORCHConfig(5*time.Minute, 2*time.Second, 30*time.Second))
 
 	assert.NotNil(t, config)
 	assert.Equal(t, 5*time.Minute, config.Timeout)
@@ -27,7 +36,7 @@ func TestNewPollConfig(t *testing.T) {
 }
 
 func TestPollConfig_CheckTimeout_NotExceeded(t *testing.T) {
-	config := services.NewPollConfig(10, 1, 30) // 10 minute timeout
+	config := services.NewPollConfig(newTestTORCHConfig(10*time.Minute, 1*time.Second, 30*time.Second))
 	config.StartTime = time.Now()
 
 	// Should not timeout immediately
@@ -35,7 +44,7 @@ func TestPollConfig_CheckTimeout_NotExceeded(t *testing.T) {
 }
 
 func TestPollConfig_CheckTimeout_Exceeded(t *testing.T) {
-	config := services.NewPollConfig(1, 1, 30) // 1 minute timeout
+	config := services.NewPollConfig(newTestTORCHConfig(1*time.Minute, 1*time.Second, 30*time.Second))
 	config.StartTime = time.Now().Add(-2 * time.Minute)
 
 	// Should timeout
@@ -43,7 +52,7 @@ func TestPollConfig_CheckTimeout_Exceeded(t *testing.T) {
 }
 
 func TestPollConfig_GetElapsedTime(t *testing.T) {
-	config := services.NewPollConfig(10, 1, 30)
+	config := services.NewPollConfig(newTestTORCHConfig(10*time.Minute, 1*time.Second, 30*time.Second))
 	config.StartTime = time.Now().Add(-5 * time.Second)
 
 	elapsed := config.GetElapsedTime()
@@ -52,7 +61,7 @@ func TestPollConfig_GetElapsedTime(t *testing.T) {
 }
 
 func TestPollConfig_IncrementPollCount(t *testing.T) {
-	config := services.NewPollConfig(10, 1, 30)
+	config := services.NewPollConfig(newTestTORCHConfig(10*time.Minute, 1*time.Second, 30*time.Second))
 	assert.Equal(t, 0, config.PollCount)
 
 	config.IncrementPollCount()
@@ -63,7 +72,7 @@ func TestPollConfig_IncrementPollCount(t *testing.T) {
 }
 
 func TestPollConfig_UpdateInterval_BelowMax(t *testing.T) {
-	config := services.NewPollConfig(10, 2, 30)
+	config := services.NewPollConfig(newTestTORCHConfig(10*time.Minute, 2*time.Second, 30*time.Second))
 	initialInterval := config.PollInterval
 
 	config.UpdateInterval()
@@ -73,7 +82,7 @@ func TestPollConfig_UpdateInterval_BelowMax(t *testing.T) {
 }
 
 func TestPollConfig_UpdateInterval_AtMax(t *testing.T) {
-	config := services.NewPollConfig(10, 30, 30)
+	config := services.NewPollConfig(newTestTORCHConfig(10*time.Minute, 30*time.Second, 30*time.Second))
 	config.PollInterval = 30 * time.Second
 
 	config.UpdateInterval()
@@ -83,7 +92,7 @@ func TestPollConfig_UpdateInterval_AtMax(t *testing.T) {
 }
 
 func TestPollConfig_UpdateInterval_ReachesMax(t *testing.T) {
-	config := services.NewPollConfig(10, 20, 30)
+	config := services.NewPollConfig(newTestTORCHConfig(10*time.Minute, 20*time.Second, 30*time.Second))
 	config.PollInterval = 20 * time.Second
 
 	config.UpdateInterval()
@@ -111,7 +120,7 @@ func TestCalculateNextPollInterval(t *testing.T) {
 }
 
 func TestPollConfig_StateProgression(t *testing.T) {
-	config := services.NewPollConfig(5, 1, 10)
+	config := services.NewPollConfig(newTestTORCHConfig(5*time.Minute, 1*time.Second, 10*time.Second))
 	startTime := time.Now()
 	config.StartTime = startTime
 
@@ -166,7 +175,7 @@ func TestHandlePollResponse_Error(t *testing.T) {
 }
 
 func TestPollConfig_MultipleTimeouts(t *testing.T) {
-	config := services.NewPollConfig(1, 1, 30)
+	config := services.NewPollConfig(newTestTORCHConfig(1*time.Minute, 1*time.Second, 30*time.Second))
 	config.StartTime = time.Now().Add(-10 * time.Minute)
 
 	// Should timeout regardless of how many times we check
@@ -196,12 +205,12 @@ func TestCreatePollRequest_SuccessByVerifyingPollExecution(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
-		BaseURL:                   server.URL,
-		Username:                  "testuser",
-		Password:                  "testpass",
-		ExtractionTimeoutMinutes:  1,
-		PollingIntervalSeconds:    1,
-		MaxPollingIntervalSeconds: 5,
+		BaseURL:            server.URL,
+		Username:           "testuser",
+		Password:           "testpass",
+		ExtractionTimeout:  1 * time.Minute,
+		PollingInterval:    1 * time.Second,
+		MaxPollingInterval: 5 * time.Second,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
@@ -228,14 +237,14 @@ func TestHandlePollResponse_202AcceptedWithBody(t *testing.T) {
 }
 
 func TestPollConfig_LargeTimeoutValues(t *testing.T) {
-	config := services.NewPollConfig(1440, 60, 300) // 24 hours, 1 min interval, 5 min max
+	config := services.NewPollConfig(newTestTORCHConfig(24*time.Hour, 60*time.Second, 5*time.Minute))
 	assert.Equal(t, 24*time.Hour, config.Timeout)
 	assert.Equal(t, 60*time.Second, config.PollInterval)
 	assert.Equal(t, 5*time.Minute, config.MaxPollInterval)
 }
 
 func TestPollConfig_UpdateInterval_EdgeCase(t *testing.T) {
-	config := services.NewPollConfig(10, 1, 1)
+	config := services.NewPollConfig(newTestTORCHConfig(10*time.Minute, 1*time.Second, 1*time.Second))
 	config.PollInterval = 1 * time.Second
 	config.MaxPollInterval = 1 * time.Second
 

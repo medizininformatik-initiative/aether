@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // PollConfig holds configuration for extraction polling
@@ -19,13 +20,13 @@ type PollConfig struct {
 	PollCount       int
 }
 
-// NewPollConfig creates polling configuration from client settings
-func NewPollConfig(timeoutMinutes, pollIntervalSeconds, maxPollIntervalSeconds int) *PollConfig {
+// NewPollConfig creates polling configuration from TORCH client settings
+func NewPollConfig(cfg models.TORCHConfig) *PollConfig {
 	return &PollConfig{
-		Timeout:         time.Duration(timeoutMinutes) * time.Minute,
+		Timeout:         cfg.ExtractionTimeout,
 		StartTime:       time.Now(),
-		PollInterval:    time.Duration(pollIntervalSeconds) * time.Second,
-		MaxPollInterval: time.Duration(maxPollIntervalSeconds) * time.Second,
+		PollInterval:    cfg.PollingInterval,
+		MaxPollInterval: cfg.MaxPollingInterval,
 		PollCount:       0,
 	}
 }

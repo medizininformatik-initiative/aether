@@ -88,12 +88,12 @@ func TestTORCHService_SubmitExtraction_Success(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
-		BaseURL:                   server.URL,
-		Username:                  "testuser",
-		Password:                  "testpass",
-		ExtractionTimeoutMinutes:  30,
-		PollingIntervalSeconds:    1,
-		MaxPollingIntervalSeconds: 5,
+		BaseURL:            server.URL,
+		Username:           "testuser",
+		Password:           "testpass",
+		ExtractionTimeout:  30 * time.Minute,
+		PollingInterval:    1 * time.Second,
+		MaxPollingInterval: 5 * time.Second,
 	}
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
 
@@ -192,12 +192,12 @@ func TestTORCHService_PollStatus_InProgress(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
-		BaseURL:                   server.URL,
-		Username:                  "testuser",
-		Password:                  "testpass",
-		ExtractionTimeoutMinutes:  0, // Immediate timeout
-		PollingIntervalSeconds:    1,
-		MaxPollingIntervalSeconds: 1,
+		BaseURL:            server.URL,
+		Username:           "testuser",
+		Password:           "testpass",
+		ExtractionTimeout:  0 * time.Minute, // Immediate timeout
+		PollingInterval:    1 * time.Second,
+		MaxPollingInterval: 1 * time.Second,
 	}
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
 
@@ -244,12 +244,12 @@ func TestTORCHService_PollStatus_Complete(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
-		BaseURL:                   server.URL,
-		Username:                  "testuser",
-		Password:                  "testpass",
-		ExtractionTimeoutMinutes:  30,
-		PollingIntervalSeconds:    1,
-		MaxPollingIntervalSeconds: 5,
+		BaseURL:            server.URL,
+		Username:           "testuser",
+		Password:           "testpass",
+		ExtractionTimeout:  30 * time.Minute,
+		PollingInterval:    1 * time.Second,
+		MaxPollingInterval: 5 * time.Second,
 	}
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
 
@@ -282,12 +282,12 @@ func TestTORCHService_PollStatus_Failed(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
-		BaseURL:                   server.URL,
-		Username:                  "testuser",
-		Password:                  "testpass",
-		ExtractionTimeoutMinutes:  30,
-		PollingIntervalSeconds:    1,
-		MaxPollingIntervalSeconds: 5,
+		BaseURL:            server.URL,
+		Username:           "testuser",
+		Password:           "testpass",
+		ExtractionTimeout:  30 * time.Minute,
+		PollingInterval:    1 * time.Second,
+		MaxPollingInterval: 5 * time.Second,
 	}
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
 
@@ -475,12 +475,12 @@ func TestTORCHService_EndToEnd_SubmitPollDownload(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
-		BaseURL:                   server.URL,
-		Username:                  "testuser",
-		Password:                  "testpass",
-		ExtractionTimeoutMinutes:  30,
-		PollingIntervalSeconds:    1,
-		MaxPollingIntervalSeconds: 5,
+		BaseURL:            server.URL,
+		Username:           "testuser",
+		Password:           "testpass",
+		ExtractionTimeout:  30 * time.Minute,
+		PollingInterval:    1 * time.Second,
+		MaxPollingInterval: 5 * time.Second,
 	}
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
 

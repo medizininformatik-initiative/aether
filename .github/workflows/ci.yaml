@@ -35,6 +35,11 @@ jobs:
       contents: read
       security-events: write
 
+  vuln:
+    name: Vulnerability Check
+    uses: ./.github/workflows/_vuln.yaml
+    secrets: inherit
+
   tests:
     name: Tests
     needs: [lint]

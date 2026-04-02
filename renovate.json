@@ -43,7 +43,7 @@
       ],
       "datasourceTemplate": "github-release-attachments",
       "matchStrings": [
-        "# renovate: datasource=github-release-attachments depName=(?<depName>\\S+?)(?: (?:lookupName|packageName)=(?<packageName>\\S+?))?(?: versioning=(?<versioning>\\S+?))?(?: extractVersion=(?<extractVersion>\\S+?))?\\s+\\w+?_VERSION\\s*:\\s*[\"']?(?<currentValue>.+?)[\"']?\\s+(\\w+?_CHECKSUM\\s*:\\s*[\"']?(?<currentDigest>\\w+)[\"']?)?"
+        "# renovate: datasource=github-release-attachments depName=(?<depName>\\S+?)(?: (?:lookupName|packageName)=(?<packageName>\\S+?))?(?: versioning=(?<versioning>\\S+?))?(?: extractVersion=(?<extractVersion>\\S+?))?\\s+\\w+?_VERSION\\s*:\\s*[\"']?(?<currentValue>.+?)[\"']?\\s+\\w+?_CHECKSUM\\s*:\\s*[\"']?(?<currentDigest>\\w+)[\"']?"
       ]
     },
     {

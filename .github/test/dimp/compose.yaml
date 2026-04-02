@@ -6,7 +6,7 @@ networks:
 
 services:
   fhir-pseudonymizer:
-    image: ghcr.io/miracum/fhir-pseudonymizer:v2.22.10@sha256:88a8bf300a97acc7a493788add58c207d0ba0397431829c2377aab0eb39ae1d1
+    image: ghcr.io/miracum/fhir-pseudonymizer:v2.25.0@sha256:e9ff406f538283e9be75a1595c3d797993278e6d8e126fd4f6e7105abb863acd
     ports: [ ":8080" ]
     networks: [ "aether", "dimp" ]
     volumes:

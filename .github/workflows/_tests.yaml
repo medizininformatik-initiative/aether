@@ -151,7 +151,7 @@ jobs:
 
       - name: Upload E2E job outputs
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: e2e-job-outputs-${{ github.run_id }}
           path: .github/test/jobs/
@@ -165,7 +165,7 @@ jobs:
 
       - name: Upload service logs
         if: failure()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: docker-logs-e2e-${{ github.run_id }}
           path: docker-logs-e2e.txt
@@ -256,7 +256,7 @@ jobs:
 
       - name: Upload E2E job outputs
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: e2e-direct-load-outputs-${{ github.run_id }}
           path: .github/test/jobs/
@@ -270,7 +270,7 @@ jobs:
 
       - name: Upload service logs
         if: failure()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: docker-logs-direct-load-${{ github.run_id }}
           path: docker-logs-direct-load.txt
@@ -329,7 +329,7 @@ jobs:
 
       - name: Upload flattening job outputs
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: e2e-flattening-outputs-${{ github.run_id }}
           path: .github/test/jobs/
@@ -343,7 +343,7 @@ jobs:
 
       - name: Upload service logs
         if: failure()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: docker-logs-flattening-${{ github.run_id }}
           path: docker-logs-flattening.txt

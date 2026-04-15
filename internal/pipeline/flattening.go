@@ -47,16 +47,17 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 		return err
 	}
 
-	// CRTDL file is required for flattening
-	if job.InputType != models.InputTypeCRTDL {
-		err := fmt.Errorf("flattening step requires CRTDL input (got %s)", job.InputType)
+	// CRTDL file is required for flattening. It may come from the positional
+	// arg (for torch) or from --crtdl (for http_import/local_import).
+	if job.CRTDLPath == "" {
+		err := fmt.Errorf("flattening step requires a CRTDL file: pass one as the positional input or via --crtdl")
 		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
 		recordStepError(step, err, models.ErrorTypeNonTransient)
 		return err
 	}
 
 	// Load CRTDL document
-	crtdlPath := job.InputSource
+	crtdlPath := job.CRTDLPath
 	logger.Debug("Loading CRTDL file", "path", crtdlPath)
 	crtdl, err := services.ParseCRTDL(crtdlPath)
 	if err != nil {

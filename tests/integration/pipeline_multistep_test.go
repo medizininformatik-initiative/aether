@@ -73,7 +73,7 @@ func TestPipelineMultiStep_AutomaticExecution(t *testing.T) {
 
 	logger := lib.NewLogger(lib.LogLevelInfo)
 	// Create job
-	job, err := pipeline.CreateJob(importDir, config, logger)
+	job, err := pipeline.CreateJob(importDir, "", config, logger)
 	require.NoError(t, err)
 	require.NotEmpty(t, job.JobID)
 
@@ -190,7 +190,7 @@ func TestPipelineMultiStep_OnlyImportEnabled(t *testing.T) {
 
 	logger := lib.NewLogger(lib.LogLevelInfo)
 	// Create and start job
-	job, err := pipeline.CreateJob(importDir, config, logger)
+	job, err := pipeline.CreateJob(importDir, "", config, logger)
 	require.NoError(t, err)
 
 	startedJob := pipeline.StartJob(job)
@@ -311,7 +311,7 @@ func TestPipelineMultiStep_JobStatePersistedBetweenSteps(t *testing.T) {
 
 	logger := lib.NewLogger(lib.LogLevelInfo)
 	// Create job
-	job, err := pipeline.CreateJob(importDir, config, logger)
+	job, err := pipeline.CreateJob(importDir, "", config, logger)
 	require.NoError(t, err)
 	jobID := job.JobID
 

@@ -226,7 +226,7 @@ func createTestJobWithState(t *testing.T, jobsDir string, status models.JobStatu
 	createTestFHIRFile(t, sourceDir)
 
 	logger := lib.NewLogger(lib.LogLevelInfo)
-	job, err := pipeline.CreateJob(sourceDir, config, logger)
+	job, err := pipeline.CreateJob(sourceDir, "", config, logger)
 	require.NoError(t, err)
 
 	// Update job to desired state

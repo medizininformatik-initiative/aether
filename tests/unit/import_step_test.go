@@ -208,6 +208,7 @@ func TestExecuteImportStep_TorchImportCRTDLValidationFailure(t *testing.T) {
 		JobID:       "test-job-123",
 		InputSource: "/nonexistent/file.crtdl", // Non-existent CRTDL file
 		InputType:   models.InputTypeCRTDL,
+		CRTDLPath:   "/nonexistent/file.crtdl",
 		CurrentStep: string(models.StepTorchImport),
 		Status:      models.JobStatusPending,
 		Steps:       models.InitializeSteps([]models.StepName{models.StepTorchImport}),

@@ -22,7 +22,7 @@ import (
 //
 // We don't run the full flattening pipeline here (that needs an external
 // fhir-flattener service); instead we mimic exactly what flattening does
-// today: it parses job.InputSource via services.ParseCRTDL and consumes the
+// today: it parses job.CRTDLPath via services.ParseCRTDL and consumes the
 // resulting attribute groups. If enrichment was correctly applied at job
 // creation, the parsed groups must contain the added attribute.
 func TestCRTDLEnrichmentAppliedForLocalImportPath(t *testing.T) {
@@ -80,16 +80,16 @@ func TestCRTDLEnrichmentAppliedForLocalImportPath(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob(crtdlPath, config, logger)
+	job, err := pipeline.CreateJob(crtdlPath, "", config, logger)
 	require.NoError(t, err)
 
-	// CreateJob must repoint InputSource at the enriched CRTDL inside jobDir.
+	// CreateJob must repoint CRTDLPath at the enriched CRTDL inside jobDir.
 	expectedPath := filepath.Join(jobsDir, job.JobID, "enriched-crtdl.json")
-	require.Equal(t, expectedPath, job.InputSource,
-		"InputSource must point at the enriched CRTDL after CreateJob")
+	require.Equal(t, expectedPath, job.CRTDLPath,
+		"CRTDLPath must point at the enriched CRTDL after CreateJob")
 
-	// Mimic what ExecuteFlatteningStep does: ParseCRTDL on job.InputSource.
-	parsed, err := services.ParseCRTDL(job.InputSource)
+	// Mimic what ExecuteFlatteningStep does: ParseCRTDL on job.CRTDLPath.
+	parsed, err := services.ParseCRTDL(job.CRTDLPath)
 	require.NoError(t, err)
 
 	groups := services.GetAttributeGroups(parsed)
@@ -104,10 +104,10 @@ func TestCRTDLEnrichmentAppliedForLocalImportPath(t *testing.T) {
 	assert.Contains(t, refs, "Patient.id",
 		"original Patient.id must be preserved")
 
-	// Reload from disk — the enriched InputSource must be persisted so
+	// Reload from disk — the enriched CRTDLPath must be persisted so
 	// `aether pipeline continue` resumes with the correct CRTDL.
 	reloaded, err := pipeline.LoadJob(jobsDir, job.JobID)
 	require.NoError(t, err)
-	assert.Equal(t, expectedPath, reloaded.InputSource,
+	assert.Equal(t, expectedPath, reloaded.CRTDLPath,
 		"persisted state must reference the enriched CRTDL for resume")
 }

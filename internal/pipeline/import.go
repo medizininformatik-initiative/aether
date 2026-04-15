@@ -150,7 +150,7 @@ func failImportStep(job *models.PipelineJob, err error, errorType models.ErrorTy
 func executeTORCHExtraction(job *models.PipelineJob, importDir string, httpClient *services.HTTPClient, logger *lib.Logger, showProgress bool, compress bool, compressionLevel string) ([]models.FHIRDataFile, error) {
 	torchClient := services.NewTORCHClient(job.Config.Services.TORCH, httpClient, logger)
 
-	extractionURL, err := torchClient.SubmitExtraction(job.InputSource)
+	extractionURL, err := torchClient.SubmitExtraction(job.CRTDLPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to submit TORCH extraction: %w", err)
 	}

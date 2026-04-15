@@ -161,6 +161,7 @@ func TestExecuteFlatteningStep_FullPipeline(t *testing.T) {
 		Status:      models.JobStatusInProgress,
 		InputSource: crtdlPath,
 		InputType:   models.InputTypeCRTDL,
+		CRTDLPath:   crtdlPath,
 		Config: models.ProjectConfig{
 			Services: models.ServiceConfig{
 				Flattening: models.FlatteningConfig{
@@ -217,16 +218,21 @@ func TestExecuteFlatteningStep_NotEnabled(t *testing.T) {
 	assert.NoError(t, err) // Should skip without error
 }
 
-func TestExecuteFlatteningStep_WrongInputType(t *testing.T) {
+// TestExecuteFlatteningStep_NoCRTDLAttached verifies that flattening rejects
+// a job with no CRTDL (CRTDLPath empty) regardless of input type. Previously
+// this test asserted coupling between InputType and CRTDL requirement; after
+// issue #286 the two are decoupled and the check is purely on CRTDLPath.
+func TestExecuteFlatteningStep_NoCRTDLAttached(t *testing.T) {
 	tempDir := t.TempDir()
-	jobID := "test-job-wrong-input"
+	jobID := "test-job-no-crtdl"
 	jobDir := filepath.Join(tempDir, "jobs", jobID)
 	require.NoError(t, os.MkdirAll(jobDir, 0755))
 
 	job := &models.PipelineJob{
 		JobID:     jobID,
 		Status:    models.JobStatusInProgress,
-		InputType: models.InputTypeLocal, // Not CRTDL
+		InputType: models.InputTypeLocal, // intentionally not CRTDL
+		// CRTDLPath intentionally empty
 		Config: models.ProjectConfig{
 			Services: models.ServiceConfig{
 				Flattening: models.FlatteningConfig{
@@ -245,7 +251,8 @@ func TestExecuteFlatteningStep_WrongInputType(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "requires CRTDL input")
+	assert.Contains(t, err.Error(), "requires a CRTDL file")
+	assert.Contains(t, err.Error(), "--crtdl")
 }
 
 func TestExecuteFlatteningStep_MissingCRTDL(t *testing.T) {
@@ -259,6 +266,7 @@ func TestExecuteFlatteningStep_MissingCRTDL(t *testing.T) {
 		Status:      models.JobStatusInProgress,
 		InputSource: "/nonexistent/path.crtdl",
 		InputType:   models.InputTypeCRTDL,
+		CRTDLPath:   "/nonexistent/path.crtdl",
 		Config: models.ProjectConfig{
 			Services: models.ServiceConfig{
 				Flattening: models.FlatteningConfig{
@@ -305,6 +313,7 @@ func TestExecuteFlatteningStep_MissingLookupTables(t *testing.T) {
 		Status:      models.JobStatusInProgress,
 		InputSource: crtdlPath,
 		InputType:   models.InputTypeCRTDL,
+		CRTDLPath:   crtdlPath,
 		Config: models.ProjectConfig{
 			Services: models.ServiceConfig{
 				Flattening: models.FlatteningConfig{
@@ -357,6 +366,7 @@ func TestExecuteFlatteningStep_NoInputFiles(t *testing.T) {
 		Status:      models.JobStatusInProgress,
 		InputSource: crtdlPath,
 		InputType:   models.InputTypeCRTDL,
+		CRTDLPath:   crtdlPath,
 		Config: models.ProjectConfig{
 			Services: models.ServiceConfig{
 				Flattening: models.FlatteningConfig{
@@ -436,6 +446,7 @@ func TestExecuteFlatteningStep_FlattenerServiceError(t *testing.T) {
 		Status:      models.JobStatusInProgress,
 		InputSource: crtdlPath,
 		InputType:   models.InputTypeCRTDL,
+		CRTDLPath:   crtdlPath,
 		Config: models.ProjectConfig{
 			Services: models.ServiceConfig{
 				Flattening: models.FlatteningConfig{

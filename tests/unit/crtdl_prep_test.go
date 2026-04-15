@@ -56,6 +56,7 @@ func newJobForPrep(t *testing.T, jobsDir, jobID, crtdlPath string, preprocessing
 		JobID:       jobID,
 		InputSource: crtdlPath,
 		InputType:   models.InputTypeCRTDL,
+		CRTDLPath:   crtdlPath,
 		Config: models.ProjectConfig{
 			JobsDir: jobsDir,
 			Services: models.ServiceConfig{
@@ -65,12 +66,12 @@ func newJobForPrep(t *testing.T, jobsDir, jobID, crtdlPath string, preprocessing
 	}
 }
 
-func TestPrepareCRTDL_NotCRTDLInputType_NoOp(t *testing.T) {
+func TestPrepareCRTDL_NoCRTDLAttached_NoOp(t *testing.T) {
 	tempDir := t.TempDir()
 	jobsDir := filepath.Join(tempDir, "jobs")
 
 	job := &models.PipelineJob{
-		JobID:       "job-not-crtdl",
+		JobID:       "job-no-crtdl",
 		InputSource: "/some/local/dir",
 		InputType:   models.InputTypeLocal,
 		Config:      models.ProjectConfig{JobsDir: jobsDir},
@@ -78,8 +79,8 @@ func TestPrepareCRTDL_NotCRTDLInputType_NoOp(t *testing.T) {
 
 	require.NoError(t, pipeline.PrepareCRTDL(job, lib.NewLogger(lib.LogLevelDebug)))
 
-	assert.Equal(t, "/some/local/dir", job.InputSource,
-		"InputSource must be untouched when InputType is not CRTDL")
+	assert.Equal(t, "", job.CRTDLPath,
+		"CRTDLPath must remain empty when no CRTDL is attached to the job")
 }
 
 func TestPrepareCRTDL_PreprocessingDisabled_CopiesOriginalToJobDir(t *testing.T) {
@@ -93,8 +94,8 @@ func TestPrepareCRTDL_PreprocessingDisabled_CopiesOriginalToJobDir(t *testing.T)
 	require.NoError(t, pipeline.PrepareCRTDL(job, lib.NewLogger(lib.LogLevelDebug)))
 
 	expectedPath := filepath.Join(jobsDir, jobID, "crtdl.json")
-	assert.Equal(t, expectedPath, job.InputSource,
-		"InputSource must point at jobDir/crtdl.json after copy")
+	assert.Equal(t, expectedPath, job.CRTDLPath,
+		"CRTDLPath must point at jobDir/crtdl.json after copy")
 
 	originalBytes, err := os.ReadFile(crtdlPath)
 	require.NoError(t, err)
@@ -128,8 +129,8 @@ func TestPrepareCRTDL_PreprocessingEnabled_AppliesEnrichmentAndSavesEnrichedFile
 	require.NoError(t, pipeline.PrepareCRTDL(job, lib.NewLogger(lib.LogLevelDebug)))
 
 	expectedPath := filepath.Join(jobsDir, jobID, "enriched-crtdl.json")
-	assert.Equal(t, expectedPath, job.InputSource,
-		"InputSource must point at jobDir/enriched-crtdl.json after enrichment")
+	assert.Equal(t, expectedPath, job.CRTDLPath,
+		"CRTDLPath must point at jobDir/enriched-crtdl.json after enrichment")
 
 	enriched, err := services.ParseCRTDL(expectedPath)
 	require.NoError(t, err)
@@ -160,7 +161,7 @@ func TestPrepareCRTDL_PreprocessingEnabledButNoEnrichments_FallsBackToCopy(t *te
 	require.NoError(t, pipeline.PrepareCRTDL(job, lib.NewLogger(lib.LogLevelDebug)))
 
 	expectedPath := filepath.Join(jobsDir, jobID, "crtdl.json")
-	assert.Equal(t, expectedPath, job.InputSource,
+	assert.Equal(t, expectedPath, job.CRTDLPath,
 		"With enabled+empty enrichments, fall back to copying as crtdl.json")
 
 	originalBytes, err := os.ReadFile(crtdlPath)
@@ -170,7 +171,7 @@ func TestPrepareCRTDL_PreprocessingEnabledButNoEnrichments_FallsBackToCopy(t *te
 	assert.Equal(t, originalBytes, copiedBytes)
 }
 
-func TestPrepareCRTDL_Idempotent_SkipsWhenInputSourceAlreadyInJobDir(t *testing.T) {
+func TestPrepareCRTDL_Idempotent_SkipsWhenCRTDLPathAlreadyInJobDir(t *testing.T) {
 	tempDir := t.TempDir()
 	jobsDir := filepath.Join(tempDir, "jobs")
 	jobID := "job-idempotent"
@@ -190,7 +191,7 @@ func TestPrepareCRTDL_Idempotent_SkipsWhenInputSourceAlreadyInJobDir(t *testing.
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
 	require.NoError(t, pipeline.PrepareCRTDL(job, logger))
-	firstPath := job.InputSource
+	firstPath := job.CRTDLPath
 
 	// Capture file content after first run, then call again — content must be
 	// identical (no double-enrichment) because the second call is a no-op.
@@ -198,7 +199,7 @@ func TestPrepareCRTDL_Idempotent_SkipsWhenInputSourceAlreadyInJobDir(t *testing.
 	require.NoError(t, err)
 
 	require.NoError(t, pipeline.PrepareCRTDL(job, logger))
-	assert.Equal(t, firstPath, job.InputSource, "InputSource unchanged on repeat call")
+	assert.Equal(t, firstPath, job.CRTDLPath, "CRTDLPath unchanged on repeat call")
 
 	secondBytes, err := os.ReadFile(firstPath)
 	require.NoError(t, err)
@@ -265,6 +266,7 @@ func TestPrepareCRTDL_InputInJobDirWithDifferentName_NotConsideredPrepared(t *te
 		JobID:       jobID,
 		InputSource: otherNamePath,
 		InputType:   models.InputTypeCRTDL,
+		CRTDLPath:   otherNamePath,
 		Config: models.ProjectConfig{
 			JobsDir:  jobsDir,
 			Services: models.ServiceConfig{CRTDLPreprocessing: models.CRTDLPreprocessingConfig{Enabled: false}},
@@ -274,7 +276,7 @@ func TestPrepareCRTDL_InputInJobDirWithDifferentName_NotConsideredPrepared(t *te
 	require.NoError(t, pipeline.PrepareCRTDL(job, lib.NewLogger(lib.LogLevelDebug)))
 
 	expectedPath := filepath.Join(jobDir, "crtdl.json")
-	assert.Equal(t, expectedPath, job.InputSource,
+	assert.Equal(t, expectedPath, job.CRTDLPath,
 		"isPreparedCRTDLPath must return false for non-canonical filenames so prep proceeds")
 
 	_, err := os.Stat(expectedPath)
@@ -298,6 +300,7 @@ func TestPrepareCRTDL_PreprocessingDisabled_FailsWhenJobDirUnwritable(t *testing
 		JobID:       "job-bad-jobdir",
 		InputSource: crtdlPath,
 		InputType:   models.InputTypeCRTDL,
+		CRTDLPath:   crtdlPath,
 		Config: models.ProjectConfig{
 			JobsDir:  jobsDir,
 			Services: models.ServiceConfig{CRTDLPreprocessing: models.CRTDLPreprocessingConfig{Enabled: false}},

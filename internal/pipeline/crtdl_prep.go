@@ -12,21 +12,22 @@ import (
 )
 
 // PrepareCRTDL ensures every pipeline step uses the same effective CRTDL.
-// For CRTDL inputs it copies (or enriches) the file into the job directory
-// and repoints job.InputSource at the saved file. The call is a no-op for
-// non-CRTDL inputs and idempotent when InputSource already lives in jobDir.
+// When a CRTDL is attached to the job (via positional CRTDL input or --crtdl)
+// it copies (or enriches) the file into the job directory and repoints
+// job.CRTDLPath at the saved file. The call is a no-op when no CRTDL is
+// attached and idempotent when CRTDLPath already lives in jobDir.
 //
 // With CRTDLPreprocessing enabled and at least one enrichment configured,
 // the result is written as enriched-crtdl.json. Otherwise the original is
 // copied verbatim as crtdl.json.
 func PrepareCRTDL(job *models.PipelineJob, logger *lib.Logger) error {
-	if job.InputType != models.InputTypeCRTDL {
+	if job.CRTDLPath == "" {
 		return nil
 	}
 
 	jobDir := services.GetJobDir(job.Config.JobsDir, job.JobID)
-	if isPreparedCRTDLPath(job.InputSource, jobDir) {
-		logger.Debug("CRTDL already prepared, skipping", "path", job.InputSource)
+	if isPreparedCRTDLPath(job.CRTDLPath, jobDir) {
+		logger.Debug("CRTDL already prepared, skipping", "path", job.CRTDLPath)
 		return nil
 	}
 
@@ -35,9 +36,9 @@ func PrepareCRTDL(job *models.PipelineJob, logger *lib.Logger) error {
 		return copyOriginalCRTDL(job, jobDir, logger)
 	}
 
-	logger.Info("CRTDL preprocessing enabled, enriching CRTDL", "source", job.InputSource)
+	logger.Info("CRTDL preprocessing enabled, enriching CRTDL", "source", job.CRTDLPath)
 
-	originalDoc, err := services.ParseCRTDL(job.InputSource)
+	originalDoc, err := services.ParseCRTDL(job.CRTDLPath)
 	if err != nil {
 		return fmt.Errorf("failed to parse CRTDL: %w", err)
 	}
@@ -72,9 +73,9 @@ func PrepareCRTDL(job *models.PipelineJob, logger *lib.Logger) error {
 	return saveCRTDL(job, jobDir, "enriched-crtdl.json", enrichedContent, logger)
 }
 
-// copyOriginalCRTDL copies job.InputSource verbatim into jobDir/crtdl.json.
+// copyOriginalCRTDL copies job.CRTDLPath verbatim into jobDir/crtdl.json.
 func copyOriginalCRTDL(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
-	content, err := os.ReadFile(job.InputSource)
+	content, err := os.ReadFile(job.CRTDLPath)
 	if err != nil {
 		return fmt.Errorf("failed to read CRTDL file: %w", err)
 	}
@@ -95,13 +96,13 @@ func isPreparedCRTDLPath(path, jobDir string) bool {
 	return false
 }
 
-// saveCRTDL writes content to jobDir/filename and repoints job.InputSource.
+// saveCRTDL writes content to jobDir/filename and repoints job.CRTDLPath.
 func saveCRTDL(job *models.PipelineJob, jobDir, filename string, content []byte, logger *lib.Logger) error {
 	crtdlPath := filepath.Join(jobDir, filename)
 	if err := os.WriteFile(crtdlPath, content, 0644); err != nil {
 		return fmt.Errorf("failed to save CRTDL to job directory: %w", err)
 	}
-	job.InputSource = crtdlPath
+	job.CRTDLPath = crtdlPath
 	logger.Info("CRTDL saved to job directory", "path", crtdlPath)
 	return nil
 }

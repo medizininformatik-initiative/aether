@@ -69,6 +69,13 @@ func LoadJobState(jobsBaseDir string, jobID string) (*models.PipelineJob, error)
 		return nil, fmt.Errorf("failed to parse job state: %w", err)
 	}
 
+	// Backfill CRTDLPath for jobs saved before issue #286: when the positional
+	// input was a CRTDL, InputSource held the CRTDL path. Preserve that linkage
+	// so flattening still works on pre-existing jobs.
+	if job.CRTDLPath == "" && job.InputType == models.InputTypeCRTDL {
+		job.CRTDLPath = job.InputSource
+	}
+
 	if err := job.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid job state loaded from disk: %w", err)
 	}

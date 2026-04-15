@@ -57,7 +57,7 @@ func TestPipelineImportLocal_EndToEnd(t *testing.T) {
 	httpClient := services.DefaultHTTPClient()
 
 	// Step 1: Create new job
-	job, err := pipeline.CreateJob(sourceDir, config, logger)
+	job, err := pipeline.CreateJob(sourceDir, "", config, logger)
 	require.NoError(t, err, "Job creation should succeed")
 	require.NotNil(t, job, "Job should be created")
 	assert.NotEmpty(t, job.JobID, "Job should have an ID")
@@ -146,7 +146,7 @@ func TestPipelineImportLocal_InvalidSource(t *testing.T) {
 	httpClient := services.DefaultHTTPClient()
 
 	// Create job with invalid source
-	job, err := pipeline.CreateJob(nonexistentDir, config, logger)
+	job, err := pipeline.CreateJob(nonexistentDir, "", config, logger)
 	require.NoError(t, err, "Job creation should succeed even with invalid source")
 
 	// Start job
@@ -194,7 +194,7 @@ func TestPipelineImportLocal_EmptyDirectory(t *testing.T) {
 	httpClient := services.DefaultHTTPClient()
 
 	// Create and start job
-	job, err := pipeline.CreateJob(sourceDir, config, logger)
+	job, err := pipeline.CreateJob(sourceDir, "", config, logger)
 	require.NoError(t, err)
 	startedJob := pipeline.StartJob(job)
 
@@ -241,7 +241,7 @@ func TestPipelineImportLocal_ResourceCounting(t *testing.T) {
 	httpClient := services.DefaultHTTPClient()
 
 	// Execute import
-	job, _ := pipeline.CreateJob(sourceDir, config, logger)
+	job, _ := pipeline.CreateJob(sourceDir, "", config, logger)
 	startedJob := pipeline.StartJob(job)
 	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
 
@@ -287,8 +287,8 @@ func TestPipelineImportLocal_JobListAndStatus(t *testing.T) {
 	httpClient := services.DefaultHTTPClient()
 
 	// Create multiple jobs
-	job1, _ := pipeline.CreateJob(sourceDir, config, logger)
-	job2, _ := pipeline.CreateJob(sourceDir, config, logger)
+	job1, _ := pipeline.CreateJob(sourceDir, "", config, logger)
+	job2, _ := pipeline.CreateJob(sourceDir, "", config, logger)
 
 	// Execute import for first job
 	startedJob1 := pipeline.StartJob(job1)

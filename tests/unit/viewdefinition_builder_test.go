@@ -1670,3 +1670,95 @@ func TestIssue142EmbedChildrenIntoParents(t *testing.T) {
 		assert.Contains(t, columnNames, "birth_date")
 	})
 }
+
+// TestSiblingsUnderPlaceholderParent is a regression test for issue #300.
+// Two sibling attributes sharing a placeholder parent must produce exactly one
+// block each, not duplicates. The placeholder parent has no root forEach and an
+// empty select, mirroring the structure of auto-generated MII lookup tables
+// where extension leaves share a common abstract ancestor.
+func TestSiblingsUnderPlaceholderParent(t *testing.T) {
+	t.Run("two siblings under placeholder parent produce one block each", func(t *testing.T) {
+		lookupTables := []models.LookupTable{
+			{
+				URL:          "https://example.com/Condition",
+				ResourceType: "Condition",
+				Elements: map[string]models.LookupElement{
+					"Condition.extension": {
+						Children: []string{
+							"Condition.extension:Feststellungsdatum",
+							"Condition.extension:ReferenzPrimaerdiagnose",
+						},
+						ViewDefinition: models.ViewDefSnippet{
+							Select: []models.SelectClause{}, // placeholder
+						},
+					},
+					"Condition.extension:Feststellungsdatum": {
+						Parent: "Condition.extension",
+						ViewDefinition: models.ViewDefSnippet{
+							ForEachOrNull: "extension.where(url = 'http://hl7.org/fhir/StructureDefinition/condition-assertedDate')",
+							Column: []models.ColumnDefinition{
+								{Name: "Feststellungsdatum", Path: "value.ofType(dateTime)", Type: "dateTime"},
+							},
+						},
+					},
+					"Condition.extension:ReferenzPrimaerdiagnose": {
+						Parent: "Condition.extension",
+						ViewDefinition: models.ViewDefSnippet{
+							ForEachOrNull: "extension.where(url = 'http://hl7.org/fhir/StructureDefinition/condition-related')",
+							Column: []models.ColumnDefinition{
+								{Name: "ReferenzPrimaerdiagnose", Path: "value.ofType(Reference).reference", Type: "string"},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		group := models.AttributeGroup{
+			Name:           "MII PR Diagnose Condition",
+			GroupReference: "https://example.com/Condition",
+			Attributes: []models.Attribute{
+				{AttributeRef: "Condition.extension:Feststellungsdatum"},
+				{AttributeRef: "Condition.extension:ReferenzPrimaerdiagnose"},
+			},
+		}
+
+		builder := services.NewViewDefinitionBuilder(lookupTables)
+		viewDef, err := builder.BuildViewDefinition(group)
+
+		require.NoError(t, err)
+		require.NotNil(t, viewDef)
+
+		assertedDateCount := 0
+		relatedCount := 0
+		for _, sel := range viewDef.Select {
+			fe := sel.ForEach
+			if fe == "" {
+				fe = sel.ForEachOrNull
+			}
+			switch fe {
+			case "extension.where(url = 'http://hl7.org/fhir/StructureDefinition/condition-assertedDate')":
+				assertedDateCount++
+			case "extension.where(url = 'http://hl7.org/fhir/StructureDefinition/condition-related')":
+				relatedCount++
+			}
+		}
+
+		assert.Equal(t, 1, assertedDateCount, "assertedDate extension block must appear exactly once")
+		assert.Equal(t, 1, relatedCount, "condition-related extension block must appear exactly once")
+
+		columnNames := services.ExtractColumnNames(*viewDef)
+		assert.Equal(t, 1, countOccurrences(columnNames, "Feststellungsdatum"), "Feststellungsdatum column must appear exactly once")
+		assert.Equal(t, 1, countOccurrences(columnNames, "ReferenzPrimaerdiagnose"), "ReferenzPrimaerdiagnose column must appear exactly once")
+	})
+}
+
+func countOccurrences(names []string, target string) int {
+	n := 0
+	for _, s := range names {
+		if s == target {
+			n++
+		}
+	}
+	return n
+}

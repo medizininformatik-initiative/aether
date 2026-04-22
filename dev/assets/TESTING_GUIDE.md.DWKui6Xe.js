@@ -18,7 +18,7 @@ import{_ as a,o as i,c as n,ai as e}from"./chunks/framework.Kklb8t0u.js";const k
 <span class="line"><span>Steps:</span></span>
 <span class="line"><span>  ✓ import        - completed (13 files, 5.6 MB) [0 retries]</span></span>
 <span class="line"><span>    dimp          - pending</span></span>
-<span class="line"><span>    csv_conversion - pending</span></span>
+<span class="line"><span>    flattening     - pending</span></span>
 <span class="line"><span></span></span>
 <span class="line"><span>Total Files: 13</span></span>
 <span class="line"><span>Total Data: 5.6 MB</span></span>

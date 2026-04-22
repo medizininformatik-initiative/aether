@@ -29,6 +29,14 @@
       ],
       "versioning": "semver",
       "ignoreUnstable": false
+    },
+    {
+      "description": "Only allow stable releases and alpha pre-releases for torch (exclude test/dev tags)",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": [
+        "ghcr.io/medizininformatik-initiative/torch"
+      ],
+      "allowedVersions": "/^\\d+\\.\\d+\\.\\d+(-alpha\\.\\d+)?$/"
     }
   ],
   "customManagers": [

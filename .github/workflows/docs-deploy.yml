@@ -35,6 +35,11 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Configure git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Determine version and ref
         id: vars
         env:
@@ -190,8 +195,6 @@ jobs:
         env:
           VERSION: ${{ steps.vars.outputs.version }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "${VERSION}" versions.json index.html .nojekyll
           git commit -m "Deploy docs: ${VERSION}" || echo "No changes to commit"
           git push origin gh-pages

@@ -205,61 +205,50 @@ func (b *ViewDefinitionBuilder) resolveGrandchildren(lookup *models.LookupTable,
 	return result
 }
 
-// resolveWithParent wraps an element's select in parent forEach contexts
-// This handles the case when a child element is referenced directly in CRTDL
-func (b *ViewDefinitionBuilder) resolveWithParent(lookup *models.LookupTable, element *models.LookupElement, elementID string) []models.SelectClause {
-	// Get the element's own resolved selects (with children)
+// resolveWithParent wraps an element's resolved selects in its ancestor chain's
+// forEach contexts. Unlike a naive downward re-resolution from an ancestor,
+// this does not walk the parent's children, so sibling attributes sharing an
+// ancestor do not pollute each other's output (regression fix for #300).
+func (b *ViewDefinitionBuilder) resolveWithParent(lookup *models.LookupTable, element *models.LookupElement, _ string) []models.SelectClause {
 	elementSelects := b.resolveWithChildren(lookup, element)
+	return b.wrapInAncestors(lookup, element.Parent, elementSelects)
+}
 
-	// If no parent, return as-is
-	if element.Parent == "" {
-		return elementSelects
+// wrapInAncestors walks up the parent chain starting at parentID and wraps
+// selects in each ancestor's forEach context. Placeholder ancestors (no root
+// forEach and no select-level forEach) are passed through unchanged so the
+// selects bubble up to the next ancestor that provides context.
+func (b *ViewDefinitionBuilder) wrapInAncestors(lookup *models.LookupTable, parentID string, selects []models.SelectClause) []models.SelectClause {
+	if parentID == "" {
+		return selects
+	}
+	parent := GetElement(lookup, parentID)
+	if parent == nil {
+		return selects
 	}
 
-	// Find parent element
-	parentElement := GetElement(lookup, element.Parent)
-	if parentElement == nil {
-		return elementSelects
-	}
+	wrapped := selects
+	parentHasRootForEach := parent.ViewDefinition.ForEach != "" || parent.ViewDefinition.ForEachOrNull != ""
 
-	// Check if parent has root-level forEach/forEachOrNull
-	parentHasRootForEach := parentElement.ViewDefinition.ForEach != "" || parentElement.ViewDefinition.ForEachOrNull != ""
-
-	// If parent is placeholder (no root forEach and empty Select), continue up the hierarchy
-	if !parentHasRootForEach && len(parentElement.ViewDefinition.Select) == 0 {
-		return b.resolveWithParent(lookup, parentElement, element.Parent)
-	}
-
-	var result []models.SelectClause
-
-	// If parent has root-level forEach, wrap element's selects in parent's context
 	if parentHasRootForEach {
-		wrapper := viewDefSnippetToSelectClause(parentElement.ViewDefinition)
-		wrapper.Select = elementSelects
-		result = []models.SelectClause{wrapper}
+		wrapper := models.SelectClause{
+			ForEach:       parent.ViewDefinition.ForEach,
+			ForEachOrNull: parent.ViewDefinition.ForEachOrNull,
+			Select:        selects,
+		}
+		wrapped = []models.SelectClause{wrapper}
 	} else {
-		// Check if parent's select clauses have forEach
-		for _, parentSel := range parentElement.ViewDefinition.Select {
-			if parentSel.ForEach != "" || parentSel.ForEachOrNull != "" {
-				newSel := cloneSelectClause(parentSel)
-				// Clear existing nested selects and add element's selects
-				newSel.Select = elementSelects
-				result = append(result, newSel)
+		for _, ps := range parent.ViewDefinition.Select {
+			if ps.ForEach != "" || ps.ForEachOrNull != "" {
+				newSel := cloneSelectClause(ps)
+				newSel.Select = selects
+				wrapped = []models.SelectClause{newSel}
+				break
 			}
 		}
 	}
 
-	// If we wrapped in parent's forEach, recursively wrap in grandparent context
-	if len(result) > 0 && parentElement.Parent != "" {
-		return b.resolveWithParent(lookup, parentElement, element.Parent)
-	}
-
-	// If no forEach found in parent, return element's selects directly
-	if len(result) == 0 {
-		return elementSelects
-	}
-
-	return result
+	return b.wrapInAncestors(lookup, parent.Parent, wrapped)
 }
 
 // cloneSelectClause creates a deep copy of a SelectClause

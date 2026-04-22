@@ -1,0 +1,35 @@
+name: Vulnerability Check
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: '1.26.2'
+          cache: true
+
+      - name: Install govulncheck
+        env:
+          # renovate: datasource=github-releases depName=golang/vuln
+          GOVULNCHECK_VERSION: v1.1.4
+        run: go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
+
+      - name: Run govulncheck
+        run: govulncheck ./...

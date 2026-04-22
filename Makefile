@@ -25,7 +25,7 @@ LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 PLATFORMS := linux darwin
 ARCHITECTURES := amd64 arm64
 
-.PHONY: all build build-all build-linux build-mac build-mac-arm build-windows build-windows-arm clean test test-unit test-integration test-contract coverage fmt vet install help release
+.PHONY: all build build-all build-linux build-mac build-mac-arm build-windows build-windows-arm clean test test-unit test-integration test-contract coverage fmt vet vuln install help release
 
 # Default target
 all: clean fmt vet test build
@@ -151,6 +151,15 @@ fmt:
 vet:
 	@echo "Running go vet..."
 	$(GOCMD) vet ./...
+
+## vuln: Run govulncheck for known vulnerabilities
+vuln:
+	@echo "Running govulncheck..."
+	@if command -v govulncheck > /dev/null; then \
+		govulncheck ./...; \
+	else \
+		echo "govulncheck not installed. Install with: go install golang.org/x/vuln/cmd/govulncheck@latest"; \
+	fi
 
 ## lint: Run golangci-lint (requires golangci-lint installed)
 lint:

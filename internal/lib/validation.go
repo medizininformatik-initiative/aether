@@ -12,15 +12,13 @@ import (
 // StepPrerequisites defines which steps must complete before a given step can run
 // Note: "import" is a placeholder representing any of the three import step types
 var StepPrerequisites = map[models.StepName][]models.StepName{
-	models.StepTorchImport:       {},         // No prerequisites - can always run
-	models.StepLocalImport:       {},         // No prerequisites - can always run
-	models.StepHttpImport:        {},         // No prerequisites - can always run
-	models.StepDIMP:              {"import"}, // Requires any import step to complete
-	models.StepValidation:        {"import"}, // Can validate after import (regardless of DIMP)
-	models.StepCSVConversion:     {"import"}, // Can convert original or pseudonymized data
-	models.StepParquetConversion: {"import"}, // Can convert original or pseudonymized data
-	models.StepWait:              {"import"}, // Wait requires at least one step to have run
-	models.StepSend:              {"import"}, // Send requires at least import to have run
+	models.StepTorchImport: {},         // No prerequisites - can always run
+	models.StepLocalImport: {},         // No prerequisites - can always run
+	models.StepHttpImport:  {},         // No prerequisites - can always run
+	models.StepDIMP:        {"import"}, // Requires any import step to complete
+	models.StepValidation:  {"import"}, // Can validate after import (regardless of DIMP)
+	models.StepWait:        {"import"}, // Wait requires at least one step to have run
+	models.StepSend:        {"import"}, // Send requires at least import to have run
 }
 
 // ValidateStepPrerequisites checks if all prerequisite steps have completed successfully

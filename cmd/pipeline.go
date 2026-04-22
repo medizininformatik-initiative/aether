@@ -239,14 +239,6 @@ func executeStep(job *models.PipelineJob, stepName models.StepName, config *mode
 		fmt.Printf("\n✓ Validation completed\n")
 		return nil
 
-	case models.StepCSVConversion:
-		fmt.Println("CSV conversion step not yet implemented - job will remain at this step")
-		return nil
-
-	case models.StepParquetConversion:
-		fmt.Println("Parquet conversion step not yet implemented - job will remain at this step")
-		return nil
-
 	case models.StepFlattening:
 		fmt.Println("Starting flattening step...")
 		if err := pipeline.ExecuteFlatteningStep(job, jobDir, logger); err != nil {

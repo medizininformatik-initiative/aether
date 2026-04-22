@@ -332,8 +332,6 @@ pipeline:
 | `flattening` | Transform to CSV (requires CRTDL) |
 | `send` | Upload to destination server |
 | `validation` | Validate FHIR data against profiles |
-| `csv_conversion` | Convert to CSV (placeholder) |
-| `parquet_conversion` | Convert to Parquet (placeholder) |
 
 **Rules:**
 - One import step must be first (torch, local_import, or http_import)

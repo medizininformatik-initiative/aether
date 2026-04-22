@@ -110,12 +110,6 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 				BundleChunkSizeMB:     viper.GetInt("services.validation.bundle_chunk_size_mb"),
 				FailOnError:           viperGetBoolPtr("services.validation.fail_on_error"),
 			},
-			CSVConversion: models.CSVConversionConfig{
-				URL: ExpandEnvVars(viper.GetString("services.csv_conversion.url")),
-			},
-			ParquetConversion: models.ParquetConversionConfig{
-				URL: ExpandEnvVars(viper.GetString("services.parquet_conversion.url")),
-			},
 			Flattening: models.FlatteningConfig{
 				ServiceURL:  ExpandEnvVars(viper.GetString("services.flattening.service_url")),
 				LookupPath:  ExpandEnvVars(viper.GetString("services.flattening.lookup_path")),

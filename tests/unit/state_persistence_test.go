@@ -27,9 +27,7 @@ func TestGetJobOutputDir(t *testing.T) {
 		{models.StepTorchImport, "/tmp/jobs/test-job-123/import"},
 		{models.StepHttpImport, "/tmp/jobs/test-job-123/import"},
 		{models.StepDIMP, "/tmp/jobs/test-job-123/pseudonymized"},
-		{models.StepCSVConversion, "/tmp/jobs/test-job-123/csv"},
 		{models.StepFlattening, "/tmp/jobs/test-job-123/csv"},
-		{models.StepParquetConversion, "/tmp/jobs/test-job-123/parquet"},
 		{models.StepSend, "/tmp/jobs/test-job-123/send"},
 		{models.StepWait, "/tmp/jobs/test-job-123"},
 		{models.StepValidation, "/tmp/jobs/test-job-123/validation"},
@@ -201,7 +199,7 @@ func TestStatePersistence_MultipleSteps(t *testing.T) {
 	job.Config.Pipeline.EnabledSteps = []models.StepName{
 		models.StepLocalImport,
 		models.StepDIMP,
-		models.StepCSVConversion,
+		models.StepFlattening,
 	}
 
 	job.Steps = []models.PipelineStep{
@@ -221,7 +219,7 @@ func TestStatePersistence_MultipleSteps(t *testing.T) {
 			BytesProcessed: 512000,
 		},
 		{
-			Name:           models.StepCSVConversion,
+			Name:           models.StepFlattening,
 			Status:         models.StepStatusPending,
 			FilesProcessed: 0,
 			BytesProcessed: 0,

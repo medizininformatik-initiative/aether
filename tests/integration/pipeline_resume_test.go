@@ -32,7 +32,7 @@ func TestPipelineResume_AfterImportComplete(t *testing.T) {
 			EnabledSteps: []models.StepName{
 				models.StepLocalImport,
 				models.StepDIMP,
-				models.StepCSVConversion,
+				models.StepFlattening,
 			},
 		},
 		Retry: models.RetryConfig{
@@ -45,8 +45,9 @@ func TestPipelineResume_AfterImportComplete(t *testing.T) {
 			DIMP: models.DIMPConfig{
 				URL: "http://localhost:8083/fhir",
 			},
-			CSVConversion: models.CSVConversionConfig{
-				URL: "http://localhost:9000/convert/csv",
+			Flattening: models.FlatteningConfig{
+				ServiceURL: "http://localhost:8000",
+				LookupPath: "/tmp/lookup.json",
 			},
 		},
 	}
@@ -112,7 +113,7 @@ func TestPipelineResume_AfterImportComplete(t *testing.T) {
 	assert.Equal(t, 3, len(reloadedJob.Config.Pipeline.EnabledSteps), "Config should preserve all enabled steps")
 	assert.Equal(t, models.StepLocalImport, reloadedJob.Config.Pipeline.EnabledSteps[0])
 	assert.Equal(t, models.StepDIMP, reloadedJob.Config.Pipeline.EnabledSteps[1])
-	assert.Equal(t, models.StepCSVConversion, reloadedJob.Config.Pipeline.EnabledSteps[2])
+	assert.Equal(t, models.StepFlattening, reloadedJob.Config.Pipeline.EnabledSteps[2])
 }
 
 // TestPipelineResume_AfterFailedStep tests resuming after a step failure
@@ -184,7 +185,7 @@ func TestPipelineResume_MultipleStepsCompleted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify: Current step is CSV conversion
-	assert.Equal(t, string(models.StepCSVConversion), reloadedJob.CurrentStep, "Should advance to CSV conversion")
+	assert.Equal(t, string(models.StepFlattening), reloadedJob.CurrentStep, "Should advance to flattening")
 
 	// Verify: Previous steps are completed
 	importStep, _ := models.GetStepByName(*reloadedJob, models.StepLocalImport)
@@ -207,9 +208,9 @@ func TestPipelineResume_CompletedJob(t *testing.T) {
 	updatedJob := models.ReplaceStep(*job, models.CompleteStep(dimpStep, 10, 512000))
 	job = &updatedJob
 
-	// Complete CSV conversion
-	csvStep, _ := models.GetStepByName(*job, models.StepCSVConversion)
-	updatedJob2 := models.ReplaceStep(*job, models.CompleteStep(csvStep, 10, 256000))
+	// Complete flattening
+	flatteningStep, _ := models.GetStepByName(*job, models.StepFlattening)
+	updatedJob2 := models.ReplaceStep(*job, models.CompleteStep(flatteningStep, 10, 256000))
 	job = &updatedJob2
 
 	// Mark job as completed
@@ -255,7 +256,7 @@ func createCompletedImportJob(t *testing.T, jobsDir string, fileCount int) *mode
 			EnabledSteps: []models.StepName{
 				models.StepLocalImport,
 				models.StepDIMP,
-				models.StepCSVConversion,
+				models.StepFlattening,
 			},
 		},
 		Retry: models.RetryConfig{

@@ -145,7 +145,7 @@ func TestPipelineMultiStep_StepSequencing(t *testing.T) {
 				models.StepLocalImport,
 				models.StepDIMP,
 				models.StepValidation,
-				models.StepCSVConversion,
+				models.StepFlattening,
 			},
 		},
 		JobsDir: jobsDir,
@@ -154,8 +154,8 @@ func TestPipelineMultiStep_StepSequencing(t *testing.T) {
 	// Test GetNextStep returns steps in order
 	assert.Equal(t, models.StepDIMP, config.Pipeline.GetNextStep(models.StepLocalImport))
 	assert.Equal(t, models.StepValidation, config.Pipeline.GetNextStep(models.StepDIMP))
-	assert.Equal(t, models.StepCSVConversion, config.Pipeline.GetNextStep(models.StepValidation))
-	assert.Equal(t, models.StepName(""), config.Pipeline.GetNextStep(models.StepCSVConversion), "Should return empty after last step")
+	assert.Equal(t, models.StepFlattening, config.Pipeline.GetNextStep(models.StepValidation))
+	assert.Equal(t, models.StepName(""), config.Pipeline.GetNextStep(models.StepFlattening), "Should return empty after last step")
 }
 
 // TestPipelineMultiStep_OnlyImportEnabled verifies pipeline works with only import
@@ -225,14 +225,15 @@ func TestPipelineMultiStep_ConfigLoadingPreservesSteps(t *testing.T) {
 services:
   dimp:
     url: "http://localhost:8080"
-  csv_conversion:
-    url: "http://localhost:9000"
+  flattening:
+    service_url: "http://localhost:8000"
+    lookup_path: "/tmp/lookup.json"
 
 pipeline:
   enabled_steps:
     - local_import
     - dimp
-    - csv_conversion
+    - flattening
 
 retry:
   max_attempts: 5
@@ -255,11 +256,11 @@ jobs_dir: "` + jobsDir + `"
 	assert.Len(t, config.Pipeline.EnabledSteps, 3, "Should have 3 enabled steps")
 	assert.Equal(t, models.StepLocalImport, config.Pipeline.EnabledSteps[0])
 	assert.Equal(t, models.StepDIMP, config.Pipeline.EnabledSteps[1])
-	assert.Equal(t, models.StepCSVConversion, config.Pipeline.EnabledSteps[2])
+	assert.Equal(t, models.StepFlattening, config.Pipeline.EnabledSteps[2])
 
 	// Verify service URLs are loaded
 	assert.Equal(t, "http://localhost:8080", config.Services.DIMP.URL)
-	assert.Equal(t, "http://localhost:9000", config.Services.CSVConversion.URL)
+	assert.Equal(t, "http://localhost:8000", config.Services.Flattening.ServiceURL)
 }
 
 // TestPipelineMultiStep_JobStatePersistedBetweenSteps verifies job state

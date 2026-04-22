@@ -78,9 +78,6 @@ Available Steps:
   import            - Import FHIR data from local or HTTP source
   dimp              - Pseudonymize data via DIMP service
   validation        - Validate FHIR data (placeholder)
-  csv_conversion    - Convert FHIR to CSV format
-  parquet_conversion - Convert FHIR to Parquet format
-
 Prerequisites:
   • The step must be enabled in project configuration
   • Prerequisite steps must be completed (e.g., import before dimp)
@@ -92,9 +89,6 @@ Examples:
 
   # Run DIMP pseudonymization step
   aether job run abc123 --step dimp
-
-  # Run CSV conversion step
-  aether job run abc123 --step csv_conversion
 
 Error Handling:
   • Transient errors (network, 5xx) are retried automatically
@@ -284,18 +278,16 @@ func runJobRun(cmd *cobra.Command, args []string) error {
 // validateStepName validates and converts step flag to StepName type
 func validateStepName(step string) (models.StepName, error) {
 	validSteps := map[string]models.StepName{
-		"torch":              models.StepTorchImport,
-		"local_import":       models.StepLocalImport,
-		"http_import":        models.StepHttpImport,
-		"dimp":               models.StepDIMP,
-		"validation":         models.StepValidation,
-		"csv_conversion":     models.StepCSVConversion,
-		"parquet_conversion": models.StepParquetConversion,
+		"torch":        models.StepTorchImport,
+		"local_import": models.StepLocalImport,
+		"http_import":  models.StepHttpImport,
+		"dimp":         models.StepDIMP,
+		"validation":   models.StepValidation,
 	}
 
 	stepName, ok := validSteps[step]
 	if !ok {
-		return "", fmt.Errorf("invalid step name '%s'. Valid steps: torch, local_import, http_import, dimp, validation, csv_conversion, parquet_conversion", step)
+		return "", fmt.Errorf("invalid step name '%s'. Valid steps: torch, local_import, http_import, dimp, validation", step)
 	}
 
 	return stepName, nil
@@ -372,12 +364,6 @@ func executeStepManually(job *models.PipelineJob, stepName models.StepName, conf
 
 	case models.StepValidation:
 		return fmt.Errorf("validation step not yet implemented")
-
-	case models.StepCSVConversion:
-		return fmt.Errorf("CSV conversion step not yet implemented")
-
-	case models.StepParquetConversion:
-		return fmt.Errorf("parquet conversion step not yet implemented")
 
 	default:
 		return fmt.Errorf("unknown step: %s", stepName)

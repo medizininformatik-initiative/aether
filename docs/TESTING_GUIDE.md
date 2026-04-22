@@ -68,7 +68,7 @@ Created: 2025-10-09 10:30:00
 Steps:
   ✓ import        - completed (13 files, 5.6 MB) [0 retries]
     dimp          - pending
-    csv_conversion - pending
+    flattening     - pending
 
 Total Files: 13
 Total Data: 5.6 MB

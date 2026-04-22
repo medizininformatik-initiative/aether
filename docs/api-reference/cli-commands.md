@@ -134,7 +134,7 @@ aether job run <job-id> --step <step-name>
 **Options:**
 - `--step` - Step to execute (required)
 
-**Valid steps:** `torch`, `local_import`, `http_import`, `dimp`, `validation`, `csv_conversion`, `parquet_conversion`
+**Valid steps:** `torch`, `local_import`, `http_import`, `dimp`, `validation`
 
 **Examples:**
 ```bash

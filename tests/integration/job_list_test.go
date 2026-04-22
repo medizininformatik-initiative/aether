@@ -30,7 +30,7 @@ func TestJobList_MultipleJobs(t *testing.T) {
 	job2 := createTestJobWithState(t, jobsDir, models.JobStatusInProgress, models.StepDIMP)
 	time.Sleep(10 * time.Millisecond)
 
-	job3 := createTestJobWithState(t, jobsDir, models.JobStatusFailed, models.StepCSVConversion)
+	job3 := createTestJobWithState(t, jobsDir, models.JobStatusFailed, models.StepFlattening)
 	time.Sleep(10 * time.Millisecond)
 
 	job4 := createTestJobWithState(t, jobsDir, models.JobStatusPending, models.StepLocalImport)
@@ -172,7 +172,7 @@ func TestJobList_FilterByStatus(t *testing.T) {
 	// Create jobs with different statuses
 	completedJob := createTestJobWithState(t, jobsDir, models.JobStatusCompleted, models.StepLocalImport)
 	inProgressJob := createTestJobWithState(t, jobsDir, models.JobStatusInProgress, models.StepDIMP)
-	failedJob := createTestJobWithState(t, jobsDir, models.JobStatusFailed, models.StepCSVConversion)
+	failedJob := createTestJobWithState(t, jobsDir, models.JobStatusFailed, models.StepFlattening)
 	_ = createTestJobWithState(t, jobsDir, models.JobStatusPending, models.StepLocalImport)
 
 	// List all jobs
@@ -211,7 +211,7 @@ func TestJobList_FilterByStatus(t *testing.T) {
 func createTestJobWithState(t *testing.T, jobsDir string, status models.JobStatus, currentStep models.StepName) *models.PipelineJob {
 	config := models.ProjectConfig{
 		Pipeline: models.PipelineConfig{
-			EnabledSteps: []models.StepName{models.StepLocalImport, models.StepDIMP, models.StepCSVConversion},
+			EnabledSteps: []models.StepName{models.StepLocalImport, models.StepDIMP, models.StepFlattening},
 		},
 		Retry: models.RetryConfig{
 			MaxAttempts:      5,

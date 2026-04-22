@@ -46,16 +46,6 @@ services:
     # Default: 10 MB
     bundle_split_threshold_mb: 10
 
-  # CSV Conversion Service (optional)
-  # Leave empty to skip CSV conversion
-  csv_conversion:
-    url: "http://localhost:9000/convert/csv"
-
-  # Parquet Conversion Service (optional)
-  # Leave empty to skip Parquet conversion
-  parquet_conversion:
-    url: "http://localhost:9000/convert/parquet"
-
   # CRTDL Preprocessing (optional)
   # Enriches CRTDL files with additional attributes required by DIMP before sending to TORCH.
   # This is needed when DIMP requires certain identifiers (e.g., PseudonymisierterIdentifier,
@@ -204,7 +194,7 @@ services:
 pipeline:
   # List of steps to execute in order
   # Import step options (must be first): torch, local_import, http_import
-  # Other step options: dimp, validation, csv_conversion, parquet_conversion, wait, flattening
+  # Other step options: dimp, validation, wait, flattening
   #
   # IMPORTANT: Only ONE import step should be enabled at a time!
   #   - torch: Use with CRTDL for TORCH extraction
@@ -243,8 +233,6 @@ pipeline:
     - dimp
     # - wait          # Uncomment to pause after pseudonymization
     - flattening      # Transform FHIR to CSV using fhir-flattener (CRTDL input only)
-    - csv_conversion
-    - parquet_conversion
     # - send           # Uncomment to send data to DSF transfer server
 
   # Maximum NDJSON line size in megabytes (MB)

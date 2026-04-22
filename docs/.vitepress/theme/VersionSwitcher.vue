@@ -77,7 +77,9 @@ onMounted(async () => {
 <style scoped>
 .version-switcher {
   position: relative;
-  margin-right: 8px;
+  margin-right: 16px;
+  padding-right: 16px;
+  border-right: 1px solid var(--vp-c-divider);
 }
 
 .version-button {
@@ -157,7 +159,9 @@ onMounted(async () => {
 }
 
 .version-text {
-  margin-right: 8px;
+  margin-right: 16px;
+  padding-right: 16px;
+  border-right: 1px solid var(--vp-c-divider);
   font-size: 13px;
   color: var(--vp-c-text-2);
 }

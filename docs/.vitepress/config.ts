@@ -26,7 +26,7 @@ export default defineConfig({
     // Top navigation bar
     nav: [
       {
-        text: 'GitHub',
+        text: 'Community',
         items: [
           {
             text: 'Issues',

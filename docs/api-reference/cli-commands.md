@@ -20,15 +20,21 @@ aether [global-options] <command> [command-options]
 Start a new pipeline job.
 
 ```bash
-aether pipeline start [input] [options]
+aether pipeline start <crtdl> [input] [options]
 ```
 
 **Arguments:**
-- `[input]` - CRTDL file, TORCH URL, or HTTP URL. CRTDL file required if flattening enabled. TORCH URLs (containing `/fhir/extraction/` or `/fhir/result/`) skip extraction submission.
+- `<crtdl>` - CRTDL file path. Required for every pipeline run.
+- `[input]` - Optional import-step input:
+  - omitted: torch_import submits the CRTDL; local_import uses `--dir`/config
+  - local directory (local_import)
+  - HTTP(S) URL (http_import)
+  - TORCH result URL (torch_import; auto-detected from URL shape)
 
 **Options:**
 - `--no-progress` - Disable progress indicators
 - `--dir PATH` - Directory for local import (overrides config)
+- `--allow-http-crtdl` - Acknowledge that HTTP data may not match the CRTDL query (required when `http_import` is enabled)
 
 **Examples:**
 ```bash
@@ -36,19 +42,16 @@ aether pipeline start [input] [options]
 aether pipeline start query.crtdl
 
 # Direct TORCH URL (skip extraction, poll and download results)
-aether pipeline start "https://torch.example.com/fhir/extraction/result-123"
+aether pipeline start query.crtdl "https://torch.example.com/fhir/extraction/result-123"
 
-# Local import with CRTDL for flattening
+# Local import with CRTDL for flattening (dir from flag)
 aether pipeline start query.crtdl --dir /path/to/data
 
-# Local import without CRTDL (uses config directory)
-aether pipeline start
+# Local import with CRTDL for flattening (dir as positional)
+aether pipeline start query.crtdl /path/to/data
 
-# Local import with directory override
-aether pipeline start --dir /path/to/data
-
-# HTTP download (single file)
-aether pipeline start https://example.com/fhir/data.ndjson
+# HTTP download piped through flattening
+aether pipeline start query.crtdl https://example.com/fhir/data.ndjson --allow-http-crtdl
 
 # Disable progress bars
 aether pipeline start query.crtdl --no-progress

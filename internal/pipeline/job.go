@@ -11,18 +11,16 @@ import (
 
 // CreateJob initializes a new pipeline job.
 //
-// inputSource can be:
-//   - CRTDL file path (required if torch_import enabled)
+// crtdlPath is the CRTDL file attached to the job; every job carries a CRTDL
+// so it is normally non-empty (the "" case is kept only for tests that
+// exercise non-CRTDL paths).
+//
+// inputSource is the import-step input:
 //   - HTTP(S) URL (for http_import)
 //   - TORCH result URL (auto-detected)
 //   - Local directory path (for local_import)
-//   - Empty string (local_import uses config.Services.LocalImport.Dir)
-//
-// crtdlPath attaches a CRTDL to the job independently of inputSource, so
-// http_import and local_import can feed flattening. For torch jobs where the
-// positional input already IS the CRTDL, pass "" — CreateJob backfills it.
-// A non-empty crtdlPath that conflicts with a CRTDL positional input is an
-// error.
+//   - Empty string: torch_import submits the CRTDL to TORCH, or local_import
+//     falls back to config.Services.LocalImport.Dir
 //
 // Returns the created job with generated UUID and initialized steps.
 func CreateJob(inputSource string, crtdlPath string, config models.ProjectConfig, logger *lib.Logger) (*models.PipelineJob, error) {
@@ -34,7 +32,8 @@ func CreateJob(inputSource string, crtdlPath string, config models.ProjectConfig
 	var err error
 
 	if inputSource == "" {
-		// No input source provided - local_import will use config.Services.LocalImport.Dir
+		// No input source provided - torch_import submits the CRTDL, or
+		// local_import uses config.Services.LocalImport.Dir.
 		inputType = models.InputTypeLocal
 		logger.Info("No input source provided, using local import from config", "dir", config.Services.LocalImport.Dir)
 	} else {
@@ -46,23 +45,12 @@ func CreateJob(inputSource string, crtdlPath string, config models.ProjectConfig
 		logger.Info("Detected input type", "type", inputType, "source", inputSource)
 	}
 
-	// Resolve effective CRTDL path: positional-CRTDL provides one implicitly;
-	// an explicit crtdlPath flag provides one for any input type. Conflicting
-	// values (both set, different paths) are rejected.
-	effectiveCRTDL := crtdlPath
-	if inputType == models.InputTypeCRTDL {
-		if effectiveCRTDL != "" && effectiveCRTDL != inputSource {
-			return nil, fmt.Errorf("conflicting CRTDL sources: positional arg %q and --crtdl %q differ", inputSource, effectiveCRTDL)
-		}
-		effectiveCRTDL = inputSource
-	}
-
-	// Validate CRTDL syntax whenever one is attached (regardless of source)
-	if effectiveCRTDL != "" {
-		if err := lib.ValidateCRTDLSyntax(effectiveCRTDL); err != nil {
+	// Validate CRTDL syntax whenever one is attached
+	if crtdlPath != "" {
+		if err := lib.ValidateCRTDLSyntax(crtdlPath); err != nil {
 			return nil, fmt.Errorf("CRTDL validation failed: %w", err)
 		}
-		logger.Info("CRTDL syntax validation passed", "path", effectiveCRTDL)
+		logger.Info("CRTDL syntax validation passed", "path", crtdlPath)
 	}
 
 	// Determine initial step based on enabled import step in config
@@ -94,7 +82,7 @@ func CreateJob(inputSource string, crtdlPath string, config models.ProjectConfig
 		UpdatedAt:          time.Now(),
 		InputSource:        inputSource,
 		InputType:          inputType,
-		CRTDLPath:          effectiveCRTDL,
+		CRTDLPath:          crtdlPath,
 		TORCHExtractionURL: "",                  // Will be set during TORCH extraction if applicable
 		CurrentStep:        string(initialStep), // Set based on input type
 		Status:             models.JobStatusPending,

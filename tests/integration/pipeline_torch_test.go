@@ -153,13 +153,13 @@ func TestPipeline_TORCHExtraction_EndToEnd(t *testing.T) {
 
 	// Create job with CRTDL input
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob(crtdlPath, "", config, logger)
+	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
 	require.NoError(t, err)
 
-	// Verify job was created with correct input type. CreateJob copies the
-	// CRTDL into the job directory (PrepareCRTDL) so CRTDLPath now points
-	// at jobs/<id>/crtdl.json rather than the original input path.
-	assert.Equal(t, models.InputTypeCRTDL, job.InputType)
+	// CRTDL is attached via the CRTDL-positional CLI contract, no external
+	// input source. PrepareCRTDL repoints CRTDLPath at jobs/<id>/crtdl.json.
+	assert.Equal(t, models.InputTypeLocal, job.InputType)
+	assert.Empty(t, job.InputSource)
 	assert.Equal(t, filepath.Join(jobsDir, job.JobID, "crtdl.json"), job.CRTDLPath)
 	assert.NotEmpty(t, job.JobID)
 
@@ -262,7 +262,7 @@ func TestPipeline_TORCHExtraction_EmptyResult(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob(crtdlPath, "", config, logger)
+	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
 	require.NoError(t, err)
 
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
@@ -310,7 +310,7 @@ func TestPipeline_TORCHExtraction_ServerUnavailable(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob(crtdlPath, "", config, logger)
+	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
 	require.NoError(t, err)
 
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
@@ -759,9 +759,9 @@ func TestPipeline_TORCHExtraction_WithWaitStep_DataModification(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 
 	// Step 1: Create job with CRTDL input
-	job, err := pipeline.CreateJob(crtdlPath, "", config, logger)
+	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
 	require.NoError(t, err)
-	assert.Equal(t, models.InputTypeCRTDL, job.InputType)
+	assert.Equal(t, filepath.Join(jobsDir, job.JobID, "crtdl.json"), job.CRTDLPath)
 
 	// Step 2: Execute TORCH import step
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
@@ -989,7 +989,7 @@ func TestPipeline_TORCHExtraction_WithPreprocessing(t *testing.T) {
 
 	// Create job with CRTDL input
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob(crtdlPath, "", config, logger)
+	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
 	require.NoError(t, err)
 
 	// Execute import step (triggers TORCH extraction with preprocessing)
@@ -1047,7 +1047,8 @@ func TestPipeline_TORCHExtraction_WithPreprocessing(t *testing.T) {
 	assert.Contains(t, string(savedContent), "Patient.identifier:PseudonymisierterIdentifier",
 		"Saved CRTDL should contain the enrichment attribute")
 
-	// Verify job.CRTDLPath was updated to point to the job-local copy
+	// Verify job.CRTDLPath was repointed to the enriched copy so downstream
+	// steps (flattening) read the same CRTDL that was submitted to TORCH.
 	assert.Equal(t, crtdlJobPath, updatedJob.CRTDLPath,
 		"job.CRTDLPath should point to enriched-crtdl.json in the job directory")
 
@@ -1158,9 +1159,9 @@ func TestPipeline_TORCHExtraction_JobResumption(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 
 	// PHASE 1: Start extraction (simulate initial job creation)
-	job, err := pipeline.CreateJob(crtdlPath, "", config, logger)
+	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
 	require.NoError(t, err)
-	require.Equal(t, models.InputTypeCRTDL, job.InputType)
+	require.Equal(t, filepath.Join(jobsDir, job.JobID, "crtdl.json"), job.CRTDLPath)
 
 	// Simulate starting the extraction and getting the extraction URL
 	httpClient := services.NewHTTPClient(5*time.Second, config.Retry, models.TLSConfig{}, logger)
@@ -1191,7 +1192,7 @@ func TestPipeline_TORCHExtraction_JobResumption(t *testing.T) {
 	// Verify job state was preserved
 	assert.Equal(t, job.JobID, reloadedJob.JobID)
 	assert.Equal(t, extractionURL, reloadedJob.TORCHExtractionURL)
-	assert.Equal(t, models.InputTypeCRTDL, reloadedJob.InputType)
+	assert.Equal(t, filepath.Join(jobsDir, job.JobID, "crtdl.json"), reloadedJob.CRTDLPath)
 
 	t.Logf("Phase 2: Job reloaded from disk with extraction URL: %s", reloadedJob.TORCHExtractionURL)
 
@@ -1297,7 +1298,7 @@ func TestPipeline_TORCHExtraction_PreprocessingError_InvalidEnrichmentsPath(t *t
 	// CRTDL is used by every downstream step). An invalid enrichments path
 	// must therefore be reported by CreateJob, not by the import step.
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	_, err := pipeline.CreateJob(crtdlPath, "", config, logger)
+	_, err := pipeline.CreateJob("", crtdlPath, config, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "prepare CRTDL", "Error should mention CRTDL preparation failure")
 	assert.Contains(t, err.Error(), "load enrichments", "Error should surface the underlying enrichments-loading failure")
@@ -1421,7 +1422,7 @@ func TestPipeline_TORCHExtraction_PreprocessingDisabled_UsesOriginalCRTDL(t *tes
 
 	// Create job with CRTDL input
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob(crtdlPath, "", config, logger)
+	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
 	require.NoError(t, err)
 
 	// Execute import step - should use original CRTDL without preprocessing
@@ -1447,7 +1448,9 @@ func TestPipeline_TORCHExtraction_PreprocessingDisabled_UsesOriginalCRTDL(t *tes
 	// Original CRTDL only has 1 attribute
 	assert.Len(t, attributes, 1, "Original CRTDL should have only 1 attribute (no enrichment)")
 
-	// Verify original CRTDL was copied to job directory as crtdl.json
+	// Even with preprocessing disabled, PrepareCRTDL copies the original CRTDL
+	// to the job directory so every downstream step sees the same effective
+	// CRTDL.
 	crtdlJobPath := filepath.Join(jobsDir, job.JobID, "crtdl.json")
 	savedContent, readErr := os.ReadFile(crtdlJobPath)
 	require.NoError(t, readErr, "CRTDL should be copied to job directory as crtdl.json")
@@ -1456,7 +1459,6 @@ func TestPipeline_TORCHExtraction_PreprocessingDisabled_UsesOriginalCRTDL(t *tes
 	assert.JSONEq(t, string(originalContent), string(savedContent),
 		"Copied CRTDL should match the original when preprocessing is disabled")
 
-	// Verify job.CRTDLPath was updated to point to the job-local copy
 	assert.Equal(t, crtdlJobPath, updatedJob.CRTDLPath,
 		"job.CRTDLPath should point to crtdl.json in the job directory")
 }
@@ -1622,7 +1624,7 @@ func TestPipeline_TORCHExtraction_PreprocessingEnabled_EmptyEnrichments(t *testi
 
 	// Create job with CRTDL input
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob(crtdlPath, "", config, logger)
+	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
 	require.NoError(t, err)
 
 	// Execute import step - should use original CRTDL content when no enrichments configured
@@ -1648,16 +1650,15 @@ func TestPipeline_TORCHExtraction_PreprocessingEnabled_EmptyEnrichments(t *testi
 	require.NoError(t, err)
 	assert.Equal(t, originalContent, decodedBytes, "When no enrichments configured, original file content should be submitted")
 
-	// Verify original CRTDL was copied to job directory as crtdl.json (even with empty enrichments)
+	// With preprocessing enabled but no enrichments configured, PrepareCRTDL
+	// falls back to a verbatim copy at jobDir/crtdl.json — same shape as the
+	// preprocessing-disabled path.
 	crtdlJobPath := filepath.Join(jobsDir, job.JobID, "crtdl.json")
 	savedContent, readErr := os.ReadFile(crtdlJobPath)
 	require.NoError(t, readErr, "CRTDL should be copied to job directory as crtdl.json")
-
-	originalFileContent, _ := os.ReadFile(crtdlPath)
-	assert.JSONEq(t, string(originalFileContent), string(savedContent),
+	assert.JSONEq(t, string(originalContent), string(savedContent),
 		"Copied CRTDL should match the original when no enrichments are applied")
 
-	// Verify job.CRTDLPath was updated to point to the job-local copy
 	assert.Equal(t, crtdlJobPath, updatedJob.CRTDLPath,
 		"job.CRTDLPath should point to crtdl.json in the job directory")
 

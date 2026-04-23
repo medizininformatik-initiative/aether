@@ -16,7 +16,6 @@ import (
 var (
 	noProgress     bool
 	localImportDir string // CLI flag for local import directory override
-	crtdlFile      string // CLI flag attaching a CRTDL to any job (issue #286)
 	allowHTTPCRTDL bool   // CLI flag acknowledging http_import + CRTDL semantic mismatch
 	// errPipelinePaused is returned when the pipeline pauses at a wait step
 	errPipelinePaused = errors.New("pipeline paused at wait step")
@@ -36,21 +35,22 @@ Available subcommands:
 
 // pipelineStartCmd represents the pipeline start command
 var pipelineStartCmd = &cobra.Command{
-	Use:   "start [input]",
+	Use:   "start <crtdl> [input]",
 	Short: "Start a new pipeline job",
 	Long: `Start a new Data Use Process pipeline job.
 
-Input can be a CRTDL file, local directory, HTTP URL, or TORCH result URL:
-  • CRTDL file: submits extraction to TORCH, then downloads results
-  • TORCH URL: polls an existing extraction and downloads results
-    (auto-detected when URL contains /fhir/extraction/ or /fhir/result/)
-  • HTTP URL: downloads a single NDJSON file directly
-  • Local directory: imports files from disk (via --dir flag or config)
+The CRTDL file is always required as the first positional argument. The
+optional second positional is the input source for the enabled import step:
+  • omitted (torch_import): CRTDL is submitted to TORCH for extraction
+  • omitted (local_import): data dir is read from --dir or config
+  • local directory path (local_import): files imported from disk
+  • HTTP(S) URL (http_import): single NDJSON file downloaded
+  • TORCH result URL (torch_import): auto-detected when the URL contains
+    /fhir/extraction/ or /fhir/result/; extraction is skipped and results
+    are polled directly
 
-CRTDL file is required if the flattening step is enabled. It can be attached
-either as the positional argument (for torch) or via --crtdl (for any import
-step). Combining http_import with a CRTDL requires --allow-http-crtdl since
-HTTP data may not match the CRTDL query.
+Combining http_import with a CRTDL requires --allow-http-crtdl since HTTP
+data may not match the CRTDL query.
 
 Examples:
   # Extract data using CRTDL query via TORCH
@@ -59,31 +59,23 @@ Examples:
   # Local import with CRTDL for flattening (data dir from config)
   aether pipeline start query.crtdl
 
-  # Local import with CRTDL for flattening (data dir via flag)
+  # Local import with CRTDL (data dir as positional)
+  aether pipeline start query.crtdl /path/to/fhir/data
+
+  # Local import with CRTDL (data dir via flag)
   aether pipeline start query.crtdl --dir /path/to/fhir/data
 
-  # Local import without flattening (uses config dir)
-  aether pipeline start
-
-  # Local import without flattening (uses flag dir)
-  aether pipeline start --dir /path/to/fhir/data
-
-  # Download from HTTP URL
-  aether pipeline start https://example.com/fhir/Patient.ndjson
-
   # HTTP import piped through flattening (acknowledges data/CRTDL mismatch)
-  aether pipeline start https://example.com/fhir/Patient.ndjson \
-      --crtdl query.crtdl --allow-http-crtdl
-
-  # Local import with CRTDL via flag (alternative to positional)
-  aether pipeline start --dir /path/to/data --crtdl query.crtdl
+  aether pipeline start query.crtdl https://example.com/fhir/Patient.ndjson \
+      --allow-http-crtdl
 
   # Direct TORCH URL (skip extraction, poll and download results)
-  aether pipeline start "https://torch.example.com/fhir/extraction/result-123"
+  aether pipeline start query.crtdl \
+      "https://torch.example.com/fhir/extraction/result-123"
 
   # Start without progress indicators
   aether pipeline start query.crtdl --no-progress`,
-	Args: cobra.MaximumNArgs(1),
+	Args: cobra.RangeArgs(1, 2),
 	RunE: runPipelineStart,
 }
 
@@ -162,7 +154,6 @@ func init() {
 
 	pipelineStartCmd.Flags().BoolVar(&noProgress, "no-progress", false, "Disable progress indicators")
 	pipelineStartCmd.Flags().StringVar(&localImportDir, "dir", "", "Directory for local import (overrides config)")
-	pipelineStartCmd.Flags().StringVar(&crtdlFile, "crtdl", "", "CRTDL file path (attach independently of input source; required for flattening with http_import/local_import)")
 	pipelineStartCmd.Flags().BoolVar(&allowHTTPCRTDL, "allow-http-crtdl", false, "Acknowledge that combining http_import with a CRTDL may not match the endpoint's data")
 }
 
@@ -337,10 +328,18 @@ func executeStep(job *models.PipelineJob, stepName models.StepName, config *mode
 }
 
 func runPipelineStart(cmd *cobra.Command, args []string) error {
-	// Get positional argument if provided
+	// First positional is always the CRTDL; second (optional) is the input
+	// source for the enabled import step.
+	crtdlPath := args[0]
 	var inputSource string
-	if len(args) > 0 {
-		inputSource = args[0]
+	if len(args) > 1 {
+		inputSource = args[1]
+	}
+
+	if t, err := lib.DetectInputType(crtdlPath); err != nil {
+		return fmt.Errorf("invalid CRTDL argument %q: %w", crtdlPath, err)
+	} else if t != models.InputTypeCRTDL {
+		return fmt.Errorf("first argument must be a CRTDL file, got %s: %q", t, crtdlPath)
 	}
 
 	config, err := services.LoadConfig(cfgFile)
@@ -353,40 +352,17 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 		config.Services.LocalImport.Dir = localImportDir
 	}
 
-	// Determine if CRTDL is required based on enabled steps
-	crtdlRequired := config.Pipeline.IsStepEnabled(models.StepFlattening) ||
-		config.Pipeline.IsStepEnabled(models.StepTorchImport)
-
-	// A CRTDL may be attached via --crtdl or via a positional CRTDL file
-	// (detected below). Resolve whether one is "provided at all" before
-	// per-step validation runs.
-	positionalIsCRTDL := false
-	if inputSource != "" {
-		if t, err := lib.DetectInputType(inputSource); err == nil && t == models.InputTypeCRTDL {
-			positionalIsCRTDL = true
-		}
-	}
-	crtdlProvided := crtdlFile != "" || positionalIsCRTDL
-
-	// Validate CRTDL requirement
-	if crtdlRequired && !crtdlProvided {
-		return fmt.Errorf("CRTDL file required when flattening or torch steps are enabled\n\nProvide one via:\n  1. Positional arg (torch): aether pipeline start <query.crtdl>\n  2. --crtdl flag (http/local):  aether pipeline start <input> --crtdl <query.crtdl>")
-	}
-
 	// Validate local_import directory is configured when local_import step is enabled
 	if config.Pipeline.IsStepEnabled(models.StepLocalImport) && !config.Pipeline.IsStepEnabled(models.StepTorchImport) {
-		// For local_import, the positional arg is only a source dir when it's
-		// NOT a CRTDL. A CRTDL positional provides nothing for local_import's
-		// source dir requirement.
-		hasSourceDir := config.Services.LocalImport.Dir != "" || (inputSource != "" && !positionalIsCRTDL)
+		hasSourceDir := config.Services.LocalImport.Dir != "" || inputSource != ""
 		if !hasSourceDir {
-			return fmt.Errorf("local_import step enabled but no directory specified\n\nProvide directory via:\n  1. --dir flag: aether pipeline start [crtdl-file] --dir /path/to/data\n  2. Config file: services.local_import.dir in aether.yaml")
+			return fmt.Errorf("local_import step enabled but no directory specified\n\nProvide directory via:\n  1. Positional: aether pipeline start <crtdl> /path/to/data\n  2. --dir flag: aether pipeline start <crtdl> --dir /path/to/data\n  3. Config file: services.local_import.dir in aether.yaml")
 		}
 	}
 
 	// Gate: http_import + CRTDL requires explicit acknowledgement that HTTP
 	// data may not semantically match the CRTDL query.
-	if crtdlFile != "" && config.Pipeline.IsStepEnabled(models.StepHttpImport) && !allowHTTPCRTDL {
+	if config.Pipeline.IsStepEnabled(models.StepHttpImport) && !allowHTTPCRTDL {
 		return fmt.Errorf("combining http_import with a CRTDL requires --allow-http-crtdl\n\nThe HTTP endpoint's data may not match the CRTDL query.\nPass --allow-http-crtdl to acknowledge and proceed")
 	}
 
@@ -403,8 +379,8 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	}
 	logger := lib.NewLogger(logLevel)
 
-	logger.Info("Creating new pipeline job", "input", inputSource, "localImportDir", config.Services.LocalImport.Dir)
-	job, err := pipeline.CreateJob(inputSource, crtdlFile, *config, logger)
+	logger.Info("Creating new pipeline job", "crtdl", crtdlPath, "input", inputSource, "localImportDir", config.Services.LocalImport.Dir)
+	job, err := pipeline.CreateJob(inputSource, crtdlPath, *config, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create job: %w", err)
 	}

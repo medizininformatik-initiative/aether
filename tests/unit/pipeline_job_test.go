@@ -412,10 +412,11 @@ func TestCreateJob_CRTDLFlagWithHTTPInput(t *testing.T) {
 	assert.Equal(t, string(models.StepHttpImport), job.CurrentStep)
 }
 
-// TestCreateJob_TorchBackwardCompat verifies CRTDL-positional callers keep
-// working without passing --crtdl: CRTDLPath is backfilled from InputSource
-// and then repointed by PrepareCRTDL at the canonical jobDir copy.
-func TestCreateJob_TorchBackwardCompat(t *testing.T) {
+// TestCreateJob_TorchCRTDLOnly verifies a torch job where the CRTDL is
+// attached via crtdlPath and no separate input source is provided (the
+// typical torch-extraction shape under the CRTDL-as-positional CLI contract).
+// PrepareCRTDL repoints CRTDLPath at the canonical copy inside jobDir.
+func TestCreateJob_TorchCRTDLOnly(t *testing.T) {
 	tmpDir := t.TempDir()
 	crtdlPath := filepath.Join(tmpDir, "query.crtdl")
 	writeValidCRTDL(t, crtdlPath)
@@ -428,41 +429,39 @@ func TestCreateJob_TorchBackwardCompat(t *testing.T) {
 		},
 	}
 
-	job, err := pipeline.CreateJob(crtdlPath, "", config, lib.NewLogger(lib.LogLevelDebug))
+	job, err := pipeline.CreateJob("", crtdlPath, config, lib.NewLogger(lib.LogLevelDebug))
 
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	assert.Equal(t, models.InputTypeCRTDL, job.InputType)
-	assert.Equal(t, crtdlPath, job.InputSource)
+	assert.Equal(t, models.InputTypeLocal, job.InputType, "no external input source → default InputTypeLocal")
+	assert.Empty(t, job.InputSource)
 	assert.Equal(t, filepath.Join(jobsDir, job.JobID, "crtdl.json"), job.CRTDLPath,
-		"CRTDLPath must be backfilled from InputSource then repointed at the prepared copy")
+		"CRTDLPath must point at the prepared CRTDL inside jobDir")
 }
 
-// TestCreateJob_ConflictingCRTDLSources rejects ambiguous input: positional
-// CRTDL + --crtdl flag pointing elsewhere.
-func TestCreateJob_ConflictingCRTDLSources(t *testing.T) {
+// TestCreateJob_InvalidCRTDL covers the CRTDL validation failure branch (job.go line 50-51):
+// when crtdlPath points to a missing/invalid file, CreateJob must surface the
+// validation error rather than silently proceed.
+func TestCreateJob_InvalidCRTDL(t *testing.T) {
 	tmpDir := t.TempDir()
-	crtdlA := filepath.Join(tmpDir, "a.crtdl")
-	crtdlB := filepath.Join(tmpDir, "b.crtdl")
-	writeValidCRTDL(t, crtdlA)
-	writeValidCRTDL(t, crtdlB)
+	missingCRTDL := filepath.Join(tmpDir, "does-not-exist.crtdl")
 
 	config := models.ProjectConfig{
 		JobsDir: filepath.Join(tmpDir, "jobs"),
 		Pipeline: models.PipelineConfig{
-			EnabledSteps: []models.StepName{models.StepTorchImport},
+			EnabledSteps: []models.StepName{models.StepHttpImport, models.StepFlattening},
 		},
 	}
 
-	job, err := pipeline.CreateJob(crtdlA, crtdlB, config, lib.NewLogger(lib.LogLevelDebug))
+	job, err := pipeline.CreateJob("https://example.com/data.ndjson", missingCRTDL, config, lib.NewLogger(lib.LogLevelDebug))
 
-	require.Error(t, err)
+	require.Error(t, err, "CreateJob must fail when CRTDL file is unreadable")
 	assert.Nil(t, job)
-	assert.Contains(t, err.Error(), "conflicting CRTDL sources")
+	assert.Contains(t, err.Error(), "CRTDL validation failed", "error must mention CRTDL validation")
 }
 
 // TestCreateJob_CRTDLFlagOnlyNoPositional covers the local_import scenario
-// where the data dir comes from config and --crtdl attaches the query.
+// where the data dir comes from config and the CRTDL is attached separately.
 func TestCreateJob_CRTDLFlagOnlyNoPositional(t *testing.T) {
 	tmpDir := t.TempDir()
 	crtdlPath := filepath.Join(tmpDir, "query.crtdl")

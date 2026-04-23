@@ -80,7 +80,7 @@ func TestCRTDLEnrichmentAppliedForLocalImportPath(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob(crtdlPath, "", config, logger)
+	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
 	require.NoError(t, err)
 
 	// CreateJob must repoint CRTDLPath at the enriched CRTDL inside jobDir.

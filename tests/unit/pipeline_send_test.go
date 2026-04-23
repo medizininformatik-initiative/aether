@@ -1628,7 +1628,7 @@ func TestExecuteSendStep_FHIR_CoreAndCompressed(t *testing.T) {
 
 func TestExecuteSendStep_S3_Success(t *testing.T) {
 	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return mock, nil
 	})
 	defer pipeline.ResetS3UploaderFactory()
@@ -1678,7 +1678,7 @@ func TestExecuteSendStep_S3_Success(t *testing.T) {
 
 func TestExecuteSendStep_S3_NoFiles(t *testing.T) {
 	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return mock, nil
 	})
 	defer pipeline.ResetS3UploaderFactory()
@@ -1702,7 +1702,7 @@ func TestExecuteSendStep_S3_UploadError(t *testing.T) {
 		Bucket:    "test-bucket",
 		UploadErr: &services.S3Error{Message: "AccessDenied: access denied", ErrorType: models.ErrorTypeNonTransient},
 	}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return mock, nil
 	})
 	defer pipeline.ResetS3UploaderFactory()
@@ -1735,7 +1735,7 @@ func TestExecuteSendStep_S3_UploadError(t *testing.T) {
 func TestExecuteSendStep_S3_ManifestRetry(t *testing.T) {
 	uploadCount := 0
 	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		// Reset tracked keys on each factory call (new "session")
 		mock.UploadedKeys = nil
 		return mock, nil
@@ -1783,7 +1783,7 @@ func TestExecuteSendStep_S3_ManifestRetry(t *testing.T) {
 
 func TestExecuteSendStep_S3_SubdirectoryFiles(t *testing.T) {
 	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return mock, nil
 	})
 	defer pipeline.ResetS3UploaderFactory()
@@ -1855,7 +1855,7 @@ func TestExecuteSendStep_S3_TransientError(t *testing.T) {
 		Bucket:    "test-bucket",
 		UploadErr: &services.S3Error{Message: "SlowDown: rate exceeded", ErrorType: models.ErrorTypeTransient},
 	}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return mock, nil
 	})
 	defer pipeline.ResetS3UploaderFactory()
@@ -2141,7 +2141,7 @@ func TestFormatSize_AllBranches(t *testing.T) {
 }
 
 func TestExecuteSendStep_S3_UploaderFactoryError(t *testing.T) {
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return nil, fmt.Errorf("failed to initialize S3 client")
 	})
 	defer pipeline.ResetS3UploaderFactory()
@@ -2163,7 +2163,7 @@ func TestExecuteSendStep_S3_UploaderFactoryError(t *testing.T) {
 func TestExecuteSendStep_S3_CorruptedManifest(t *testing.T) {
 	// A corrupted manifest should trigger a warning and start fresh
 	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return mock, nil
 	})
 	defer pipeline.ResetS3UploaderFactory()
@@ -2189,7 +2189,7 @@ func TestExecuteSendStep_S3_CorruptedManifest(t *testing.T) {
 
 func TestExecuteSendStep_S3_NonExistentInputDir(t *testing.T) {
 	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return mock, nil
 	})
 	defer pipeline.ResetS3UploaderFactory()

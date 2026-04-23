@@ -45,15 +45,23 @@ func (t *proxyAuthTransport) RoundTrip(req *http.Request) (*http.Response, error
 }
 
 // NewAWSS3Uploader creates a new S3 uploader from config.
-func NewAWSS3Uploader(s3Config models.S3Config, auth models.AuthConfig, logger *lib.Logger) (*AWSS3Uploader, error) {
-	httpClient := &http.Client{}
+func NewAWSS3Uploader(s3Config models.S3Config, auth models.AuthConfig, tlsConfig models.TLSConfig, logger *lib.Logger) (*AWSS3Uploader, error) {
+	tlsTransport, err := BuildTLSTransport(tlsConfig, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build TLS transport for S3 client: %w", err)
+	}
+	base := http.DefaultTransport
+	if tlsTransport != nil {
+		base = tlsTransport
+	}
 
-	// Wrap HTTP client with proxy auth if configured
+	httpClient := &http.Client{Transport: base}
+
 	if auth.Username != "" && auth.Password != "" {
 		creds := auth.Username + ":" + auth.Password
 		encoded := base64.StdEncoding.EncodeToString([]byte(creds))
 		httpClient.Transport = &proxyAuthTransport{
-			base:      http.DefaultTransport,
+			base:      base,
 			authValue: "Basic " + encoded,
 		}
 	}

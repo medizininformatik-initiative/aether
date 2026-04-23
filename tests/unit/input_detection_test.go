@@ -112,10 +112,11 @@ func TestDetectInputType_JSONFileNotCRTDL(t *testing.T) {
 	err := os.WriteFile(jsonFile, []byte(notCRTDL), 0644)
 	require.NoError(t, err)
 
-	// Non-CRTDL JSON files default to local type (error occurs during import validation)
-	inputType, err := lib.DetectInputType(jsonFile)
-	assert.NoError(t, err, "Detection should succeed, validation happens later")
-	assert.Equal(t, models.InputTypeLocal, inputType, "Non-CRTDL JSON file should default to local type")
+	// .json file failing CRTDL validation surfaces the structural hint
+	_, err = lib.DetectInputType(jsonFile)
+	require.Error(t, err, "non-CRTDL .json should return error")
+	assert.Contains(t, err.Error(), jsonFile, "error should name the offending file")
+	assert.Contains(t, err.Error(), "missing both 'cohortDefinition' and 'dataExtraction'")
 }
 
 func TestDetectInputType_NonExistentPath(t *testing.T) {
@@ -143,30 +144,45 @@ func TestDetectInputType_InvalidCRTDLExtension(t *testing.T) {
 	err := os.WriteFile(crtdlFile, []byte(invalidCRTDL), 0644)
 	require.NoError(t, err)
 
-	// Invalid CRTDL files with .json extension default to local type
-	// (CRTDL validation errors occur during job creation, not input type detection)
-	inputType, err := lib.DetectInputType(crtdlFile)
-	assert.NoError(t, err, "Detection should succeed, CRTDL validation happens later")
-	assert.Equal(t, models.InputTypeLocal, inputType, "Invalid CRTDL should default to local type")
+	// .json extension signals intent: structural failure must surface immediately
+	_, err = lib.DetectInputType(crtdlFile)
+	require.Error(t, err, "invalid CRTDL .json should return error")
+	assert.Contains(t, err.Error(), "cohortDefinition", "error should include structural hint")
 }
 
 func TestDetectInputType_MalformedJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	crtdlFile := filepath.Join(tmpDir, "crtdl.json")
 
-	// Create malformed JSON
+	// Truncated JSON (missing closing braces) - simulates an incomplete export
 	malformedJSON := `{
 		"cohortDefinition": {
 			"version": "1.0"
-		// missing closing braces
 	`
 	err := os.WriteFile(crtdlFile, []byte(malformedJSON), 0644)
 	require.NoError(t, err)
 
-	// Malformed JSON files default to local type (error occurs during CRTDL validation)
-	inputType, err := lib.DetectInputType(crtdlFile)
-	assert.NoError(t, err, "Detection should succeed, JSON parsing errors occur during validation")
-	assert.Equal(t, models.InputTypeLocal, inputType, "Malformed JSON should default to local type")
+	// Malformed JSON surfaces the parse error via the hint
+	_, err = lib.DetectInputType(crtdlFile)
+	require.Error(t, err, "malformed CRTDL .json should return error")
+	assert.Contains(t, err.Error(), "not valid JSON", "error should include JSON parse hint")
+}
+
+func TestDetectInputType_FHIRParametersFormat(t *testing.T) {
+	tmpDir := t.TempDir()
+	crtdlFile := filepath.Join(tmpDir, "query.json")
+
+	// Unsupported FHIR Parameters format
+	parametersCRTDL := `{
+		"resourceType": "Parameters",
+		"parameter": []
+	}`
+	err := os.WriteFile(crtdlFile, []byte(parametersCRTDL), 0644)
+	require.NoError(t, err)
+
+	_, err = lib.DetectInputType(crtdlFile)
+	require.Error(t, err, "FHIR Parameters format should return error")
+	assert.Contains(t, err.Error(), "FHIR Parameters format", "error should name the unsupported format")
 }
 
 func TestDetectInputType_TORCHUrlWithoutFHIRPath(t *testing.T) {

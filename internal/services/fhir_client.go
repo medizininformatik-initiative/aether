@@ -136,7 +136,7 @@ func (c *FHIRClient) sendBatch(resources []json.RawMessage) error {
 		return fmt.Errorf("failed to marshal bundle: %w", err)
 	}
 
-	url := strings.TrimSuffix(c.url, "/")
+	url := strings.TrimSuffix(c.url, "/") + "/fhir"
 
 	req, err := http.NewRequest("POST", url, bytes.NewReader(jsonData))
 	if err != nil {

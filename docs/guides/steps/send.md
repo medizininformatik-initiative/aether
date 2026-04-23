@@ -10,7 +10,7 @@ Sends NDJSON directly to a FHIR server using transaction bundles.
 services:
   send:
     send_as: "direct_resource_load"
-    url: "https://fhir-server.example.com/fhir"
+    url: "https://fhir-server.example.com"  # server root; /fhir appended by client
     batch_size: 100  # resources per transaction (1-1000)
     auth:
       username: "${FHIR_USER}"
@@ -38,7 +38,7 @@ Packages files for DSF-based transfer using Binary/DocumentReference resources.
 services:
   send:
     send_as: "transfer_load"
-    url: "https://transfer-server.example.com/fhir"
+    url: "https://transfer-server.example.com"  # server root; /fhir appended by client
     auth:
       oauth_issuer_uri: "${OAUTH_ISSUER}"
       oauth_client_id: "${OAUTH_CLIENT_ID}"
@@ -66,7 +66,7 @@ pipeline:
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `send_as` | string | - | `direct_resource_load` or `transfer_load` |
-| `url` | string | - | FHIR server base URL |
+| `url` | string | - | FHIR server root URL. Do not include `/fhir` — the client appends it. |
 | `batch_size` | int | 100 | Resources per transaction (direct mode, 1-1000) |
 
 ## Authentication

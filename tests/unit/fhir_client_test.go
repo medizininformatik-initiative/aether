@@ -506,8 +506,8 @@ func TestFHIRClient_UploadNDJSON_URLTrailingSlash(t *testing.T) {
 
 	_, err := client.UploadNDJSON("test.ndjson", reader)
 	require.NoError(t, err)
-	// Trailing slash should be removed
-	assert.Equal(t, "/", receivedPath)
+	// Trailing slash should be removed; client appends /fhir
+	assert.Equal(t, "/fhir", receivedPath)
 }
 
 func TestFHIRClient_UploadNDJSON_MixedResources(t *testing.T) {

@@ -161,7 +161,7 @@ func TestDIMPConsistency_SplitVsUnsplit(t *testing.T) {
 // to simulate real DIMP behavior
 func createRealisticMockDIMPServer(t *testing.T) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/$de-identify" {
+		if r.URL.Path != "/fhir/$de-identify" {
 			http.Error(w, "Invalid path", http.StatusNotFound)
 			return
 		}

@@ -494,7 +494,7 @@ func buildDocumentReference(binaries []binaryEntry, config models.TransferConfig
 
 // uploadBinary PUTs a single Binary resource to the FHIR server.
 func uploadBinary(binary binaryEntry, config models.SendConfig, httpClient *services.HTTPClient, logger *lib.Logger) error {
-	targetURL := fmt.Sprintf("%s/Binary/%s", strings.TrimSuffix(config.URL, "/"), binary.id)
+	targetURL := fmt.Sprintf("%s/fhir/Binary/%s", strings.TrimSuffix(config.URL, "/"), binary.id)
 	jsonData, err := json.Marshal(binary.resource)
 	if err != nil {
 		return fmt.Errorf("failed to marshal Binary: %w", err)
@@ -527,7 +527,7 @@ func uploadBinary(binary binaryEntry, config models.SendConfig, httpClient *serv
 // uploadDocumentReference PUTs the DocumentReference to the FHIR server.
 func uploadDocumentReference(docRef map[string]any, config models.SendConfig, httpClient *services.HTTPClient, logger *lib.Logger) error {
 	id, _ := docRef["id"].(string)
-	targetURL := fmt.Sprintf("%s/DocumentReference/%s", strings.TrimSuffix(config.URL, "/"), id)
+	targetURL := fmt.Sprintf("%s/fhir/DocumentReference/%s", strings.TrimSuffix(config.URL, "/"), id)
 	jsonData, err := json.Marshal(docRef)
 	if err != nil {
 		return fmt.Errorf("failed to marshal DocumentReference: %w", err)

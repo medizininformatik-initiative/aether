@@ -28,16 +28,20 @@ func NewDIMPClient(baseURL string, httpClient *HTTPClient, logger *lib.Logger) *
 
 // Pseudonymize sends a FHIR resource to the DIMP service for pseudonymization
 // Returns the pseudonymized resource or an error
-// Per contract: POST /$de-identify with single FHIR resource
+// Per contract: POST /fhir/$de-identify with single FHIR resource
 func (c *DIMPClient) Pseudonymize(resource map[string]any) (map[string]any, error) {
 	// Extract resource info for logging
 	resourceType, _ := resource["resourceType"].(string)
 	resourceID, _ := resource["id"].(string)
 
+	// Endpoint per dimp-service contract; baseURL is the server root and
+	// the /fhir prefix is appended here (see issue #283).
+	url := c.baseURL + "/fhir/$de-identify"
+
 	c.logger.Debug("Sending resource to DIMP",
 		"resourceType", resourceType,
 		"id", resourceID,
-		"url", c.baseURL+"/$de-identify")
+		"url", url)
 
 	// Marshal resource to JSON
 	jsonBody, err := json.Marshal(resource)
@@ -46,9 +50,6 @@ func (c *DIMPClient) Pseudonymize(resource map[string]any) (map[string]any, erro
 	}
 
 	c.logger.Debug("Request body size", "bytes", len(jsonBody))
-
-	// Construct endpoint URL
-	url := c.baseURL + "/$de-identify"
 
 	// Send POST request
 	resp, err := c.httpClient.PostJSON(url, jsonBody)

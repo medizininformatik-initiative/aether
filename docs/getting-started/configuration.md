@@ -12,7 +12,7 @@ services:
     password: "your-password"
 
   dimp:
-    url: "http://your-dimp-server:32861/fhir"
+    url: "http://your-dimp-server:32861"
 
 pipeline:
   enabled_steps:
@@ -41,7 +41,7 @@ services:
 ```yaml
 services:
   dimp:
-    url: "http://your-dimp-server:32861/fhir"
+    url: "http://your-dimp-server:32861"  # server root; /fhir appended by client
     bundle_split_threshold_mb: 10  # Auto-split large bundles
 ```
 
@@ -64,7 +64,7 @@ services:
 services:
   send:
     send_as: "direct_resource_load"
-    url: "https://fhir-server.example.com/fhir"
+    url: "https://fhir-server.example.com"  # server root; /fhir appended by client
     batch_size: 100
     auth:
       username: "${FHIR_USER}"
@@ -76,7 +76,7 @@ services:
 services:
   send:
     send_as: "transfer_load"
-    url: "https://transfer-server.example.com/fhir"
+    url: "https://transfer-server.example.com"  # server root; /fhir appended by client
     auth:
       oauth_issuer_uri: "${OAUTH_ISSUER}"
       oauth_client_id: "${OAUTH_CLIENT_ID}"

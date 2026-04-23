@@ -21,7 +21,7 @@ services:
 
   # Send step configuration - direct resource load to Blaze FHIR server
   send:
-    url: "http://blaze-fhir:8080/fhir"
+    url: "http://blaze-fhir:8080"
     send_as: "direct_resource_load"
     batch_size: 100
 

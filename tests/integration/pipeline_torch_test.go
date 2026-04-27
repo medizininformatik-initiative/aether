@@ -156,9 +156,11 @@ func TestPipeline_TORCHExtraction_EndToEnd(t *testing.T) {
 	job, err := pipeline.CreateJob(crtdlPath, config, logger)
 	require.NoError(t, err)
 
-	// Verify job was created with correct input type
+	// Verify job was created with correct input type. CreateJob copies the
+	// CRTDL into the job directory (PrepareCRTDL) so InputSource now points
+	// at jobs/<id>/crtdl.json rather than the original input path.
 	assert.Equal(t, models.InputTypeCRTDL, job.InputType)
-	assert.Equal(t, crtdlPath, job.InputSource)
+	assert.Equal(t, filepath.Join(jobsDir, job.JobID, "crtdl.json"), job.InputSource)
 	assert.NotEmpty(t, job.JobID)
 
 	// Execute import step (which should trigger TORCH extraction)
@@ -1291,18 +1293,14 @@ func TestPipeline_TORCHExtraction_PreprocessingError_InvalidEnrichmentsPath(t *t
 		JobsDir: jobsDir,
 	}
 
-	// Create job with CRTDL input
+	// CRTDL preparation now runs inside CreateJob (so the same effective
+	// CRTDL is used by every downstream step). An invalid enrichments path
+	// must therefore be reported by CreateJob, not by the import step.
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob(crtdlPath, config, logger)
-	require.NoError(t, err)
-
-	// Execute import step - should fail during enrichments loading
-	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
-	_, err = pipeline.ExecuteImportStep(job, logger, httpClient, false)
-
-	// Verify error is returned due to invalid enrichments path
+	_, err := pipeline.CreateJob(crtdlPath, config, logger)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "preprocess CRTDL", "Error should mention preprocessing failure")
+	assert.Contains(t, err.Error(), "prepare CRTDL", "Error should mention CRTDL preparation failure")
+	assert.Contains(t, err.Error(), "load enrichments", "Error should surface the underlying enrichments-loading failure")
 }
 
 func TestPipeline_TORCHExtraction_PreprocessingDisabled_UsesOriginalCRTDL(t *testing.T) {
@@ -1463,82 +1461,44 @@ func TestPipeline_TORCHExtraction_PreprocessingDisabled_UsesOriginalCRTDL(t *tes
 		"job.InputSource should point to crtdl.json in the job directory")
 }
 
-// TestPipeline_TORCHExtraction_PreprocessingError_InvalidCRTDL tests error handling when CRTDL parsing fails
-// (covers import.go lines 262-264)
-func TestPipeline_TORCHExtraction_PreprocessingError_InvalidCRTDL(t *testing.T) {
-	// Setup: Create test environment
+// TestPrepareCRTDL_InvalidCRTDL covers the error path where CRTDL parsing
+// fails during preparation. The check now happens in PrepareCRTDL (called
+// from CreateJob) so all import paths benefit from the same enriched/copied
+// CRTDL.
+func TestPrepareCRTDL_InvalidCRTDL(t *testing.T) {
 	tempDir := t.TempDir()
 	jobsDir := filepath.Join(tempDir, "jobs")
-	_ = os.MkdirAll(jobsDir, 0755)
+	jobID := "550e8400-e29b-41d4-a716-446655440000"
+	require.NoError(t, os.MkdirAll(filepath.Join(jobsDir, jobID), 0755))
 
-	// Create INVALID CRTDL file (not valid JSON)
 	crtdlPath := filepath.Join(tempDir, "invalid.crtdl")
-	_ = os.WriteFile(crtdlPath, []byte("{this is not valid json"), 0644)
+	require.NoError(t, os.WriteFile(crtdlPath, []byte("{this is not valid json"), 0644))
 
-	// Mock TORCH server (won't be called since CRTDL parsing fails)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	// Create configuration WITH preprocessing enabled
-	config := models.ProjectConfig{
-		Services: models.ServiceConfig{
-			TORCH: models.TORCHConfig{
-				BaseURL:            server.URL,
-				Username:           "testuser",
-				Password:           "testpass",
-				ExtractionTimeout:  1 * time.Minute,
-				PollingInterval:    1 * time.Second,
-				MaxPollingInterval: 5 * time.Second,
-			},
-			CRTDLPreprocessing: models.CRTDLPreprocessingConfig{
-				Enabled: true,
-				Enrichments: []models.GroupEnrichment{
-					{
-						GroupReference: "https://example.org/Patient",
-						AttributesToAdd: []models.EnrichmentAttribute{
-							{AttributeRef: "Patient.test", MustHave: true},
+	job := &models.PipelineJob{
+		JobID:       jobID,
+		InputSource: crtdlPath,
+		InputType:   models.InputTypeCRTDL,
+		Config: models.ProjectConfig{
+			JobsDir: jobsDir,
+			Services: models.ServiceConfig{
+				CRTDLPreprocessing: models.CRTDLPreprocessingConfig{
+					Enabled: true,
+					Enrichments: []models.GroupEnrichment{
+						{
+							GroupReference: "https://example.org/Patient",
+							AttributesToAdd: []models.EnrichmentAttribute{
+								{AttributeRef: "Patient.test", MustHave: true},
+							},
 						},
 					},
 				},
 			},
 		},
-		Pipeline: models.PipelineConfig{
-			EnabledSteps: []models.StepName{models.StepTorchImport},
-		},
-		Retry: models.RetryConfig{
-			MaxAttempts:      3,
-			InitialBackoffMs: 100,
-			MaxBackoffMs:     1000,
-		},
-		JobsDir: jobsDir,
 	}
 
-	// Create job manually (bypassing CreateJob which might validate CRTDL)
-	job := &models.PipelineJob{
-		JobID:       "550e8400-e29b-41d4-a716-446655440000", // Valid UUID
-		InputSource: crtdlPath,
-		InputType:   models.InputTypeCRTDL,
-		CurrentStep: string(models.StepTorchImport),
-		Status:      models.JobStatusPending,
-		Steps:       models.InitializeSteps([]models.StepName{models.StepTorchImport}),
-		Config:      config,
-	}
-
-	// Save job
-	err := pipeline.UpdateJob(jobsDir, job)
-	require.NoError(t, err)
-
-	// Execute import step - should fail during CRTDL parsing
-	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
-	_, err = pipeline.ExecuteImportStep(job, logger, httpClient, false)
-
-	// Verify error is returned due to invalid CRTDL
+	err := pipeline.PrepareCRTDL(job, lib.NewLogger(lib.LogLevelDebug))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "preprocess CRTDL", "Error should mention preprocessing failure")
-	t.Logf("Got expected error: %v", err)
+	assert.Contains(t, err.Error(), "parse CRTDL", "Error should mention CRTDL parsing failure")
 }
 
 // TestPipeline_TORCHExtraction_PreprocessingEnabled_EmptyEnrichments tests path when preprocessing is enabled but no enrichments configured

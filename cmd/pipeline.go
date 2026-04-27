@@ -544,6 +544,15 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
+	// Idempotent — reconciles state if the original `pipeline start` crashed
+	// between writing the prepared CRTDL and persisting the new InputSource.
+	if err := pipeline.PrepareCRTDL(job, logger); err != nil {
+		return fmt.Errorf("failed to prepare CRTDL: %w", err)
+	}
+	if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
+		return fmt.Errorf("failed to save job state: %w", err)
+	}
+
 	currentStepName := models.StepName(job.CurrentStep)
 	currentStep, found := models.GetStepByName(*job, currentStepName)
 

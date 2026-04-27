@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/mattn/go-runewidth"
 	"github.com/spf13/cobra"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
@@ -12,6 +13,10 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/pipeline"
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
+
+// statusFieldWidth is the display width of the combined status symbol + text
+// column, matching the "%-15s" header allocation.
+const statusFieldWidth = 15
 
 // jobCmd represents the job command group
 var jobCmd = &cobra.Command{
@@ -172,11 +177,9 @@ func runJobList(cmd *cobra.Command, args []string) error {
 
 	// Print jobs
 	for _, j := range jobs {
-		statusSymbol := getJobStatusSymbol(j.Status)
-		fmt.Printf("%-52s %s %-13s %-20s %-8d %s\n",
+		fmt.Printf("%-52s %s %-20s %-8d %s\n",
 			j.ID,
-			statusSymbol,
-			j.Status,
+			formatStatusField(getJobStatusSymbol(j.Status), j.Status),
 			j.Step,
 			j.Files,
 			j.ElapsedStr,
@@ -186,6 +189,14 @@ func runJobList(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\nTotal: %d jobs\n", len(jobs))
 
 	return nil
+}
+
+// formatStatusField builds the STATUS column content padded to statusFieldWidth
+// display columns. Go's fmt width specifier pads by rune count, which mismatches
+// terminal display width for East Asian Ambiguous symbols like → (U+2192) and
+// ○ (U+25CB); runewidth handles the LANG/LC_CTYPE-driven width correctly.
+func formatStatusField(symbol, status string) string {
+	return runewidth.FillRight(symbol+" "+status, statusFieldWidth)
 }
 
 func getJobStatusSymbol(status string) string {

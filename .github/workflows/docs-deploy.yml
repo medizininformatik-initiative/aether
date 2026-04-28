@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*.*.*'
     paths:
       - 'docs/**'
       - '.github/workflows/docs-deploy.yml'
@@ -27,7 +29,14 @@ jobs:
   deploy:
     name: Build and Deploy Documentation
     runs-on: ubuntu-24.04
-    if: ${{ !(github.event_name == 'release' && github.event.release.prerelease) }}
+    if: >-
+      ${{
+        !(github.event_name == 'release' && github.event.release.prerelease)
+        && !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+          && (contains(github.ref_name, '-alpha')
+            || contains(github.ref_name, '-beta')
+            || contains(github.ref_name, '-rc')))
+      }}
 
     steps:
       - name: Harden Runner
@@ -47,11 +56,21 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           DISPATCH_TAG: ${{ github.event.inputs.tag }}
+          PUSH_REF: ${{ github.ref }}
+          PUSH_REF_NAME: ${{ github.ref_name }}
         run: |
           if [[ "${EVENT_NAME}" == "push" ]]; then
-            echo "version=dev" >> "$GITHUB_OUTPUT"
-            echo "ref=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
-            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            if [[ "${PUSH_REF}" == refs/tags/* ]]; then
+              # Tag push: workflow triggered by release tag (release event is suppressed
+              # when the release is created with the default GITHUB_TOKEN).
+              echo "version=${PUSH_REF_NAME}" >> "$GITHUB_OUTPUT"
+              echo "ref=${PUSH_REF_NAME}" >> "$GITHUB_OUTPUT"
+              echo "is_release=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "version=dev" >> "$GITHUB_OUTPUT"
+              echo "ref=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
+              echo "is_release=false" >> "$GITHUB_OUTPUT"
+            fi
           elif [[ "${EVENT_NAME}" == "release" ]]; then
             echo "version=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
             echo "ref=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"

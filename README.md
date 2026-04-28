@@ -13,6 +13,8 @@ A command-line tool for processing FHIR healthcare data through configurable pip
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/medizininformatik-initiative/aether/badge)](https://scorecard.dev/viewer/?uri=github.com/medizininformatik-initiative/aether)
 [![OpenSSF Best Practices](https://img.shields.io/cii/level/11528?logo=linuxfoundation&label=ossf%20best%20practices)](https://www.bestpractices.dev/projects/11528)
 
+Aether is a Go command-line tool that orchestrates a configurable FHIR data pipeline for the [Medizininformatik-Initiative](https://www.medizininformatik-initiative.de/) (MII). It chains steps such as TORCH/CRTDL import, DIMP pseudonymization, bundle splitting, flattening to CSV, and send — with `wait` checkpoints for manual inspection and zstd compression between stages. Aether is built for data stewards and integration engineers who move MII FHIR data between research and clinical systems.
+
 ## What Does Aether Do?
 
 Aether helps you:

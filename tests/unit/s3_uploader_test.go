@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,18 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
+
+// writeTLSServerCertPEM writes the TLS server's self-signed cert to a PEM file
+// so it can be passed to NewAWSS3Uploader as a trusted CA.
+func writeTLSServerCertPEM(t *testing.T, server *httptest.Server) string {
+	t.Helper()
+	cert := server.Certificate()
+	require.NotNil(t, cert, "httptest server must expose a certificate")
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+	path := filepath.Join(t.TempDir(), "ca.pem")
+	require.NoError(t, os.WriteFile(path, pemBytes, 0600))
+	return path
+}
 
 func TestS3Error_Classification_Transient(t *testing.T) {
 	transientMessages := []string{
@@ -123,7 +136,7 @@ func TestNewAWSS3Uploader_BasicConstruction(t *testing.T) {
 		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
 	}
 
-	uploader, err := services.NewAWSS3Uploader(s3Config, models.AuthConfig{}, logger)
+	uploader, err := services.NewAWSS3Uploader(s3Config, models.AuthConfig{}, models.TLSConfig{}, logger)
 	require.NoError(t, err)
 	require.NotNil(t, uploader)
 	assert.Equal(t, "test-bucket", uploader.GetBucket())
@@ -140,7 +153,7 @@ func TestNewAWSS3Uploader_WithEndpointAndPathStyle(t *testing.T) {
 		UsePathStyle:    true,
 	}
 
-	uploader, err := services.NewAWSS3Uploader(s3Config, models.AuthConfig{}, logger)
+	uploader, err := services.NewAWSS3Uploader(s3Config, models.AuthConfig{}, models.TLSConfig{}, logger)
 	require.NoError(t, err)
 	require.NotNil(t, uploader)
 	assert.Equal(t, "my-bucket", uploader.GetBucket())
@@ -161,7 +174,7 @@ func TestNewAWSS3Uploader_WithProxyAuth(t *testing.T) {
 		Password: "proxy-pass",
 	}
 
-	uploader, err := services.NewAWSS3Uploader(s3Config, auth, logger)
+	uploader, err := services.NewAWSS3Uploader(s3Config, auth, models.TLSConfig{}, logger)
 	require.NoError(t, err)
 	require.NotNil(t, uploader)
 	assert.Equal(t, "proxy-bucket", uploader.GetBucket())
@@ -187,7 +200,7 @@ func TestAWSS3Uploader_UploadFile_Success(t *testing.T) {
 		UsePathStyle:    true,
 	}
 
-	uploader, err := services.NewAWSS3Uploader(s3Config, models.AuthConfig{}, logger)
+	uploader, err := services.NewAWSS3Uploader(s3Config, models.AuthConfig{}, models.TLSConfig{}, logger)
 	require.NoError(t, err)
 
 	// Create a temp file to upload
@@ -225,7 +238,7 @@ func TestAWSS3Uploader_UploadFile_WithProxyAuth(t *testing.T) {
 		Password: "proxy-pass",
 	}
 
-	uploader, err := services.NewAWSS3Uploader(s3Config, auth, logger)
+	uploader, err := services.NewAWSS3Uploader(s3Config, auth, models.TLSConfig{}, logger)
 	require.NoError(t, err)
 
 	tmpDir := t.TempDir()
@@ -255,7 +268,7 @@ func TestAWSS3Uploader_UploadFile_FileNotFound(t *testing.T) {
 		UsePathStyle:    true,
 	}
 
-	uploader, err := services.NewAWSS3Uploader(s3Config, models.AuthConfig{}, logger)
+	uploader, err := services.NewAWSS3Uploader(s3Config, models.AuthConfig{}, models.TLSConfig{}, logger)
 	require.NoError(t, err)
 
 	_, err = uploader.UploadFile(context.Background(), "/nonexistent/file.ndjson", "key")
@@ -283,7 +296,7 @@ func TestAWSS3Uploader_UploadFile_S3Error(t *testing.T) {
 		UsePathStyle:    true,
 	}
 
-	uploader, err := services.NewAWSS3Uploader(s3Config, models.AuthConfig{}, logger)
+	uploader, err := services.NewAWSS3Uploader(s3Config, models.AuthConfig{}, models.TLSConfig{}, logger)
 	require.NoError(t, err)
 
 	tmpDir := t.TempDir()
@@ -314,7 +327,7 @@ func TestAWSS3Uploader_UploadFile_NilETag(t *testing.T) {
 		UsePathStyle:    true,
 	}
 
-	uploader, err := services.NewAWSS3Uploader(s3Config, models.AuthConfig{}, logger)
+	uploader, err := services.NewAWSS3Uploader(s3Config, models.AuthConfig{}, models.TLSConfig{}, logger)
 	require.NoError(t, err)
 
 	tmpDir := t.TempDir()
@@ -325,4 +338,112 @@ func TestAWSS3Uploader_UploadFile_NilETag(t *testing.T) {
 	require.NoError(t, err)
 	// ETag should be empty when server doesn't return one
 	assert.Empty(t, etag)
+}
+
+// Self-signed TLS tests — Issue #238.
+//
+// httptest.NewTLSServer generates a one-off self-signed cert. An S3 client with
+// default TLS config cannot verify it, mirroring the production failure mode
+// users hit with private CAs. Three paths must work: rejection, CA trust, and
+// opt-out via InsecureSkipVerify.
+
+func tlsS3Config(endpoint string) models.S3Config {
+	return models.S3Config{
+		Endpoint:        endpoint,
+		Region:          "us-east-1",
+		Bucket:          "test-bucket",
+		AccessKeyID:     "test-key",
+		SecretAccessKey: "test-secret",
+		UsePathStyle:    true,
+	}
+}
+
+func writeS3TestPayload(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "test.ndjson")
+	require.NoError(t, os.WriteFile(path, []byte("data\n"), 0600))
+	return path
+}
+
+func TestAWSS3Uploader_SelfSignedCert_UnknownAuthorityRejected(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("ETag", `"should-not-reach"`)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	uploader, err := services.NewAWSS3Uploader(tlsS3Config(server.URL), models.AuthConfig{}, models.TLSConfig{}, logger)
+	require.NoError(t, err)
+
+	_, err = uploader.UploadFile(context.Background(), writeS3TestPayload(t), "job/test.ndjson")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "certificate signed by unknown authority")
+}
+
+func TestAWSS3Uploader_SelfSignedCert_TrustedViaCACertPath(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("ETag", `"tls-ok"`)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	tlsConfig := models.TLSConfig{CACertPath: writeTLSServerCertPEM(t, server)}
+
+	uploader, err := services.NewAWSS3Uploader(tlsS3Config(server.URL), models.AuthConfig{}, tlsConfig, logger)
+	require.NoError(t, err)
+
+	etag, err := uploader.UploadFile(context.Background(), writeS3TestPayload(t), "job/test.ndjson")
+	require.NoError(t, err)
+	assert.Contains(t, etag, "tls-ok")
+}
+
+func TestAWSS3Uploader_SelfSignedCert_InsecureSkipVerify(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("ETag", `"skipped"`)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	tlsConfig := models.TLSConfig{InsecureSkipVerify: true}
+
+	uploader, err := services.NewAWSS3Uploader(tlsS3Config(server.URL), models.AuthConfig{}, tlsConfig, logger)
+	require.NoError(t, err)
+
+	etag, err := uploader.UploadFile(context.Background(), writeS3TestPayload(t), "job/test.ndjson")
+	require.NoError(t, err)
+	assert.Contains(t, etag, "skipped")
+}
+
+func TestAWSS3Uploader_SelfSignedCert_ProxyAuthLayeredOnTLS(t *testing.T) {
+	// Proxy auth must wrap (not replace) the TLS transport.
+	var gotProxyAuth string
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotProxyAuth = r.Header.Get("Proxy-Authorization")
+		w.Header().Set("ETag", `"proxy-tls"`)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	tlsConfig := models.TLSConfig{CACertPath: writeTLSServerCertPEM(t, server)}
+	auth := models.AuthConfig{Username: "u", Password: "p"}
+
+	uploader, err := services.NewAWSS3Uploader(tlsS3Config(server.URL), auth, tlsConfig, logger)
+	require.NoError(t, err)
+
+	_, err = uploader.UploadFile(context.Background(), writeS3TestPayload(t), "job/test.ndjson")
+	require.NoError(t, err)
+	assert.Contains(t, gotProxyAuth, "Basic ")
+}
+
+func TestAWSS3Uploader_CACertPath_NotFound(t *testing.T) {
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	tlsConfig := models.TLSConfig{CACertPath: "/nonexistent/path/to/ca.pem"}
+
+	_, err := services.NewAWSS3Uploader(tlsS3Config("http://localhost:1"), models.AuthConfig{}, tlsConfig, logger)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to build TLS transport")
 }

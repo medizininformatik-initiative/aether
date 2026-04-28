@@ -22,21 +22,23 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
-// s3UploaderFactory creates an S3Uploader. Overridable in tests.
-var s3UploaderFactory = func(s3Config models.S3Config, auth models.AuthConfig, logger *lib.Logger) (services.S3Uploader, error) {
-	return services.NewAWSS3Uploader(s3Config, auth, logger)
+// defaultS3UploaderFactory is the production S3 uploader constructor, shared
+// by package-init and ResetS3UploaderFactory so both stay in sync.
+var defaultS3UploaderFactory = func(s3Config models.S3Config, auth models.AuthConfig, tlsConfig models.TLSConfig, logger *lib.Logger) (services.S3Uploader, error) {
+	return services.NewAWSS3Uploader(s3Config, auth, tlsConfig, logger)
 }
 
+// s3UploaderFactory creates an S3Uploader. Overridable in tests.
+var s3UploaderFactory = defaultS3UploaderFactory
+
 // SetS3UploaderFactoryForTesting replaces the S3 uploader factory for tests.
-func SetS3UploaderFactoryForTesting(factory func(models.S3Config, models.AuthConfig, *lib.Logger) (services.S3Uploader, error)) {
+func SetS3UploaderFactoryForTesting(factory func(models.S3Config, models.AuthConfig, models.TLSConfig, *lib.Logger) (services.S3Uploader, error)) {
 	s3UploaderFactory = factory
 }
 
 // ResetS3UploaderFactory restores the default S3 uploader factory.
 func ResetS3UploaderFactory() {
-	s3UploaderFactory = func(s3Config models.S3Config, auth models.AuthConfig, logger *lib.Logger) (services.S3Uploader, error) {
-		return services.NewAWSS3Uploader(s3Config, auth, logger)
-	}
+	s3UploaderFactory = defaultS3UploaderFactory
 }
 
 // ClearOAuth2TokenCacheForTesting clears the OAuth2 token cache - exported for testing
@@ -600,7 +602,7 @@ func executeS3UploadSend(job *models.PipelineJob, jobDir string, step *models.Pi
 	s3Config := job.Config.Services.Send.S3
 
 	// Create uploader via factory (allows test injection)
-	uploader, err := s3UploaderFactory(s3Config, job.Config.Services.Send.Auth, logger)
+	uploader, err := s3UploaderFactory(s3Config, job.Config.Services.Send.Auth, job.Config.TLS, logger)
 	if err != nil {
 		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
 		recordStepError(step, err, models.ErrorTypeNonTransient)

@@ -99,6 +99,15 @@ func CreateJob(inputSource string, config models.ProjectConfig, logger *lib.Logg
 		return nil, fmt.Errorf("failed to save initial job state: %w", err)
 	}
 
+	// Prepare the effective CRTDL once so every downstream step reads the
+	// same enriched/copied file. Persist again so InputSource is up to date.
+	if err := PrepareCRTDL(job, logger); err != nil {
+		return nil, fmt.Errorf("failed to prepare CRTDL: %w", err)
+	}
+	if err := services.SaveJobState(config.JobsDir, job); err != nil {
+		return nil, fmt.Errorf("failed to save job state after CRTDL preparation: %w", err)
+	}
+
 	return job, nil
 }
 

@@ -1,6 +1,9 @@
 package unit
 
 import (
+	"encoding/json"
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -11,7 +14,27 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/pipeline"
+	"github.com/medizininformatik-initiative/aether/internal/services"
 )
+
+// countingStateFileOps wraps the default file ops and fails the Nth WriteFile call.
+type countingStateFileOps struct {
+	writeCount int
+	failOnNth  int
+	failErr    error
+}
+
+func (c *countingStateFileOps) WriteFile(name string, data []byte, perm os.FileMode) error {
+	c.writeCount++
+	if c.writeCount == c.failOnNth {
+		return c.failErr
+	}
+	return os.WriteFile(name, data, perm)
+}
+func (c *countingStateFileOps) Rename(oldpath, newpath string) error {
+	return os.Rename(oldpath, newpath)
+}
+func (c *countingStateFileOps) Remove(name string) error { return os.Remove(name) }
 
 // Helper to create a test job with given steps
 func createJobForPipelineTests(steps []models.StepName) models.PipelineJob {
@@ -266,6 +289,68 @@ func TestCreateJob_EmptyInputSource(t *testing.T) {
 	assert.Equal(t, models.InputTypeLocal, job.InputType, "Input type should be local")
 	assert.Equal(t, "", job.InputSource, "Input source should be empty")
 	assert.Equal(t, string(models.StepLocalImport), job.CurrentStep, "Current step should be local_import")
+}
+
+// TestCreateJob_FailsWhenSaveStateAfterCRTDLPreparationFails covers job.go
+// lines 107-109: the second SaveJobState call (after PrepareCRTDL has rewritten
+// job.InputSource) errors. We force the failure by injecting a
+// StateFileOpsProvider that succeeds for the first SaveJobState write and
+// fails for the second.
+func TestCreateJob_FailsWhenSaveStateAfterCRTDLPreparationFails(t *testing.T) {
+	tmpDir := t.TempDir()
+	jobsDir := filepath.Join(tmpDir, "jobs")
+
+	// Write a valid CRTDL file so DetectInputType returns CRTDL and
+	// ValidateCRTDLSyntax/ParseCRTDL both succeed.
+	crtdlPath := filepath.Join(tmpDir, "input.crtdl")
+	crtdlContent := map[string]any{
+		"cohortDefinition": map[string]any{
+			"version":           "1.0.0",
+			"inclusionCriteria": []any{},
+		},
+		"dataExtraction": map[string]any{
+			"attributeGroups": []map[string]any{
+				{
+					"id":             "g1",
+					"name":           "PatientPseudonymisiert",
+					"groupReference": "https://example.org/Patient",
+					"attributes": []map[string]any{
+						{"attributeRef": "Patient.id", "mustHave": true},
+					},
+				},
+			},
+		},
+	}
+	bytes, err := json.Marshal(crtdlContent)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(crtdlPath, bytes, 0644))
+
+	config := models.ProjectConfig{
+		JobsDir: jobsDir,
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepTorchImport, models.StepFlattening},
+		},
+		Services: models.ServiceConfig{
+			CRTDLPreprocessing: models.CRTDLPreprocessingConfig{Enabled: false},
+		},
+	}
+
+	original := services.StateFileOpsProvider
+	t.Cleanup(func() { services.StateFileOpsProvider = original })
+
+	ops := &countingStateFileOps{
+		failOnNth: 2,
+		failErr:   errors.New("simulated write failure"),
+	}
+	services.StateFileOpsProvider = ops
+
+	job, err := pipeline.CreateJob(crtdlPath, config, lib.NewLogger(lib.LogLevelDebug))
+
+	require.Error(t, err, "CreateJob must surface the second SaveJobState failure")
+	assert.Nil(t, job)
+	assert.Contains(t, err.Error(), "save job state after CRTDL preparation",
+		"Error must come from the post-PrepareCRTDL SaveJobState branch (job.go:107-109)")
+	assert.GreaterOrEqual(t, ops.writeCount, 2, "Second SaveJobState must have been attempted")
 }
 
 // TestCreateJob_NoImportStepEnabled tests CreateJob when no import step is enabled

@@ -292,7 +292,7 @@ func TestValidateImportSource_CRTDLValidation(t *testing.T) {
 		{
 			name: "Valid CRTDL file",
 			setupFunc: func() string {
-				file := filepath.Join(tempDir, "valid.crtdl")
+				file := filepath.Join(tempDir, "valid.json")
 				_ = os.WriteFile(file, []byte("{}"), 0644)
 				return file
 			},
@@ -309,7 +309,7 @@ func TestValidateImportSource_CRTDLValidation(t *testing.T) {
 		{
 			name: "Non-existent CRTDL file",
 			setupFunc: func() string {
-				return filepath.Join(tempDir, "nonexistent.crtdl")
+				return filepath.Join(tempDir, "nonexistent.json")
 			},
 			expectError: true,
 			errorMsg:    "does not exist",
@@ -415,16 +415,16 @@ func TestImportFromLocalDirectory_JSONFile(t *testing.T) {
 
 	// Verify error (line 29-30 path)
 	assert.Error(t, err, "Should fail when source is a .json file")
-	assert.Contains(t, err.Error(), "JSON/CRTDL file", "Error should mention JSON/CRTDL file")
+	assert.Contains(t, err.Error(), "JSON file", "Error should mention JSON file")
 	assert.Contains(t, err.Error(), "not a directory", "Error should mention not a directory")
 	assert.Contains(t, err.Error(), "InputTypeCRTDL", "Error should mention InputTypeCRTDL")
 	assert.Nil(t, importedFiles, "Should not return files on error")
 }
 
-// TestImportFromLocalDirectory_CRTDLFile tests error handling when .crtdl file is passed instead of directory (line 29-30)
+// TestImportFromLocalDirectory_CRTDLFile tests error handling when .json file is passed instead of directory (line 29-30)
 func TestImportFromLocalDirectory_CRTDLFile(t *testing.T) {
 	tempDir := t.TempDir()
-	sourceFile := filepath.Join(tempDir, "cohort.crtdl")
+	sourceFile := filepath.Join(tempDir, "cohort.json")
 	destDir := filepath.Join(tempDir, "dest")
 	logger := lib.NewLogger(lib.LogLevelInfo)
 
@@ -435,8 +435,8 @@ func TestImportFromLocalDirectory_CRTDLFile(t *testing.T) {
 	importedFiles, err := services.ImportFromLocalDirectory(sourceFile, destDir, logger, false, "")
 
 	// Verify error (line 29-30 path)
-	assert.Error(t, err, "Should fail when source is a .crtdl file")
-	assert.Contains(t, err.Error(), "JSON/CRTDL file", "Error should mention JSON/CRTDL file")
+	assert.Error(t, err, "Should fail when source is a .json file")
+	assert.Contains(t, err.Error(), "JSON file", "Error should mention JSON file")
 	assert.Contains(t, err.Error(), "not a directory", "Error should mention not a directory")
 	assert.Contains(t, err.Error(), "InputTypeCRTDL", "Error should mention InputTypeCRTDL")
 	assert.Nil(t, importedFiles, "Should not return files on error")
@@ -456,16 +456,16 @@ func TestValidateImportSource_JSONFileForLocalInput(t *testing.T) {
 	assert.Error(t, err, "Should return error for JSON file with InputTypeLocal")
 	assert.Contains(t, err.Error(), "expected directory but got file", "Error should mention file vs directory")
 	// Verify the hint message (lines 174-178)
-	assert.Contains(t, err.Error(), "JSON/CRTDL file", "Error should contain JSON/CRTDL hint")
+	assert.Contains(t, err.Error(), "JSON file", "Error should contain JSON hint")
 	assert.Contains(t, err.Error(), "cohortDefinition", "Error should mention cohortDefinition")
 	assert.Contains(t, err.Error(), "dataExtraction", "Error should mention dataExtraction")
 	assert.Contains(t, err.Error(), "verbose logging", "Error should mention verbose logging")
 }
 
-// TestValidateImportSource_CRTDLFileForLocalInput tests validation hint for .crtdl file with InputTypeLocal (line 174-178)
+// TestValidateImportSource_CRTDLFileForLocalInput tests validation hint for .json file with InputTypeLocal (line 174-178)
 func TestValidateImportSource_CRTDLFileForLocalInput(t *testing.T) {
 	tempDir := t.TempDir()
-	crtdlFile := filepath.Join(tempDir, "cohort.crtdl")
+	crtdlFile := filepath.Join(tempDir, "cohort.json")
 
 	// Create CRTDL file
 	require.NoError(t, os.WriteFile(crtdlFile, []byte(`{"cohortDefinition": {}}`), 0644))
@@ -476,7 +476,7 @@ func TestValidateImportSource_CRTDLFileForLocalInput(t *testing.T) {
 	assert.Error(t, err, "Should return error for CRTDL file with InputTypeLocal")
 	assert.Contains(t, err.Error(), "expected directory but got file", "Error should mention file vs directory")
 	// Verify the hint message (lines 174-178)
-	assert.Contains(t, err.Error(), "JSON/CRTDL file", "Error should contain JSON/CRTDL hint")
+	assert.Contains(t, err.Error(), "JSON file", "Error should contain JSON hint")
 	assert.Contains(t, err.Error(), "cohortDefinition", "Error should mention cohortDefinition")
 	assert.Contains(t, err.Error(), "dataExtraction", "Error should mention dataExtraction")
 	assert.Contains(t, err.Error(), "verbose logging", "Error should mention verbose logging")
@@ -1055,7 +1055,7 @@ func TestValidateImportSource_CRTDLStatAccessError(t *testing.T) {
 	}
 
 	tempDir := t.TempDir()
-	crtdlFile := filepath.Join(tempDir, "cohort.crtdl")
+	crtdlFile := filepath.Join(tempDir, "cohort.json")
 
 	// Create CRTDL file
 	require.NoError(t, os.WriteFile(crtdlFile, []byte(`{"cohortDefinition":{}}`), 0644))

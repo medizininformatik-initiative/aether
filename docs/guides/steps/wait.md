@@ -29,7 +29,7 @@ pipeline:
 
 ```bash
 # Pipeline pauses automatically at wait step
-aether pipeline start query.crtdl
+aether pipeline start crtdl.json
 
 # Check status - shows "waiting"
 aether pipeline status <job-id>

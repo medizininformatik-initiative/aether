@@ -135,7 +135,7 @@ func TestDetectInputType(t *testing.T) {
 			name:        "Valid CRTDL file",
 			inputSource: "",
 			setup: func() string {
-				crtdlPath := filepath.Join(tmpDir, "test.crtdl")
+				crtdlPath := filepath.Join(tmpDir, "test.json")
 				crtdlContent := `{
 					"cohortDefinition": {
 						"inclusionCriteria": [[]]
@@ -154,7 +154,7 @@ func TestDetectInputType(t *testing.T) {
 			name:        "Invalid CRTDL file (wrong structure)",
 			inputSource: "",
 			setup: func() string {
-				crtdlPath := filepath.Join(tmpDir, "invalid.crtdl")
+				crtdlPath := filepath.Join(tmpDir, "invalid.json")
 				crtdlContent := `{"invalid": "structure"}`
 				_ = os.WriteFile(crtdlPath, []byte(crtdlContent), 0644)
 				return crtdlPath
@@ -166,7 +166,7 @@ func TestDetectInputType(t *testing.T) {
 			name:        "JSON file with CRTDL structure",
 			inputSource: "",
 			setup: func() string {
-				jsonPath := filepath.Join(tmpDir, "query.json")
+				jsonPath := filepath.Join(tmpDir, "crtdl.json")
 				jsonContent := `{
 					"cohortDefinition": {
 						"inclusionCriteria": [[]]
@@ -268,7 +268,7 @@ func TestIsCRTDLFile(t *testing.T) {
 		},
 		{
 			name:      "Non-existent file",
-			setupFile: func() string { return "/non/existent/file.crtdl" },
+			setupFile: func() string { return "/non/existent/file.json" },
 			isCRTDL:   false,
 		},
 	}
@@ -279,7 +279,7 @@ func TestIsCRTDLFile(t *testing.T) {
 			if tc.setupFile != nil {
 				filePath = tc.setupFile()
 			} else {
-				filePath = filepath.Join(tmpDir, "test.crtdl")
+				filePath = filepath.Join(tmpDir, "test.json")
 				err := os.WriteFile(filePath, []byte(tc.content), 0644)
 				require.NoError(t, err)
 			}
@@ -349,7 +349,7 @@ func TestIsCRTDLFileWithHint(t *testing.T) {
 		},
 		{
 			name:         "Non-existent file",
-			setupFile:    func() string { return "/non/existent/file.crtdl" },
+			setupFile:    func() string { return "/non/existent/file.json" },
 			expectValid:  false,
 			hintContains: "cannot read file",
 		},
@@ -361,7 +361,7 @@ func TestIsCRTDLFileWithHint(t *testing.T) {
 			if tc.setupFile != nil {
 				filePath = tc.setupFile()
 			} else {
-				filePath = filepath.Join(tmpDir, "test.crtdl")
+				filePath = filepath.Join(tmpDir, "test.json")
 				err := os.WriteFile(filePath, []byte(tc.content), 0644)
 				require.NoError(t, err)
 			}
@@ -407,7 +407,7 @@ func TestValidateCRTDLSyntax(t *testing.T) {
 		},
 		{
 			name:          "File not found",
-			setupFile:     func() string { return "/non/existent/file.crtdl" },
+			setupFile:     func() string { return "/non/existent/file.json" },
 			expectError:   true,
 			errorContains: "failed to read CRTDL file",
 		},
@@ -502,7 +502,7 @@ func TestValidateCRTDLSyntax(t *testing.T) {
 			if tc.setupFile != nil {
 				filePath = tc.setupFile()
 			} else {
-				filePath = filepath.Join(tmpDir, "test.crtdl")
+				filePath = filepath.Join(tmpDir, "test.json")
 				err := os.WriteFile(filePath, []byte(tc.content), 0644)
 				require.NoError(t, err)
 			}
@@ -524,7 +524,7 @@ func TestValidateCRTDLSyntax_ErrorMessages(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	t.Run("Error shows available keys when cohortDefinition missing", func(t *testing.T) {
-		filePath := filepath.Join(tmpDir, "missing-cohort.crtdl")
+		filePath := filepath.Join(tmpDir, "missing-cohort.json")
 		content := `{
 			"wrongKey": "value",
 			"dataExtraction": {"attributeGroups": []}
@@ -538,7 +538,7 @@ func TestValidateCRTDLSyntax_ErrorMessages(t *testing.T) {
 	})
 
 	t.Run("Error shows available keys when dataExtraction missing", func(t *testing.T) {
-		filePath := filepath.Join(tmpDir, "missing-extraction.crtdl")
+		filePath := filepath.Join(tmpDir, "missing-extraction.json")
 		content := `{
 			"cohortDefinition": {"inclusionCriteria": [[]]},
 			"wrongKey": "value"
@@ -552,7 +552,7 @@ func TestValidateCRTDLSyntax_ErrorMessages(t *testing.T) {
 	})
 
 	t.Run("Error shows expected structure", func(t *testing.T) {
-		filePath := filepath.Join(tmpDir, "bad-structure.crtdl")
+		filePath := filepath.Join(tmpDir, "bad-structure.json")
 		content := `{"invalid": "data"}`
 		_ = os.WriteFile(filePath, []byte(content), 0644)
 
@@ -580,8 +580,8 @@ func TestDetectInputType_Integration(t *testing.T) {
 		assert.Equal(t, models.InputTypeLocal, inputType)
 	})
 
-	t.Run("CRTDL file with .crtdl extension", func(t *testing.T) {
-		crtdlPath := filepath.Join(tmpDir, "query.crtdl")
+	t.Run("CRTDL file with .json extension", func(t *testing.T) {
+		crtdlPath := filepath.Join(tmpDir, "crtdl.json")
 		crtdlContent := `{
 			"cohortDefinition": {"inclusionCriteria": [[]]},
 			"dataExtraction": {"attributeGroups": []}
@@ -594,7 +594,7 @@ func TestDetectInputType_Integration(t *testing.T) {
 	})
 
 	t.Run("CRTDL file with .json extension", func(t *testing.T) {
-		jsonPath := filepath.Join(tmpDir, "query.json")
+		jsonPath := filepath.Join(tmpDir, "crtdl.json")
 		jsonContent := `{
 			"cohortDefinition": {"inclusionCriteria": [[]]},
 			"dataExtraction": {"attributeGroups": []}

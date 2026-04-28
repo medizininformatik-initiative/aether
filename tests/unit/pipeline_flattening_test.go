@@ -727,6 +727,62 @@ func TestClassifyFlatteningError(t *testing.T) {
 	})
 }
 
+// TestExecuteFlatteningStep_MissingCRTDLPath verifies the decoupling from
+// issue #286: flattening rejects jobs with no CRTDL attached regardless of
+// InputType, and the error message points to both attachment mechanisms.
+func TestExecuteFlatteningStep_MissingCRTDLPath(t *testing.T) {
+	tempDir := t.TempDir()
+	jobID := "test-no-crtdl"
+	jobDir := filepath.Join(tempDir, "jobs", jobID)
+	require.NoError(t, os.MkdirAll(jobDir, 0755))
+
+	lookupPath := filepath.Join(tempDir, "lookup.json")
+	writeTestLookupTable(t, lookupPath, "https://example.com/Patient", "Patient")
+
+	job := createFlatteningTestJob("http://localhost:8080", lookupPath, "")
+	job.InputSource = "https://example.com/data.ndjson"
+	job.InputType = models.InputTypeHTTP
+	job.CRTDLPath = ""
+
+	err := pipeline.ExecuteFlatteningStep(job, jobDir, createFlatteningTestLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "CRTDL")
+	assert.Contains(t, err.Error(), "--crtdl")
+}
+
+// TestExecuteFlatteningStep_AcceptsHTTPInputWithCRTDLPath verifies that an
+// http_import job carrying a CRTDL via CRTDLPath proceeds past the gate that
+// previously blocked it. The job completes with no matching resources (empty
+// input dir) — the point is that the CRTDL precondition no longer depends on
+// InputType.
+func TestExecuteFlatteningStep_AcceptsHTTPInputWithCRTDLPath(t *testing.T) {
+	tempDir := t.TempDir()
+	jobID := "test-http-crtdl"
+	jobDir := filepath.Join(tempDir, "jobs", jobID)
+	inputDir := filepath.Join(jobDir, "import")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+
+	crtdlPath := filepath.Join(tempDir, "test.json")
+	writeTestCRTDL(t, crtdlPath, "group-1", "Patient", "https://example.com/Patient")
+	lookupPath := filepath.Join(tempDir, "lookup.json")
+	writeTestLookupTable(t, lookupPath, "https://example.com/Patient", "Patient")
+
+	// Minimal resource with no matching provenance -> no CSV emitted, but
+	// the flattening step must not reject the job on the CRTDL check.
+	patient := map[string]any{"resourceType": "Patient", "id": "1"}
+	prov := makeProvenance("prov-1", "Patient/1", "different-group-id")
+	bundle := makeBundle("b1", patient, prov)
+	writeTestNDJSON(t, filepath.Join(inputDir, "test.ndjson"), []map[string]any{bundle})
+
+	job := createFlatteningTestJob("http://localhost:8080", lookupPath, crtdlPath)
+	job.InputSource = "https://example.com/data.ndjson"
+	job.InputType = models.InputTypeHTTP
+	// CRTDLPath is set by createFlatteningTestJob via crtdlPath arg
+
+	err := pipeline.ExecuteFlatteningStep(job, jobDir, createFlatteningTestLogger())
+	require.NoError(t, err, "http_import + CRTDLPath must be accepted (issue #286)")
+}
+
 // Helper function to create a test flattening job
 func createFlatteningTestJob(serviceURL, lookupPath, crtdlPath string) *models.PipelineJob {
 	return &models.PipelineJob{
@@ -734,6 +790,7 @@ func createFlatteningTestJob(serviceURL, lookupPath, crtdlPath string) *models.P
 		Status:      models.JobStatusInProgress,
 		InputSource: crtdlPath,
 		InputType:   models.InputTypeCRTDL,
+		CRTDLPath:   crtdlPath,
 		Config: models.ProjectConfig{
 			Services: models.ServiceConfig{
 				Flattening: models.FlatteningConfig{
@@ -801,7 +858,7 @@ func TestExecuteFlatteningStep_ConfigValidationError(t *testing.T) {
 	jobDir := filepath.Join(tempDir, "jobs", "test-job")
 	require.NoError(t, os.MkdirAll(jobDir, 0755))
 
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, "group-1", "Patient", "https://example.com/Patient")
 
 	// Create job with invalid config (empty ServiceURL)
@@ -810,6 +867,7 @@ func TestExecuteFlatteningStep_ConfigValidationError(t *testing.T) {
 		Status:      models.JobStatusInProgress,
 		InputSource: crtdlPath,
 		InputType:   models.InputTypeCRTDL,
+		CRTDLPath:   crtdlPath,
 		Config: models.ProjectConfig{
 			Services: models.ServiceConfig{
 				Flattening: models.FlatteningConfig{
@@ -839,7 +897,7 @@ func TestExecuteFlatteningStep_LookupValidationError(t *testing.T) {
 	jobDir := filepath.Join(tempDir, "jobs", "test-job")
 	require.NoError(t, os.MkdirAll(jobDir, 0755))
 
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, "group-1", "Patient", "https://example.com/Patient")
 
 	// Create lookup table with duplicate URLs (validation error)
@@ -878,7 +936,7 @@ func TestExecuteFlatteningStep_ViewDefinitionBuildError(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	// Create CRTDL referencing a profile that doesn't exist in lookup
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, "group-1", "UnknownType", "https://example.com/UnknownProfile")
 
 	// Create lookup table for a different profile
@@ -910,7 +968,7 @@ func TestExecuteFlatteningStep_NoMatchingResources(t *testing.T) {
 	inputDir := filepath.Join(jobDir, "import")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, "group-1", "Patient", "https://example.com/Patient")
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -943,7 +1001,7 @@ func TestExecuteFlatteningStep_LoadAllResourcesError(t *testing.T) {
 	inputDir := filepath.Join(jobDir, "import")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, "group-1", "Patient", "https://example.com/Patient")
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -973,7 +1031,7 @@ func TestExecuteFlatteningStep_OutputDirCreationError(t *testing.T) {
 	inputDir := filepath.Join(jobDir, "import")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, "group-1", "Patient", "https://example.com/Patient")
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -1041,7 +1099,7 @@ func TestExecuteFlatteningStep_ViewDefinitionWriteError(t *testing.T) {
 	require.NoError(t, os.WriteFile(viewDefDir, []byte("not a directory"), 0644))
 
 	groupID := "group-patient"
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, groupID, "Patient", "https://example.com/Patient")
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -1100,7 +1158,7 @@ func TestExecuteFlatteningStep_CSVWriteError(t *testing.T) {
 	})
 
 	groupID := "group-patient"
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, groupID, "Patient", "https://example.com/Patient")
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -1150,7 +1208,7 @@ func TestExecuteFlatteningStep_MultipleBatches(t *testing.T) {
 
 	profileURL := "https://example.com/Patient"
 	groupID := "group-patient"
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -1215,7 +1273,7 @@ func TestExecuteFlatteningStep_FlattenerError(t *testing.T) {
 
 	profileURL := "https://example.com/Patient"
 	groupID := "group-patient"
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -1260,7 +1318,7 @@ func TestExecuteFlatteningStep_BundleExtraction(t *testing.T) {
 
 	profileURL := "https://example.com/Patient"
 	groupID := "group-patient"
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -1316,7 +1374,7 @@ func TestExecuteFlatteningStep_StreamingEdgeCases(t *testing.T) {
 
 	profileURL := "https://example.com/Patient"
 	groupID := "group-patient"
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -1383,7 +1441,7 @@ func TestExecuteFlatteningStep_BatchFlushOnThreshold(t *testing.T) {
 
 	profileURL := "https://example.com/Patient"
 	groupID := "group-patient"
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -1467,7 +1525,7 @@ func TestExecuteFlatteningStep_NilViewDefSkipped(t *testing.T) {
 
 	// CRTDL references a profile, but the lookup table has NO matching entry for it.
 	// This means the ViewDefinition build will fail, leaving viewDefs[0] == nil.
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -1507,7 +1565,7 @@ func TestExecuteFlatteningStep_BundleEntryUnmatchedProfile(t *testing.T) {
 
 	profileURL := "https://example.com/Patient"
 	groupID := "group-patient"
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -1543,7 +1601,7 @@ func TestExecuteFlatteningStep_FlattenerErrorDuringFlush(t *testing.T) {
 
 	profileURL := "https://example.com/Patient"
 	groupID := "group-patient"
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -1631,7 +1689,7 @@ func TestExecuteFlatteningStep_OpenFileError(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	profileURL := "https://example.com/Patient"
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, "group-patient", "Patient", profileURL)
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -1673,7 +1731,7 @@ func TestExecuteFlatteningStep_ProvenanceInPseudonymizedDir(t *testing.T) {
 	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
 
 	groupID := "group-patient"
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, groupID, "Patient", "https://example.com/Patient")
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, "https://example.com/Patient", "Patient")
@@ -1694,6 +1752,7 @@ func TestExecuteFlatteningStep_ProvenanceInPseudonymizedDir(t *testing.T) {
 		Status:      models.JobStatusInProgress,
 		InputSource: crtdlPath,
 		InputType:   models.InputTypeCRTDL,
+		CRTDLPath:   crtdlPath,
 		Config: models.ProjectConfig{
 			Services: models.ServiceConfig{
 				Flattening: models.FlatteningConfig{
@@ -1735,7 +1794,7 @@ func TestExecuteFlatteningStep_UnknownProfile(t *testing.T) {
 	inputDir := filepath.Join(jobDir, "import")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	writeTestCRTDL(t, crtdlPath, "group-patient", "Patient", "https://example.com/Patient")
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")

@@ -24,7 +24,7 @@ import (
 func TestTORCHClient_SubmitExtraction_Success(t *testing.T) {
 	// Create temp CRTDL file
 	tempDir := t.TempDir()
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	crtdlContent := map[string]any{
 		"cohortDefinition": map[string]any{
 			"version":           "1.0.0",
@@ -93,7 +93,7 @@ func TestTORCHClient_SubmitExtraction_FileNotFound(t *testing.T) {
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
-	_, err := client.SubmitExtraction("/nonexistent/file.crtdl")
+	_, err := client.SubmitExtraction("/nonexistent/file.json")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to read CRTDL file")
@@ -102,7 +102,7 @@ func TestTORCHClient_SubmitExtraction_FileNotFound(t *testing.T) {
 func TestTORCHClient_SubmitExtraction_Unauthorized(t *testing.T) {
 	// Create temp CRTDL file
 	tempDir := t.TempDir()
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	crtdlJSON := []byte(`{"cohortDefinition":{"inclusionCriteria":[]},"dataExtraction":{"attributeGroups":[]}}`)
 	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
 
@@ -571,7 +571,7 @@ func TestTORCHClient_DownloadExtractionFiles_PartialFailure(t *testing.T) {
 func TestTORCHClient_EncodeCRTDLToBase64_ValidJSON(t *testing.T) {
 	// Create temp CRTDL file
 	tempDir := t.TempDir()
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	crtdlContent := map[string]any{
 		"cohortDefinition": map[string]any{
 			"version":           "1.0.0",
@@ -782,7 +782,7 @@ func TestTORCHClient_MakeAbsoluteURL_RelativeURL(t *testing.T) {
 
 func TestTORCHClient_EncodeCRTDLToBase64_EmptyFile(t *testing.T) {
 	tempDir := t.TempDir()
-	crtdlPath := filepath.Join(tempDir, "empty.crtdl")
+	crtdlPath := filepath.Join(tempDir, "empty.json")
 	// Create empty file
 	err := os.WriteFile(crtdlPath, []byte(""), 0644)
 	require.NoError(t, err)
@@ -804,7 +804,7 @@ func TestTORCHClient_EncodeCRTDLToBase64_EmptyFile(t *testing.T) {
 
 func TestTORCHClient_EncodeCRTDLToBase64_InvalidJSON(t *testing.T) {
 	tempDir := t.TempDir()
-	crtdlPath := filepath.Join(tempDir, "invalid.crtdl")
+	crtdlPath := filepath.Join(tempDir, "invalid.json")
 	// Write invalid JSON
 	err := os.WriteFile(crtdlPath, []byte("{invalid json"), 0644)
 	require.NoError(t, err)
@@ -935,7 +935,7 @@ func TestTORCHClient_ParseExtractionResult_InvalidJSON(t *testing.T) {
 
 func TestTORCHClient_SubmitExtraction_MissingContentLocation(t *testing.T) {
 	tempDir := t.TempDir()
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	crtdlJSON := []byte(`{"cohortDefinition":{"inclusionCriteria":[]},"dataExtraction":{"attributeGroups":[]}}`)
 	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
 
@@ -1353,7 +1353,7 @@ func TestTORCHClient_DownloadExtractionFiles_CompressedFileSizeSmaller(t *testin
 func TestTORCHClient_SubmitExtraction_HttpDoError(t *testing.T) {
 	// Create temp CRTDL file
 	tempDir := t.TempDir()
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	crtdlJSON := []byte(`{"cohortDefinition":{"inclusionCriteria":[]},"dataExtraction":{"attributeGroups":[]}}`)
 	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
 

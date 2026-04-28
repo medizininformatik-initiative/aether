@@ -36,7 +36,7 @@ pipeline:
 ### With CRTDL file
 
 ```bash
-aether pipeline start query.crtdl
+aether pipeline start crtdl.json
 ```
 
 ### With TORCH URL

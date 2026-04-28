@@ -43,7 +43,7 @@ Quick Start:
        cp config/aether.example.yaml aether.yaml
 
   2. Start a pipeline:
-       aether pipeline start /data/torch/output
+       aether pipeline start crtdl.json
 
   3. Check status:
        aether pipeline status <job-id>

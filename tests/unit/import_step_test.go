@@ -206,8 +206,9 @@ func TestExecuteImportStep_TorchImportCRTDLValidationFailure(t *testing.T) {
 	// Create a job with torch import step but non-existent CRTDL file
 	job := &models.PipelineJob{
 		JobID:       "test-job-123",
-		InputSource: "/nonexistent/file.crtdl", // Non-existent CRTDL file
+		InputSource: "/nonexistent/file.json", // Non-existent CRTDL file
 		InputType:   models.InputTypeCRTDL,
+		CRTDLPath:   "/nonexistent/file.json",
 		CurrentStep: string(models.StepTorchImport),
 		Status:      models.JobStatusPending,
 		Steps:       models.InitializeSteps([]models.StepName{models.StepTorchImport}),
@@ -279,11 +280,14 @@ func TestExecuteImportStep_TorchImportInvalidInputType(t *testing.T) {
 	}
 	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, models.TLSConfig{}, logger)
 
-	// Create a job with torch import step but local input type (not CRTDL or TORCH URL)
+	// Create a job with torch import step but no CRTDL attached (and not a
+	// TORCH result URL). Under the decoupled model, torch import submits
+	// job.CRTDLPath; validation must reject an empty CRTDL.
 	job := &models.PipelineJob{
 		JobID:       "test-job-123",
-		InputSource: "/some/local/path",
-		InputType:   models.InputTypeLocal, // Invalid for torch import
+		InputSource: "",
+		InputType:   models.InputTypeLocal,
+		CRTDLPath:   "",
 		CurrentStep: string(models.StepTorchImport),
 		Status:      models.JobStatusPending,
 		Steps:       models.InitializeSteps([]models.StepName{models.StepTorchImport}),
@@ -296,10 +300,10 @@ func TestExecuteImportStep_TorchImportInvalidInputType(t *testing.T) {
 		},
 	}
 
-	// Execute import step - should fail with invalid input type
+	// Execute import step - should fail because no CRTDL is attached
 	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
 
-	require.Error(t, err, "Should fail when torch import has invalid input type")
+	require.Error(t, err, "Should fail when torch import has no CRTDL")
 	assert.NotNil(t, updatedJob, "Should return updated job even on error")
-	assert.Contains(t, err.Error(), "torch import requires CRTDL file or TORCH URL", "Error should mention requirement")
+	assert.Contains(t, err.Error(), "CRTDL file path cannot be empty", "Error should mention missing CRTDL")
 }

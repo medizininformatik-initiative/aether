@@ -9,14 +9,21 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
-// CreateJob initializes a new pipeline job
-// inputSource can be:
-//   - CRTDL file path (required if flattening or torch enabled)
-//   - HTTP(S) URL (for http_import)
-//   - Empty string (for local_import using config.Services.LocalImport.Dir)
+// CreateJob initializes a new pipeline job.
 //
-// Returns the created job with generated UUID and initialized steps
-func CreateJob(inputSource string, config models.ProjectConfig, logger *lib.Logger) (*models.PipelineJob, error) {
+// crtdlPath is the CRTDL file attached to the job; every job carries a CRTDL
+// so it is normally non-empty (the "" case is kept only for tests that
+// exercise non-CRTDL paths).
+//
+// inputSource is the import-step input:
+//   - HTTP(S) URL (for http_import)
+//   - TORCH result URL (auto-detected)
+//   - Local directory path (for local_import)
+//   - Empty string: torch_import submits the CRTDL to TORCH, or local_import
+//     falls back to config.Services.LocalImport.Dir
+//
+// Returns the created job with generated UUID and initialized steps.
+func CreateJob(inputSource string, crtdlPath string, config models.ProjectConfig, logger *lib.Logger) (*models.PipelineJob, error) {
 	// Generate unique job ID with human-readable timestamp prefix
 	jobID := models.GenerateJobID()
 
@@ -25,7 +32,8 @@ func CreateJob(inputSource string, config models.ProjectConfig, logger *lib.Logg
 	var err error
 
 	if inputSource == "" {
-		// No input source provided - local_import will use config.Services.LocalImport.Dir
+		// No input source provided - torch_import submits the CRTDL, or
+		// local_import uses config.Services.LocalImport.Dir.
 		inputType = models.InputTypeLocal
 		logger.Info("No input source provided, using local import from config", "dir", config.Services.LocalImport.Dir)
 	} else {
@@ -37,12 +45,12 @@ func CreateJob(inputSource string, config models.ProjectConfig, logger *lib.Logg
 		logger.Info("Detected input type", "type", inputType, "source", inputSource)
 	}
 
-	// Validate CRTDL syntax if input is CRTDL file
-	if inputType == models.InputTypeCRTDL {
-		if err := lib.ValidateCRTDLSyntax(inputSource); err != nil {
+	// Validate CRTDL syntax whenever one is attached
+	if crtdlPath != "" {
+		if err := lib.ValidateCRTDLSyntax(crtdlPath); err != nil {
 			return nil, fmt.Errorf("CRTDL validation failed: %w", err)
 		}
-		logger.Info("CRTDL syntax validation passed")
+		logger.Info("CRTDL syntax validation passed", "path", crtdlPath)
 	}
 
 	// Determine initial step based on enabled import step in config
@@ -74,6 +82,7 @@ func CreateJob(inputSource string, config models.ProjectConfig, logger *lib.Logg
 		UpdatedAt:          time.Now(),
 		InputSource:        inputSource,
 		InputType:          inputType,
+		CRTDLPath:          crtdlPath,
 		TORCHExtractionURL: "",                  // Will be set during TORCH extraction if applicable
 		CurrentStep:        string(initialStep), // Set based on input type
 		Status:             models.JobStatusPending,

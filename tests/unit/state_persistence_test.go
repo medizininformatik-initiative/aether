@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -268,6 +269,89 @@ func TestStatePersistence_ConcurrentAccess(t *testing.T) {
 	loadedJob, err := services.LoadJobState(tempDir, jobID)
 	require.NoError(t, err)
 	assert.Equal(t, 90, loadedJob.TotalFiles, "Final state should have last written value")
+}
+
+// TestLoadJobState_BackfillCRTDLPath verifies the legacy-state backfill branch
+// in state.go (lines 75-77): jobs saved before issue #286 carried the CRTDL
+// path in InputSource (with InputType=crtdl_file) and no CRTDLPath field.
+// On load, CRTDLPath must be populated from InputSource so flattening still
+// resolves the CRTDL for pre-existing jobs.
+func TestLoadJobState_BackfillCRTDLPath(t *testing.T) {
+	tempDir := t.TempDir()
+	jobID := uuid.New().String()
+	jobDir := services.GetJobDir(tempDir, jobID)
+	require.NoError(t, os.MkdirAll(jobDir, 0755))
+
+	crtdlInSource := filepath.Join(tempDir, "legacy.json")
+	now := time.Now()
+
+	legacy := map[string]any{
+		"job_id":       jobID,
+		"created_at":   now.Format(time.RFC3339Nano),
+		"updated_at":   now.Format(time.RFC3339Nano),
+		"input_source": crtdlInSource,
+		"input_type":   string(models.InputTypeCRTDL),
+		// CRTDLPath intentionally omitted to simulate pre-#286 state.
+		"current_step": string(models.StepTorchImport),
+		"status":       string(models.JobStatusPending),
+		"steps": []map[string]any{
+			{
+				"name":            string(models.StepTorchImport),
+				"status":          string(models.StepStatusPending),
+				"files_processed": 0,
+				"bytes_processed": 0,
+			},
+		},
+		"config": map[string]any{
+			"pipeline": map[string]any{
+				"enabled_steps": []string{string(models.StepTorchImport)},
+			},
+			"services": map[string]any{
+				"torch": map[string]any{
+					"base_url": "http://torch.example",
+				},
+			},
+			"retry": map[string]any{
+				"max_attempts":       5,
+				"initial_backoff_ms": 1000,
+				"max_backoff_ms":     30000,
+			},
+			"jobs_dir": tempDir,
+		},
+		"total_files": 0,
+		"total_bytes": 0,
+	}
+
+	data, err := json.MarshalIndent(legacy, "", "  ")
+	require.NoError(t, err)
+	statePath := services.GetStateFilePath(tempDir, jobID)
+	require.NoError(t, os.WriteFile(statePath, data, 0644))
+
+	loaded, err := services.LoadJobState(tempDir, jobID)
+	require.NoError(t, err, "legacy state without CRTDLPath must load via backfill")
+	require.NotNil(t, loaded)
+	assert.Equal(t, crtdlInSource, loaded.CRTDLPath, "CRTDLPath must be backfilled from InputSource")
+	assert.Equal(t, crtdlInSource, loaded.InputSource, "InputSource must remain unchanged")
+	assert.Equal(t, models.InputTypeCRTDL, loaded.InputType)
+}
+
+// TestLoadJobState_BackfillSkippedForNonCRTDL verifies the backfill does NOT
+// run when InputType is something other than crtdl_file: CRTDLPath must stay
+// empty and InputSource must not be copied into it.
+func TestLoadJobState_BackfillSkippedForNonCRTDL(t *testing.T) {
+	tempDir := t.TempDir()
+	jobID := uuid.New().String()
+
+	job := createTestJob(jobID, tempDir)
+	job.InputType = models.InputTypeLocal
+	job.InputSource = filepath.Join(tempDir, "data")
+	job.CRTDLPath = ""
+
+	require.NoError(t, services.SaveJobState(tempDir, job))
+
+	loaded, err := services.LoadJobState(tempDir, jobID)
+	require.NoError(t, err)
+	assert.Empty(t, loaded.CRTDLPath, "non-CRTDL jobs must NOT backfill CRTDLPath")
 }
 
 // Helper function to create a test job

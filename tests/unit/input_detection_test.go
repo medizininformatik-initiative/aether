@@ -56,7 +56,7 @@ func TestDetectInputType_TORCHUrlHTTPS(t *testing.T) {
 
 func TestDetectInputType_CRTDLFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	crtdlFile := filepath.Join(tmpDir, "query.crtdl")
+	crtdlFile := filepath.Join(tmpDir, "crtdl.json")
 
 	// Create valid CRTDL file
 	validCRTDL := `{
@@ -79,7 +79,7 @@ func TestDetectInputType_CRTDLFile(t *testing.T) {
 
 func TestDetectInputType_JSONFileIsCRTDL(t *testing.T) {
 	tmpDir := t.TempDir()
-	jsonFile := filepath.Join(tmpDir, "query.json")
+	jsonFile := filepath.Join(tmpDir, "crtdl.json")
 
 	// Create valid CRTDL file with .json extension
 	validCRTDL := `{
@@ -134,7 +134,7 @@ func TestDetectInputType_EmptyString(t *testing.T) {
 
 func TestDetectInputType_InvalidCRTDLExtension(t *testing.T) {
 	tmpDir := t.TempDir()
-	crtdlFile := filepath.Join(tmpDir, "query.crtdl")
+	crtdlFile := filepath.Join(tmpDir, "crtdl.json")
 
 	// Create invalid CRTDL file (missing required fields)
 	invalidCRTDL := `{
@@ -143,7 +143,7 @@ func TestDetectInputType_InvalidCRTDLExtension(t *testing.T) {
 	err := os.WriteFile(crtdlFile, []byte(invalidCRTDL), 0644)
 	require.NoError(t, err)
 
-	// Invalid CRTDL files with .crtdl extension default to local type
+	// Invalid CRTDL files with .json extension default to local type
 	// (CRTDL validation errors occur during job creation, not input type detection)
 	inputType, err := lib.DetectInputType(crtdlFile)
 	assert.NoError(t, err, "Detection should succeed, CRTDL validation happens later")
@@ -152,7 +152,7 @@ func TestDetectInputType_InvalidCRTDLExtension(t *testing.T) {
 
 func TestDetectInputType_MalformedJSON(t *testing.T) {
 	tmpDir := t.TempDir()
-	crtdlFile := filepath.Join(tmpDir, "query.crtdl")
+	crtdlFile := filepath.Join(tmpDir, "crtdl.json")
 
 	// Create malformed JSON
 	malformedJSON := `{

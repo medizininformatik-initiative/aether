@@ -19,10 +19,11 @@ func (j *PipelineJob) Validate() error {
 		return err
 	}
 
-	// Validate InputSource is not empty (unless using local_import with config directory)
+	// Validate InputSource is not empty (unless a CRTDL is attached, or using
+	// local_import with a config directory).
 	if j.InputSource == "" {
-		// Allow empty InputSource for local_import when config directory is set
-		if j.InputType != InputTypeLocal || j.Config.Services.LocalImport.Dir == "" {
+		localFromConfig := j.InputType == InputTypeLocal && j.Config.Services.LocalImport.Dir != ""
+		if j.CRTDLPath == "" && !localFromConfig {
 			return errors.New("input_source is required")
 		}
 	}

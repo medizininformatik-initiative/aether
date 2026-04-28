@@ -270,7 +270,7 @@ go test -race ./...
 
 ```bash
 # Enable debug logging
-AETHER_LOG_LEVEL=debug ./bin/aether pipeline start test.crtdl
+AETHER_LOG_LEVEL=debug ./bin/aether pipeline start test.json
 
 # Run with CPU profile
 go test -cpuprofile=cpu.prof ./...

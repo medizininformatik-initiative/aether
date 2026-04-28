@@ -66,21 +66,9 @@ func ExecuteImportStep(job *models.PipelineJob, logger *lib.Logger, httpClient *
 		}
 
 	case models.StepTorchImport:
-		// TORCH import requires CRTDL or TORCH URL
-		switch job.InputType {
-		case models.InputTypeCRTDL:
-			// Validate CRTDL source
-			if err := services.ValidateImportSource(job.InputSource, models.InputTypeCRTDL); err != nil {
-				updatedJob := failImportStep(job, err, models.ErrorTypeNonTransient, 0)
-				lib.LogStepFailed(logger, string(currentStep), job.JobID, err, false)
-				return &updatedJob, err
-			}
-
-			logger.Info("Extracting data from TORCH using CRTDL", "source", job.InputSource, "compress", compress)
-			importedFiles, err = executeTORCHExtraction(job, importDir, httpClient, logger, showProgress, compress, compressionLevel)
-
-		case models.InputTypeTORCHURL:
-			// Validate TORCH URL
+		// TORCH result URL: poll directly, skip extraction submission.
+		// Otherwise: submit the attached CRTDL for extraction.
+		if job.InputType == models.InputTypeTORCHURL {
 			if err := services.ValidateImportSource(job.InputSource, models.InputTypeTORCHURL); err != nil {
 				updatedJob := failImportStep(job, err, models.ErrorTypeNonTransient, 0)
 				lib.LogStepFailed(logger, string(currentStep), job.JobID, err, false)
@@ -89,9 +77,15 @@ func ExecuteImportStep(job *models.PipelineJob, logger *lib.Logger, httpClient *
 
 			logger.Info("Downloading from TORCH result URL", "source", job.InputSource, "compress", compress)
 			importedFiles, err = executeTORCHDownload(job, importDir, httpClient, logger, showProgress, compress, compressionLevel)
+		} else {
+			if err := services.ValidateImportSource(job.CRTDLPath, models.InputTypeCRTDL); err != nil {
+				updatedJob := failImportStep(job, err, models.ErrorTypeNonTransient, 0)
+				lib.LogStepFailed(logger, string(currentStep), job.JobID, err, false)
+				return &updatedJob, err
+			}
 
-		default:
-			err = fmt.Errorf("torch import requires CRTDL file or TORCH URL, got input type: %s", job.InputType)
+			logger.Info("Extracting data from TORCH using CRTDL", "crtdl", job.CRTDLPath, "compress", compress)
+			importedFiles, err = executeTORCHExtraction(job, importDir, httpClient, logger, showProgress, compress, compressionLevel)
 		}
 
 	default:
@@ -101,7 +95,7 @@ func ExecuteImportStep(job *models.PipelineJob, logger *lib.Logger, httpClient *
 	// Handle errors
 	if err != nil {
 		// Classify error type
-		errorType := classifyImportError(err, job.InputType)
+		errorType := classifyImportError(err, currentStep)
 		updatedJob := failImportStep(job, err, errorType, 0)
 		lib.LogStepFailed(logger, string(currentStep), job.JobID, err, errorType == models.ErrorTypeTransient)
 		return &updatedJob, err
@@ -145,12 +139,12 @@ func failImportStep(job *models.PipelineJob, err error, errorType models.ErrorTy
 
 // executeTORCHExtraction submits the (already prepared) CRTDL to TORCH,
 // polls until extraction completes, and downloads the resulting NDJSON
-// files. PrepareCRTDL ensures job.InputSource points at the effective CRTDL
+// files. PrepareCRTDL ensures job.CRTDLPath points at the effective CRTDL
 // shared by every downstream pipeline step.
 func executeTORCHExtraction(job *models.PipelineJob, importDir string, httpClient *services.HTTPClient, logger *lib.Logger, showProgress bool, compress bool, compressionLevel string) ([]models.FHIRDataFile, error) {
 	torchClient := services.NewTORCHClient(job.Config.Services.TORCH, httpClient, logger)
 
-	extractionURL, err := torchClient.SubmitExtraction(job.InputSource)
+	extractionURL, err := torchClient.SubmitExtraction(job.CRTDLPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to submit TORCH extraction: %w", err)
 	}
@@ -202,7 +196,7 @@ func executeTORCHDownload(job *models.PipelineJob, importDir string, httpClient 
 }
 
 // classifyImportError determines if an import error is transient or non-transient
-func classifyImportError(err error, inputType models.InputType) models.ErrorType {
+func classifyImportError(err error, step models.StepName) models.ErrorType {
 	if err == nil {
 		return models.ErrorTypeNonTransient
 	}
@@ -212,8 +206,8 @@ func classifyImportError(err error, inputType models.InputType) models.ErrorType
 		return torchErr.ErrorType
 	}
 
-	// For HTTP downloads and TORCH operations, network errors are transient
-	if inputType == models.InputTypeHTTP || inputType == models.InputTypeCRTDL || inputType == models.InputTypeTORCHURL {
+	// Network-capable steps: network errors are transient
+	if step == models.StepHttpImport || step == models.StepTorchImport {
 		if lib.IsNetworkError(err) {
 			return models.ErrorTypeTransient
 		}

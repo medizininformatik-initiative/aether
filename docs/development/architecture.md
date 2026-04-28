@@ -199,7 +199,7 @@ This enables:
 ### TORCH Integration
 
 ```
-User Command (with .crtdl file)
+User Command (with .json file)
     ↓
 Aether (torch import step) → TORCH Server
     ├─→ Submit CRTDL query

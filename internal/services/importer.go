@@ -26,8 +26,8 @@ func ImportFromLocalDirectory(sourcePath string, destinationDir string, logger *
 	if !sourceInfo.IsDir() {
 		fileExt := strings.ToLower(filepath.Ext(sourcePath))
 		switch fileExt {
-		case ".json", ".crtdl":
-			return nil, fmt.Errorf("source path is a JSON/CRTDL file, not a directory: %s. For CRTDL input, the file should have been detected as InputTypeCRTDL. This suggests the CRTDL file is invalid or missing required fields", sourcePath)
+		case ".json":
+			return nil, fmt.Errorf("source path is a JSON file, not a directory: %s. For CRTDL input, the file should have been detected as InputTypeCRTDL. This suggests the CRTDL file is invalid or missing required fields", sourcePath)
 		default:
 			return nil, fmt.Errorf("source path is not a directory: %s", sourcePath)
 		}
@@ -189,8 +189,8 @@ func ValidateImportSource(sourcePath string, inputType models.InputType) error {
 			fileExt := strings.ToLower(filepath.Ext(sourcePath))
 			var hint string
 			switch fileExt {
-			case ".json", ".crtdl":
-				hint = "\n\nThis appears to be a JSON/CRTDL file. Possible issues:\n  - File may not have valid CRTDL structure (missing cohortDefinition or dataExtraction)\n  - File may be using FHIR Parameters format instead of flat CRTDL format\n\nRun with verbose logging to see detailed validation errors."
+			case ".json":
+				hint = "\n\nThis appears to be a JSON file. Possible issues:\n  - File may not have valid CRTDL structure (missing cohortDefinition or dataExtraction)\n  - File may be using FHIR Parameters format instead of flat CRTDL format\n\nRun with verbose logging to see detailed validation errors."
 			case ".ndjson":
 				hint = "\n\nThis is an NDJSON file. Please provide the directory containing it, not the file itself."
 			}

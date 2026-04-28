@@ -54,7 +54,7 @@ func TestDIMPResumeAfterInterrupt(t *testing.T) {
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
 	// Create a job
-	job, err := pipeline.CreateJob("test-input", config, logger)
+	job, err := pipeline.CreateJob("test-input", "", config, logger)
 	require.NoError(t, err)
 
 	// Manually set up import directory with test files

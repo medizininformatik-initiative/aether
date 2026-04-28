@@ -282,7 +282,7 @@ func TestCreateJob_EmptyInputSource(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 
 	// Create job with empty input source
-	job, err := pipeline.CreateJob("", config, logger)
+	job, err := pipeline.CreateJob("", "", config, logger)
 
 	require.NoError(t, err, "CreateJob should succeed with empty input source")
 	assert.NotNil(t, job)
@@ -302,7 +302,7 @@ func TestCreateJob_FailsWhenSaveStateAfterCRTDLPreparationFails(t *testing.T) {
 
 	// Write a valid CRTDL file so DetectInputType returns CRTDL and
 	// ValidateCRTDLSyntax/ParseCRTDL both succeed.
-	crtdlPath := filepath.Join(tmpDir, "input.crtdl")
+	crtdlPath := filepath.Join(tmpDir, "input.json")
 	crtdlContent := map[string]any{
 		"cohortDefinition": map[string]any{
 			"version":           "1.0.0",
@@ -344,7 +344,7 @@ func TestCreateJob_FailsWhenSaveStateAfterCRTDLPreparationFails(t *testing.T) {
 	}
 	services.StateFileOpsProvider = ops
 
-	job, err := pipeline.CreateJob(crtdlPath, config, lib.NewLogger(lib.LogLevelDebug))
+	job, err := pipeline.CreateJob(crtdlPath, "", config, lib.NewLogger(lib.LogLevelDebug))
 
 	require.Error(t, err, "CreateJob must surface the second SaveJobState failure")
 	assert.Nil(t, job)
@@ -369,9 +369,121 @@ func TestCreateJob_NoImportStepEnabled(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 
 	// Create job - should fail because no import step is enabled
-	job, err := pipeline.CreateJob("/some/path", config, logger)
+	job, err := pipeline.CreateJob("/some/path", "", config, logger)
 
 	require.Error(t, err, "CreateJob should fail when no import step is enabled")
 	assert.Nil(t, job)
 	assert.Contains(t, err.Error(), "no import step enabled", "Error should mention no import step")
+}
+
+// writeValidCRTDL writes a minimal structurally-valid CRTDL file for testing.
+func writeValidCRTDL(t *testing.T, path string) {
+	t.Helper()
+	content := `{"cohortDefinition":{"inclusionCriteria":[]},"dataExtraction":{"attributeGroups":[]}}`
+	require.NoError(t, os.WriteFile(path, []byte(content), 0644))
+}
+
+// TestCreateJob_CRTDLFlagWithHTTPInput verifies issue #286: an HTTP URL can
+// be combined with a CRTDL attached via the explicit crtdlPath arg. The job
+// retains InputType=HTTP (so http_import runs) and carries CRTDLPath for
+// flattening. CreateJob runs PrepareCRTDL so CRTDLPath ends up pointing at
+// the canonical copy inside the job directory.
+func TestCreateJob_CRTDLFlagWithHTTPInput(t *testing.T) {
+	tmpDir := t.TempDir()
+	crtdlPath := filepath.Join(tmpDir, "crtdl.json")
+	writeValidCRTDL(t, crtdlPath)
+
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	config := models.ProjectConfig{
+		JobsDir: jobsDir,
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepHttpImport, models.StepFlattening},
+		},
+	}
+
+	job, err := pipeline.CreateJob("https://example.com/data.ndjson", crtdlPath, config, lib.NewLogger(lib.LogLevelDebug))
+
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	assert.Equal(t, models.InputTypeHTTP, job.InputType, "http URL should still be http_url")
+	assert.Equal(t, "https://example.com/data.ndjson", job.InputSource)
+	assert.Equal(t, filepath.Join(jobsDir, job.JobID, "crtdl.json"), job.CRTDLPath,
+		"CRTDLPath must point at the prepared CRTDL inside jobDir")
+	assert.Equal(t, string(models.StepHttpImport), job.CurrentStep)
+}
+
+// TestCreateJob_TorchCRTDLOnly verifies a torch job where the CRTDL is
+// attached via crtdlPath and no separate input source is provided (the
+// typical torch-extraction shape under the CRTDL-as-positional CLI contract).
+// PrepareCRTDL repoints CRTDLPath at the canonical copy inside jobDir.
+func TestCreateJob_TorchCRTDLOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+	crtdlPath := filepath.Join(tmpDir, "crtdl.json")
+	writeValidCRTDL(t, crtdlPath)
+
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	config := models.ProjectConfig{
+		JobsDir: jobsDir,
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepTorchImport},
+		},
+	}
+
+	job, err := pipeline.CreateJob("", crtdlPath, config, lib.NewLogger(lib.LogLevelDebug))
+
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	assert.Equal(t, models.InputTypeLocal, job.InputType, "no external input source → default InputTypeLocal")
+	assert.Empty(t, job.InputSource)
+	assert.Equal(t, filepath.Join(jobsDir, job.JobID, "crtdl.json"), job.CRTDLPath,
+		"CRTDLPath must point at the prepared CRTDL inside jobDir")
+}
+
+// TestCreateJob_InvalidCRTDL covers the CRTDL validation failure branch (job.go line 50-51):
+// when crtdlPath points to a missing/invalid file, CreateJob must surface the
+// validation error rather than silently proceed.
+func TestCreateJob_InvalidCRTDL(t *testing.T) {
+	tmpDir := t.TempDir()
+	missingCRTDL := filepath.Join(tmpDir, "does-not-exist.json")
+
+	config := models.ProjectConfig{
+		JobsDir: filepath.Join(tmpDir, "jobs"),
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepHttpImport, models.StepFlattening},
+		},
+	}
+
+	job, err := pipeline.CreateJob("https://example.com/data.ndjson", missingCRTDL, config, lib.NewLogger(lib.LogLevelDebug))
+
+	require.Error(t, err, "CreateJob must fail when CRTDL file is unreadable")
+	assert.Nil(t, job)
+	assert.Contains(t, err.Error(), "CRTDL validation failed", "error must mention CRTDL validation")
+}
+
+// TestCreateJob_CRTDLFlagOnlyNoPositional covers the local_import scenario
+// where the data dir comes from config and the CRTDL is attached separately.
+func TestCreateJob_CRTDLFlagOnlyNoPositional(t *testing.T) {
+	tmpDir := t.TempDir()
+	crtdlPath := filepath.Join(tmpDir, "crtdl.json")
+	writeValidCRTDL(t, crtdlPath)
+
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	config := models.ProjectConfig{
+		JobsDir: jobsDir,
+		Services: models.ServiceConfig{
+			LocalImport: models.LocalImportConfig{Dir: tmpDir},
+		},
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepLocalImport, models.StepFlattening},
+		},
+	}
+
+	job, err := pipeline.CreateJob("", crtdlPath, config, lib.NewLogger(lib.LogLevelDebug))
+
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	assert.Equal(t, models.InputTypeLocal, job.InputType)
+	assert.Equal(t, "", job.InputSource)
+	assert.Equal(t, filepath.Join(jobsDir, job.JobID, "crtdl.json"), job.CRTDLPath,
+		"CRTDLPath must point at the prepared CRTDL inside jobDir")
 }

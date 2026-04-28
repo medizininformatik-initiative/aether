@@ -20,38 +20,41 @@ aether [global-options] <command> [command-options]
 Start a new pipeline job.
 
 ```bash
-aether pipeline start [input] [options]
+aether pipeline start .json> [input] [options]
 ```
 
 **Arguments:**
-- `[input]` - CRTDL file, TORCH URL, or HTTP URL. CRTDL file required if flattening enabled. TORCH URLs (containing `/fhir/extraction/` or `/fhir/result/`) skip extraction submission.
+- `.json>` - CRTDL file path. Required for every pipeline run.
+- `[input]` - Optional import-step input:
+  - omitted: torch_import submits the CRTDL; local_import uses `--dir`/config
+  - local directory (local_import)
+  - HTTP(S) URL (http_import)
+  - TORCH result URL (torch_import; auto-detected from URL shape)
 
 **Options:**
 - `--no-progress` - Disable progress indicators
 - `--dir PATH` - Directory for local import (overrides config)
+- `--allow-http.json` - Acknowledge that HTTP data may not match the CRTDL query (required when `http_import` is enabled)
 
 **Examples:**
 ```bash
 # TORCH extraction with CRTDL
-aether pipeline start query.crtdl
+aether pipeline start crtdl.json
 
 # Direct TORCH URL (skip extraction, poll and download results)
-aether pipeline start "https://torch.example.com/fhir/extraction/result-123"
+aether pipeline start crtdl.json "https://torch.example.com/fhir/extraction/result-123"
 
-# Local import with CRTDL for flattening
-aether pipeline start query.crtdl --dir /path/to/data
+# Local import with CRTDL for flattening (dir from flag)
+aether pipeline start crtdl.json --dir /path/to/data
 
-# Local import without CRTDL (uses config directory)
-aether pipeline start
+# Local import with CRTDL for flattening (dir as positional)
+aether pipeline start crtdl.json /path/to/data
 
-# Local import with directory override
-aether pipeline start --dir /path/to/data
-
-# HTTP download (single file)
-aether pipeline start https://example.com/fhir/data.ndjson
+# HTTP download piped through flattening
+aether pipeline start crtdl.json https://example.com/fhir/data.ndjson --allow-http.json
 
 # Disable progress bars
-aether pipeline start query.crtdl --no-progress
+aether pipeline start crtdl.json --no-progress
 ```
 
 ### aether pipeline status

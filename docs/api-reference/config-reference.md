@@ -48,7 +48,7 @@ services:
   local_import:
     dir: string
 
-  crtdl_preprocessing:
+ .json_preprocessing:
     enabled: boolean                       # default: false
     enrichments_path: string               # Path to external JSON file
     enrichments:                           # Inline enrichment rules
@@ -240,7 +240,7 @@ Enriches CRTDL documents with additional attributes before sending to TORCH. Thi
 
 ```yaml
 services:
-  crtdl_preprocessing:
+ .json_preprocessing:
     enabled: true
     enrichments:
       - group_reference: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/PatientPseudonymisiert"

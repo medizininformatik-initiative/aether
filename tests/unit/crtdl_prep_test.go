@@ -88,7 +88,7 @@ func TestPrepareCRTDL_PreprocessingDisabled_CopiesOriginalToJobDir(t *testing.T)
 	jobsDir := filepath.Join(tempDir, "jobs")
 	jobID := "job-disabled"
 
-	crtdlPath := writeCRTDLFile(t, tempDir, "input.crtdl", crtdlWithoutPatientIdentifier())
+	crtdlPath := writeCRTDLFile(t, tempDir, "input.json", crtdlWithoutPatientIdentifier())
 	job := newJobForPrep(t, jobsDir, jobID, crtdlPath, models.CRTDLPreprocessingConfig{Enabled: false})
 
 	require.NoError(t, pipeline.PrepareCRTDL(job, lib.NewLogger(lib.LogLevelDebug)))
@@ -109,7 +109,7 @@ func TestPrepareCRTDL_PreprocessingEnabled_AppliesEnrichmentAndSavesEnrichedFile
 	jobsDir := filepath.Join(tempDir, "jobs")
 	jobID := "job-enriched"
 
-	crtdlPath := writeCRTDLFile(t, tempDir, "input.crtdl", crtdlWithoutPatientIdentifier())
+	crtdlPath := writeCRTDLFile(t, tempDir, "input.json", crtdlWithoutPatientIdentifier())
 	preprocessing := models.CRTDLPreprocessingConfig{
 		Enabled: true,
 		Enrichments: []models.GroupEnrichment{
@@ -152,7 +152,7 @@ func TestPrepareCRTDL_PreprocessingEnabledButNoEnrichments_FallsBackToCopy(t *te
 	jobsDir := filepath.Join(tempDir, "jobs")
 	jobID := "job-empty-enrich"
 
-	crtdlPath := writeCRTDLFile(t, tempDir, "input.crtdl", crtdlWithoutPatientIdentifier())
+	crtdlPath := writeCRTDLFile(t, tempDir, "input.json", crtdlWithoutPatientIdentifier())
 	job := newJobForPrep(t, jobsDir, jobID, crtdlPath, models.CRTDLPreprocessingConfig{
 		Enabled:     true,
 		Enrichments: []models.GroupEnrichment{},
@@ -176,7 +176,7 @@ func TestPrepareCRTDL_Idempotent_SkipsWhenCRTDLPathAlreadyInJobDir(t *testing.T)
 	jobsDir := filepath.Join(tempDir, "jobs")
 	jobID := "job-idempotent"
 
-	crtdlPath := writeCRTDLFile(t, tempDir, "input.crtdl", crtdlWithoutPatientIdentifier())
+	crtdlPath := writeCRTDLFile(t, tempDir, "input.json", crtdlWithoutPatientIdentifier())
 	job := newJobForPrep(t, jobsDir, jobID, crtdlPath, models.CRTDLPreprocessingConfig{
 		Enabled: true,
 		Enrichments: []models.GroupEnrichment{
@@ -210,7 +210,7 @@ func TestPrepareCRTDL_EnrichmentEnabled_FailsWhenInputCRTDLInvalid(t *testing.T)
 	tempDir := t.TempDir()
 	jobsDir := filepath.Join(tempDir, "jobs")
 
-	crtdlPath := filepath.Join(tempDir, "bad.crtdl")
+	crtdlPath := filepath.Join(tempDir, "bad.json")
 	require.NoError(t, os.WriteFile(crtdlPath, []byte("{not json"), 0644))
 
 	job := newJobForPrep(t, jobsDir, "job-bad-crtdl", crtdlPath, models.CRTDLPreprocessingConfig{
@@ -237,7 +237,7 @@ func TestPrepareCRTDL_PreprocessingDisabled_FailsWhenInputMissing(t *testing.T) 
 	jobsDir := filepath.Join(tempDir, "jobs")
 	jobID := "job-missing-input"
 
-	missingPath := filepath.Join(tempDir, "does-not-exist.crtdl")
+	missingPath := filepath.Join(tempDir, "does-not-exist.json")
 	job := newJobForPrep(t, jobsDir, jobID, missingPath, models.CRTDLPreprocessingConfig{Enabled: false})
 
 	err := pipeline.PrepareCRTDL(job, lib.NewLogger(lib.LogLevelDebug))
@@ -294,7 +294,7 @@ func TestPrepareCRTDL_PreprocessingDisabled_FailsWhenJobDirUnwritable(t *testing
 	jobsDir := filepath.Join(tempDir, "jobs-as-file")
 	require.NoError(t, os.WriteFile(jobsDir, []byte("not a directory"), 0644))
 
-	crtdlPath := writeCRTDLFile(t, tempDir, "input.crtdl", crtdlWithoutPatientIdentifier())
+	crtdlPath := writeCRTDLFile(t, tempDir, "input.json", crtdlWithoutPatientIdentifier())
 
 	job := &models.PipelineJob{
 		JobID:       "job-bad-jobdir",

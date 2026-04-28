@@ -453,7 +453,7 @@ func ProcessEntries(entries []Entry) []Entry {
 
 ```go
 // ✅ Good
-if err := validateCRTDL(crtdl); err != nil {
+if err := validateCRTDL.json); err != nil {
     return fmt.Errorf("invalid CRTDL query: %w", err)
 }
 
@@ -490,7 +490,7 @@ func (e *ValidationError) Error() string {
 // Usage
 if !IsValidInput(input) {
     return &ValidationError{
-        Field:   "crtdl",
+        Field:   .json",
         Message: "cohort criteria missing",
     }
 }

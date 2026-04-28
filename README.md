@@ -66,7 +66,7 @@ jobs_dir: "./jobs"
 ### Run a Pipeline
 
 ```bash
-aether pipeline start your-query.crtdl
+aether pipeline start your-crtdl.json
 ```
 
 ### Check Status

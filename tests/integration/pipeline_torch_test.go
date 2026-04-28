@@ -28,7 +28,7 @@ func TestPipeline_TORCHExtraction_EndToEnd(t *testing.T) {
 	_ = os.MkdirAll(jobsDir, 0755)
 
 	// Create CRTDL file
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	crtdlContent := map[string]any{
 		"cohortDefinition": map[string]any{
 			"version": "1.0.0",
@@ -210,7 +210,7 @@ func TestPipeline_TORCHExtraction_EmptyResult(t *testing.T) {
 	_ = os.MkdirAll(jobsDir, 0755)
 
 	// Create CRTDL file
-	crtdlPath := filepath.Join(tempDir, "empty-cohort.crtdl")
+	crtdlPath := filepath.Join(tempDir, "empty-cohort.json")
 	crtdlJSON := []byte(`{"cohortDefinition":{"version":"1.0.0","inclusionCriteria":[]},"dataExtraction":{"attributeGroups":[]}}`)
 	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
 
@@ -286,7 +286,7 @@ func TestPipeline_TORCHExtraction_ServerUnavailable(t *testing.T) {
 	_ = os.MkdirAll(jobsDir, 0755)
 
 	// Create CRTDL file
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	crtdlJSON := []byte(`{"cohortDefinition":{"version":"1.0.0","inclusionCriteria":[]},"dataExtraction":{"attributeGroups":[]}}`)
 	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
 
@@ -525,7 +525,7 @@ func TestPipeline_TORCHExtraction_PollingTimeout(t *testing.T) {
 	_ = os.MkdirAll(jobsDir, 0755)
 
 	// Create CRTDL file
-	crtdlPath := filepath.Join(tempDir, "timeout-test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "timeout-test.json")
 	crtdlContent := map[string]any{
 		"cohortDefinition": map[string]any{
 			"version":           "1.0.0",
@@ -631,7 +631,7 @@ func TestPipeline_TORCHExtraction_WithWaitStep_DataModification(t *testing.T) {
 	_ = os.MkdirAll(jobsDir, 0755)
 
 	// Create CRTDL file
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	crtdlContent := map[string]any{
 		"cohortDefinition": map[string]any{
 			"version":           "1.0.0",
@@ -857,7 +857,7 @@ func TestPipeline_TORCHExtraction_WithPreprocessing(t *testing.T) {
 	_ = os.MkdirAll(jobsDir, 0755)
 
 	// Create CRTDL file with a Patient group (missing the enrichment attributes)
-	crtdlPath := filepath.Join(tempDir, "test-preprocessing.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test-preprocessing.json")
 	crtdlContent := map[string]any{
 		"cohortDefinition": map[string]any{
 			"version":           "1.0.0",
@@ -1065,7 +1065,7 @@ func TestPipeline_TORCHExtraction_JobResumption(t *testing.T) {
 	_ = os.MkdirAll(jobsDir, 0755)
 
 	// Create CRTDL file
-	crtdlPath := filepath.Join(tempDir, "resumption-test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "resumption-test.json")
 	crtdlContent := map[string]any{
 		"cohortDefinition": map[string]any{
 			"version":           "1.0.0",
@@ -1239,7 +1239,7 @@ func TestPipeline_TORCHExtraction_PreprocessingError_InvalidEnrichmentsPath(t *t
 	_ = os.MkdirAll(jobsDir, 0755)
 
 	// Create valid CRTDL file
-	crtdlPath := filepath.Join(tempDir, "valid.crtdl")
+	crtdlPath := filepath.Join(tempDir, "valid.json")
 	crtdlContent := map[string]any{
 		"cohortDefinition": map[string]any{
 			"version":           "1.0.0",
@@ -1311,7 +1311,7 @@ func TestPipeline_TORCHExtraction_PreprocessingDisabled_UsesOriginalCRTDL(t *tes
 	_ = os.MkdirAll(jobsDir, 0755)
 
 	// Create CRTDL file
-	crtdlPath := filepath.Join(tempDir, "original.crtdl")
+	crtdlPath := filepath.Join(tempDir, "original.json")
 	crtdlContent := map[string]any{
 		"cohortDefinition": map[string]any{
 			"version":           "1.0.0",
@@ -1473,7 +1473,7 @@ func TestPrepareCRTDL_InvalidCRTDL(t *testing.T) {
 	jobID := "550e8400-e29b-41d4-a716-446655440000"
 	require.NoError(t, os.MkdirAll(filepath.Join(jobsDir, jobID), 0755))
 
-	crtdlPath := filepath.Join(tempDir, "invalid.crtdl")
+	crtdlPath := filepath.Join(tempDir, "invalid.json")
 	require.NoError(t, os.WriteFile(crtdlPath, []byte("{this is not valid json"), 0644))
 
 	job := &models.PipelineJob{
@@ -1513,7 +1513,7 @@ func TestPipeline_TORCHExtraction_PreprocessingEnabled_EmptyEnrichments(t *testi
 	_ = os.MkdirAll(jobsDir, 0755)
 
 	// Create valid CRTDL file
-	crtdlPath := filepath.Join(tempDir, "valid.crtdl")
+	crtdlPath := filepath.Join(tempDir, "valid.json")
 	crtdlContent := map[string]any{
 		"cohortDefinition": map[string]any{
 			"version":           "1.0.0",

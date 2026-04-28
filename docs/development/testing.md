@@ -102,7 +102,7 @@ for _, tc := range testCases {
 // Define interface-based mock
 type mockTORCHClient struct{}
 
-func (m *mockTORCHClient) Extract(ctx context.Context, crtdl string) (io.Reader, error) {
+func (m *mockTORCHClient) Extract(ctx context.Context,.json string) (io.Reader, error) {
     return strings.NewReader("sample data"), nil
 }
 
@@ -166,7 +166,7 @@ func TestTORCHIntegration(t *testing.T) {
     client := services.NewTORCHClient("http://localhost:8080")
 
     // Test with real CRTDL query
-    result, err := client.Extract(context.Background(), "queries/test.crtdl")
+    result, err := client.Extract(context.Background(), "queries/test.json.json")
     assert.NoError(t, err)
     assert.NotNil(t, result)
 }

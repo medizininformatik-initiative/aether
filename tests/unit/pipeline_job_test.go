@@ -302,7 +302,7 @@ func TestCreateJob_FailsWhenSaveStateAfterCRTDLPreparationFails(t *testing.T) {
 
 	// Write a valid CRTDL file so DetectInputType returns CRTDL and
 	// ValidateCRTDLSyntax/ParseCRTDL both succeed.
-	crtdlPath := filepath.Join(tmpDir, "input.crtdl")
+	crtdlPath := filepath.Join(tmpDir, "input.json")
 	crtdlContent := map[string]any{
 		"cohortDefinition": map[string]any{
 			"version":           "1.0.0",
@@ -390,7 +390,7 @@ func writeValidCRTDL(t *testing.T, path string) {
 // the canonical copy inside the job directory.
 func TestCreateJob_CRTDLFlagWithHTTPInput(t *testing.T) {
 	tmpDir := t.TempDir()
-	crtdlPath := filepath.Join(tmpDir, "query.crtdl")
+	crtdlPath := filepath.Join(tmpDir, "crtdl.json")
 	writeValidCRTDL(t, crtdlPath)
 
 	jobsDir := filepath.Join(tmpDir, "jobs")
@@ -418,7 +418,7 @@ func TestCreateJob_CRTDLFlagWithHTTPInput(t *testing.T) {
 // PrepareCRTDL repoints CRTDLPath at the canonical copy inside jobDir.
 func TestCreateJob_TorchCRTDLOnly(t *testing.T) {
 	tmpDir := t.TempDir()
-	crtdlPath := filepath.Join(tmpDir, "query.crtdl")
+	crtdlPath := filepath.Join(tmpDir, "crtdl.json")
 	writeValidCRTDL(t, crtdlPath)
 
 	jobsDir := filepath.Join(tmpDir, "jobs")
@@ -444,7 +444,7 @@ func TestCreateJob_TorchCRTDLOnly(t *testing.T) {
 // validation error rather than silently proceed.
 func TestCreateJob_InvalidCRTDL(t *testing.T) {
 	tmpDir := t.TempDir()
-	missingCRTDL := filepath.Join(tmpDir, "does-not-exist.crtdl")
+	missingCRTDL := filepath.Join(tmpDir, "does-not-exist.json")
 
 	config := models.ProjectConfig{
 		JobsDir: filepath.Join(tmpDir, "jobs"),
@@ -464,7 +464,7 @@ func TestCreateJob_InvalidCRTDL(t *testing.T) {
 // where the data dir comes from config and the CRTDL is attached separately.
 func TestCreateJob_CRTDLFlagOnlyNoPositional(t *testing.T) {
 	tmpDir := t.TempDir()
-	crtdlPath := filepath.Join(tmpDir, "query.crtdl")
+	crtdlPath := filepath.Join(tmpDir, "crtdl.json")
 	writeValidCRTDL(t, crtdlPath)
 
 	jobsDir := filepath.Join(tmpDir, "jobs")

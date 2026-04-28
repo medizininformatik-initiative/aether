@@ -54,27 +54,27 @@ data may not match the CRTDL query.
 
 Examples:
   # Extract data using CRTDL query via TORCH
-  aether pipeline start query.crtdl
+  aether pipeline start crtdl.json
 
   # Local import with CRTDL for flattening (data dir from config)
-  aether pipeline start query.crtdl
+  aether pipeline start crtdl.json
 
   # Local import with CRTDL (data dir as positional)
-  aether pipeline start query.crtdl /path/to/fhir/data
+  aether pipeline start crtdl.json /path/to/fhir/data
 
   # Local import with CRTDL (data dir via flag)
-  aether pipeline start query.crtdl --dir /path/to/fhir/data
+  aether pipeline start crtdl.json --dir /path/to/fhir/data
 
   # HTTP import piped through flattening (acknowledges data/CRTDL mismatch)
-  aether pipeline start query.crtdl https://example.com/fhir/Patient.ndjson \
+  aether pipeline start crtdl.json https://example.com/fhir/Patient.ndjson \
       --allow-http-crtdl
 
   # Direct TORCH URL (skip extraction, poll and download results)
-  aether pipeline start query.crtdl \
+  aether pipeline start crtdl.json \
       "https://torch.example.com/fhir/extraction/result-123"
 
   # Start without progress indicators
-  aether pipeline start query.crtdl --no-progress`,
+  aether pipeline start crtdl.json --no-progress`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: runPipelineStart,
 }

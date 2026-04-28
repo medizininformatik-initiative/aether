@@ -85,7 +85,7 @@ func TestExecuteFlatteningStep_FullPipeline(t *testing.T) {
 	groupID := "group-patient-1"
 
 	// Create CRTDL file with group ID
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	crtdlContent := `{
 		"dataExtraction": {
 			"attributeGroups": [
@@ -264,9 +264,9 @@ func TestExecuteFlatteningStep_MissingCRTDL(t *testing.T) {
 	job := &models.PipelineJob{
 		JobID:       jobID,
 		Status:      models.JobStatusInProgress,
-		InputSource: "/nonexistent/path.crtdl",
+		InputSource: "/nonexistent/path.json",
 		InputType:   models.InputTypeCRTDL,
-		CRTDLPath:   "/nonexistent/path.crtdl",
+		CRTDLPath:   "/nonexistent/path.json",
 		Config: models.ProjectConfig{
 			Services: models.ServiceConfig{
 				Flattening: models.FlatteningConfig{
@@ -295,7 +295,7 @@ func TestExecuteFlatteningStep_MissingLookupTables(t *testing.T) {
 	require.NoError(t, os.MkdirAll(jobDir, 0755))
 
 	// Create valid CRTDL
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	crtdlContent := `{
 		"dataExtraction": {
 			"attributeGroups": [{
@@ -343,7 +343,7 @@ func TestExecuteFlatteningStep_NoInputFiles(t *testing.T) {
 	require.NoError(t, os.MkdirAll(inputDir, 0755)) // Empty input dir
 
 	// Create valid CRTDL
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	crtdlContent := `{
 		"dataExtraction": {
 			"attributeGroups": [{
@@ -405,7 +405,7 @@ func TestExecuteFlatteningStep_FlattenerServiceError(t *testing.T) {
 	groupID := "group-patient"
 
 	// Create CRTDL
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	crtdlContent := `{
 		"dataExtraction": {
 			"attributeGroups": [{

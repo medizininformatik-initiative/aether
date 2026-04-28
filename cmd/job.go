@@ -59,7 +59,7 @@ Examples:
   watch -n 5 aether job list
 
 Typical Workflow:
-  1. Start pipeline:  aether pipeline start query.crtdl
+  1. Start pipeline:  aether pipeline start crtdl.json
   2. List jobs:       aether job list
   3. Get job ID from list
   4. Check status:    aether pipeline status <job-id>`,

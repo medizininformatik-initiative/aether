@@ -24,7 +24,7 @@ aether pipeline start
 aether pipeline start --dir /other/path
 
 # With CRTDL for flattening
-aether pipeline start query.crtdl --dir /path/to/data
+aether pipeline start crtdl.json --dir /path/to/data
 ```
 
 ## Configuration Options

@@ -29,7 +29,7 @@ pipeline:
 ## Running a TORCH Query
 
 ```bash
-aether pipeline start your-query.crtdl
+aether pipeline start your-crtdl.json
 ```
 
 Aether will show progress as it:
@@ -117,7 +117,7 @@ The `extraction_timeout` and polling interval settings also apply.
 
 | | CRTDL | TORCH URL | HTTP URL |
 |---|---|---|---|
-| Input example | `query.crtdl` | `https://torch/fhir/result/123` | `https://example.com/data.ndjson` |
+| Input example | `crtdl.json` | `https://torch/fhir/result/123` | `https://example.com/data.ndjson` |
 | Submits extraction | Yes | No | No |
 | Polls for completion | Yes | Yes | No |
 | Downloads multiple files | Yes | Yes | No (single file) |

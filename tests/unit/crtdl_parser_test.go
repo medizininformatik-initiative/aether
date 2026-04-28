@@ -15,7 +15,7 @@ import (
 func TestParseCRTDL(t *testing.T) {
 	t.Run("valid CRTDL", func(t *testing.T) {
 		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.crtdl")
+		crtdlPath := filepath.Join(tempDir, "test.json")
 		crtdlJSON := `{
 			"dataExtraction": {
 				"attributeGroups": [
@@ -46,7 +46,7 @@ func TestParseCRTDL(t *testing.T) {
 
 	t.Run("multiple attribute groups", func(t *testing.T) {
 		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.crtdl")
+		crtdlPath := filepath.Join(tempDir, "test.json")
 		crtdlJSON := `{
 			"dataExtraction": {
 				"attributeGroups": [
@@ -74,14 +74,14 @@ func TestParseCRTDL(t *testing.T) {
 	})
 
 	t.Run("file not found", func(t *testing.T) {
-		_, err := services.ParseCRTDL("/nonexistent/path/test.crtdl")
+		_, err := services.ParseCRTDL("/nonexistent/path/test.json")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to read CRTDL file")
 	})
 
 	t.Run("invalid JSON", func(t *testing.T) {
 		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.crtdl")
+		crtdlPath := filepath.Join(tempDir, "test.json")
 		err := os.WriteFile(crtdlPath, []byte("not valid json"), 0644)
 		require.NoError(t, err)
 
@@ -92,7 +92,7 @@ func TestParseCRTDL(t *testing.T) {
 
 	t.Run("missing attribute groups", func(t *testing.T) {
 		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.crtdl")
+		crtdlPath := filepath.Join(tempDir, "test.json")
 		crtdlJSON := `{"dataExtraction": {"attributeGroups": []}}`
 		err := os.WriteFile(crtdlPath, []byte(crtdlJSON), 0644)
 		require.NoError(t, err)
@@ -104,7 +104,7 @@ func TestParseCRTDL(t *testing.T) {
 
 	t.Run("missing id", func(t *testing.T) {
 		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.crtdl")
+		crtdlPath := filepath.Join(tempDir, "test.json")
 		crtdlJSON := `{
 			"dataExtraction": {
 				"attributeGroups": [{
@@ -124,7 +124,7 @@ func TestParseCRTDL(t *testing.T) {
 
 	t.Run("missing name", func(t *testing.T) {
 		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.crtdl")
+		crtdlPath := filepath.Join(tempDir, "test.json")
 		crtdlJSON := `{
 			"dataExtraction": {
 				"attributeGroups": [{
@@ -144,7 +144,7 @@ func TestParseCRTDL(t *testing.T) {
 
 	t.Run("missing groupReference", func(t *testing.T) {
 		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.crtdl")
+		crtdlPath := filepath.Join(tempDir, "test.json")
 		crtdlJSON := `{
 			"dataExtraction": {
 				"attributeGroups": [{
@@ -164,7 +164,7 @@ func TestParseCRTDL(t *testing.T) {
 
 	t.Run("missing attributes", func(t *testing.T) {
 		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.crtdl")
+		crtdlPath := filepath.Join(tempDir, "test.json")
 		crtdlJSON := `{
 			"dataExtraction": {
 				"attributeGroups": [{
@@ -185,7 +185,7 @@ func TestParseCRTDL(t *testing.T) {
 
 	t.Run("missing attributeRef", func(t *testing.T) {
 		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.crtdl")
+		crtdlPath := filepath.Join(tempDir, "test.json")
 		crtdlJSON := `{
 			"dataExtraction": {
 				"attributeGroups": [{
@@ -300,13 +300,12 @@ func TestIsCRTDLFile(t *testing.T) {
 		path     string
 		expected bool
 	}{
-		{"/path/to/file.crtdl", true},
-		{"query.crtdl", true},
-		{"/path/to/file.json", false},
-		{"/path/to/file.crtd", false},
-		{".crtdl", false},
+		{"/path/to/file.json", true},
+		{"crtdl.json", true},
+		{"/path/to/file.jso", false},
+		{".json", false},
 		{"", false},
-		{"crtdl", false},
+		{"json", false},
 	}
 
 	for _, tt := range tests {

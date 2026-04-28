@@ -98,13 +98,13 @@ func DetectInputType(inputSource string) (models.InputType, error) {
 		return models.InputTypeHTTP, nil
 	}
 
-	if strings.HasSuffix(inputSource, ".crtdl") || strings.HasSuffix(inputSource, ".json") {
+	if strings.HasSuffix(inputSource, ".json") {
 		isCRTDL, _ := IsCRTDLFileWithHint(inputSource)
 		if isCRTDL {
 			return models.InputTypeCRTDL, nil
 		}
-		// If it's a JSON/CRTDL file but not valid CRTDL, default to local type
-		// CRTDL validation errors will be caught during job creation, not during detection
+		// JSON file that isn't a valid CRTDL — fall through to local type.
+		// CRTDL validation errors are surfaced later during job creation.
 		return models.InputTypeLocal, nil
 	}
 

@@ -29,7 +29,7 @@ Replace URLs and credentials with your actual server details.
 ## 2. Run a Pipeline
 
 ```bash
-aether pipeline start your-query.crtdl
+aether pipeline start your-crtdl.json
 ```
 
 Aether will:

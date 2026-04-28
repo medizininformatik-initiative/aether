@@ -32,7 +32,7 @@ func TestCRTDLEnrichmentAppliedForLocalImportPath(t *testing.T) {
 
 	// Original CRTDL — Patient group has no identifier attribute. This is
 	// the exact misconfiguration described in issue #323.
-	crtdlPath := filepath.Join(tempDir, "query.crtdl")
+	crtdlPath := filepath.Join(tempDir, "crtdl.json")
 	crtdl := map[string]any{
 		"cohortDefinition": map[string]any{
 			"version":           "1.0.0",

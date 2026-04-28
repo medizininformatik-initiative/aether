@@ -20,11 +20,11 @@ aether [global-options] <command> [command-options]
 Start a new pipeline job.
 
 ```bash
-aether pipeline start <crtdl> [input] [options]
+aether pipeline start .json> [input] [options]
 ```
 
 **Arguments:**
-- `<crtdl>` - CRTDL file path. Required for every pipeline run.
+- `.json>` - CRTDL file path. Required for every pipeline run.
 - `[input]` - Optional import-step input:
   - omitted: torch_import submits the CRTDL; local_import uses `--dir`/config
   - local directory (local_import)
@@ -34,27 +34,27 @@ aether pipeline start <crtdl> [input] [options]
 **Options:**
 - `--no-progress` - Disable progress indicators
 - `--dir PATH` - Directory for local import (overrides config)
-- `--allow-http-crtdl` - Acknowledge that HTTP data may not match the CRTDL query (required when `http_import` is enabled)
+- `--allow-http.json` - Acknowledge that HTTP data may not match the CRTDL query (required when `http_import` is enabled)
 
 **Examples:**
 ```bash
 # TORCH extraction with CRTDL
-aether pipeline start query.crtdl
+aether pipeline start crtdl.json
 
 # Direct TORCH URL (skip extraction, poll and download results)
-aether pipeline start query.crtdl "https://torch.example.com/fhir/extraction/result-123"
+aether pipeline start crtdl.json "https://torch.example.com/fhir/extraction/result-123"
 
 # Local import with CRTDL for flattening (dir from flag)
-aether pipeline start query.crtdl --dir /path/to/data
+aether pipeline start crtdl.json --dir /path/to/data
 
 # Local import with CRTDL for flattening (dir as positional)
-aether pipeline start query.crtdl /path/to/data
+aether pipeline start crtdl.json /path/to/data
 
 # HTTP download piped through flattening
-aether pipeline start query.crtdl https://example.com/fhir/data.ndjson --allow-http-crtdl
+aether pipeline start crtdl.json https://example.com/fhir/data.ndjson --allow-http.json
 
 # Disable progress bars
-aether pipeline start query.crtdl --no-progress
+aether pipeline start crtdl.json --no-progress
 ```
 
 ### aether pipeline status

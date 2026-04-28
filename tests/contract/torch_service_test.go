@@ -71,7 +71,7 @@ func TestTORCHService_SubmitExtraction_Success(t *testing.T) {
 
 	// Create temp CRTDL file
 	tempDir := t.TempDir()
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	crtdlContent := map[string]any{
 		"cohortDefinition": map[string]any{
 			"version":           "1.0.0",
@@ -122,7 +122,7 @@ func TestTORCHService_SubmitExtraction_InvalidCRTDL(t *testing.T) {
 
 	// Create temp invalid CRTDL file
 	tempDir := t.TempDir()
-	crtdlPath := filepath.Join(tempDir, "invalid.crtdl")
+	crtdlPath := filepath.Join(tempDir, "invalid.json")
 	crtdlJSON := []byte(`{"cohortDefinition":{}}`)
 	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
 
@@ -152,7 +152,7 @@ func TestTORCHService_SubmitExtraction_Unauthorized(t *testing.T) {
 
 	// Create temp CRTDL file
 	tempDir := t.TempDir()
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	crtdlJSON := []byte(`{"cohortDefinition":{"inclusionCriteria":[]},"dataExtraction":{"attributeGroups":[]}}`)
 	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
 
@@ -458,7 +458,7 @@ func TestTORCHService_EndToEnd_SubmitPollDownload(t *testing.T) {
 
 	// Create temp CRTDL file
 	tempDir := t.TempDir()
-	crtdlPath := filepath.Join(tempDir, "test.crtdl")
+	crtdlPath := filepath.Join(tempDir, "test.json")
 	crtdlContent := map[string]any{
 		"cohortDefinition": map[string]any{
 			"version":           "1.0.0",

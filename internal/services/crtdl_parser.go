@@ -106,8 +106,8 @@ func GetMustHaveAttributes(group *models.AttributeGroup) []models.Attribute {
 	return mustHave
 }
 
-// IsCRTDLFile checks if a file path looks like a CRTDL file
-// CRTDL files typically have .crtdl extension
+// IsCRTDLFile checks if a file path looks like a CRTDL file by extension.
+// CRTDL files use the .json extension.
 func IsCRTDLFile(path string) bool {
-	return len(path) > 6 && path[len(path)-6:] == ".crtdl"
+	return len(path) > 5 && path[len(path)-5:] == ".json"
 }

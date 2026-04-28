@@ -282,7 +282,7 @@ func TestLoadJobState_BackfillCRTDLPath(t *testing.T) {
 	jobDir := services.GetJobDir(tempDir, jobID)
 	require.NoError(t, os.MkdirAll(jobDir, 0755))
 
-	crtdlInSource := filepath.Join(tempDir, "legacy.crtdl")
+	crtdlInSource := filepath.Join(tempDir, "legacy.json")
 	now := time.Now()
 
 	legacy := map[string]any{

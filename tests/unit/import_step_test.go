@@ -206,9 +206,9 @@ func TestExecuteImportStep_TorchImportCRTDLValidationFailure(t *testing.T) {
 	// Create a job with torch import step but non-existent CRTDL file
 	job := &models.PipelineJob{
 		JobID:       "test-job-123",
-		InputSource: "/nonexistent/file.crtdl", // Non-existent CRTDL file
+		InputSource: "/nonexistent/file.json", // Non-existent CRTDL file
 		InputType:   models.InputTypeCRTDL,
-		CRTDLPath:   "/nonexistent/file.crtdl",
+		CRTDLPath:   "/nonexistent/file.json",
 		CurrentStep: string(models.StepTorchImport),
 		Status:      models.JobStatusPending,
 		Steps:       models.InitializeSteps([]models.StepName{models.StepTorchImport}),

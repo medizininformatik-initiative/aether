@@ -86,11 +86,12 @@ func TestDetectInputType(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	testCases := []struct {
-		name         string
-		inputSource  string
-		expectedType models.InputType
-		expectError  bool
-		setup        func() string // Returns actual input path
+		name          string
+		inputSource   string
+		expectedType  models.InputType
+		expectError   bool
+		errorContains string
+		setup         func() string // Returns actual input path
 	}{
 		{
 			name:         "Empty input",
@@ -159,8 +160,8 @@ func TestDetectInputType(t *testing.T) {
 				_ = os.WriteFile(crtdlPath, []byte(crtdlContent), 0644)
 				return crtdlPath
 			},
-			expectedType: models.InputTypeLocal, // Falls back to local
-			expectError:  false,
+			expectError:   true,
+			errorContains: "cohortDefinition",
 		},
 		{
 			name:        "JSON file with CRTDL structure",
@@ -200,6 +201,9 @@ func TestDetectInputType(t *testing.T) {
 
 			if tc.expectError {
 				require.Error(t, err)
+				if tc.errorContains != "" {
+					assert.Contains(t, err.Error(), tc.errorContains)
+				}
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, tc.expectedType, result)
@@ -611,8 +615,9 @@ func TestDetectInputType_Integration(t *testing.T) {
 		jsonContent := `{"setting": "value"}`
 		_ = os.WriteFile(jsonPath, []byte(jsonContent), 0644)
 
-		inputType, err := lib.DetectInputType(jsonPath)
-		require.NoError(t, err)
-		assert.Equal(t, models.InputTypeLocal, inputType) // Falls back to local
+		// .json with non-CRTDL content surfaces structural hint rather than silently demoting to local
+		_, err := lib.DetectInputType(jsonPath)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cohortDefinition")
 	})
 }

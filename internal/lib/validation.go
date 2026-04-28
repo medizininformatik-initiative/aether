@@ -99,13 +99,14 @@ func DetectInputType(inputSource string) (models.InputType, error) {
 	}
 
 	if strings.HasSuffix(inputSource, ".json") {
-		isCRTDL, _ := IsCRTDLFileWithHint(inputSource)
+		isCRTDL, hint := IsCRTDLFileWithHint(inputSource)
 		if isCRTDL {
 			return models.InputTypeCRTDL, nil
 		}
-		// JSON file that isn't a valid CRTDL — fall through to local type.
-		// CRTDL validation errors are surfaced later during job creation.
-		return models.InputTypeLocal, nil
+		// A .json extension is a strong signal of user intent; surface the
+		// structural diagnostic instead of silently demoting to local_directory
+		// and failing downstream with an unrelated-looking torch import error.
+		return "", fmt.Errorf("file %q has a .json extension but is not a valid CRTDL: %s", inputSource, hint)
 	}
 
 	// Default to local path (backward compatibility)

@@ -128,7 +128,7 @@ func TestExecuteSendStep_Success(t *testing.T) {
 
 	// Verify PUT paths match resource IDs
 	for _, req := range receivedRequests {
-		// Path should be /Binary/{id} or /DocumentReference/{id}
+		// Path should be /fhir/Binary/{id} or /fhir/DocumentReference/{id}
 		assert.True(t, len(req.Path) > 1, "Path should not be empty")
 	}
 

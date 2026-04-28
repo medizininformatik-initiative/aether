@@ -36,8 +36,9 @@ services:
 
   # DIMP Pseudonymization Service (optional)
   # Leave empty to skip pseudonymization step
+  # URL must be the server root; aether appends /fhir internally.
   dimp:
-    url: "http://localhost:32861/fhir"
+    url: "http://localhost:32861"
 
     # Bundle splitting threshold in megabytes (MB)
     # Large FHIR Bundles exceeding this size will be automatically split into smaller chunks
@@ -112,8 +113,9 @@ services:
     # - "s3_upload": Upload files to S3 bucket
     send_as: "transfer_load"
 
-    # FHIR server base URL (required for direct_resource_load and transfer_load modes)
-    url: "https://fhir-server.example.com/fhir"
+    # FHIR server root URL (required for direct_resource_load and transfer_load modes)
+    # Configure the server root; aether appends /fhir internally.
+    url: "https://fhir-server.example.com"
 
     # Number of resources per transaction bundle (only for direct_resource_load mode)
     # Default: 100, Max: 1000

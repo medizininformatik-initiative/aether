@@ -14,7 +14,7 @@ services:
     password: "your-password"
 
   dimp:
-    url: "http://your-dimp-server:32861/fhir"
+    url: "http://your-dimp-server:32861"
 
 pipeline:
   enabled_steps:
@@ -78,7 +78,7 @@ services:
   local_import:
     dir: "/path/to/fhir/data"
   dimp:
-    url: "http://your-dimp-server:32861/fhir"
+    url: "http://your-dimp-server:32861"
 
 pipeline:
   enabled_steps:

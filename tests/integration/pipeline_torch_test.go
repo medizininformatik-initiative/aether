@@ -738,7 +738,7 @@ func TestPipeline_TORCHExtraction_WithWaitStep_DataModification(t *testing.T) {
 				MaxPollingInterval: 5 * time.Second,
 			},
 			DIMP: models.DIMPConfig{
-				URL: dimpServer.URL + "/fhir",
+				URL: dimpServer.URL,
 			},
 		},
 		Pipeline: models.PipelineConfig{

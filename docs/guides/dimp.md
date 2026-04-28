@@ -15,7 +15,7 @@ Add DIMP to your `aether.yaml`:
 ```yaml
 services:
   dimp:
-    url: "http://your-dimp-server:32861/fhir"
+    url: "http://your-dimp-server:32861"
 
 pipeline:
   enabled_steps:
@@ -80,7 +80,7 @@ For large datasets, Aether automatically splits bundles before sending to DIMP:
 ```yaml
 services:
   dimp:
-    url: "http://your-dimp-server:32861/fhir"
+    url: "http://your-dimp-server:32861"
     bundle_split_threshold_mb: 10   # Split bundles larger than 10MB
 ```
 

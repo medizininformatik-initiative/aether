@@ -13,7 +13,7 @@ De-identifies FHIR data using a DIMP service.
 ```yaml
 services:
   dimp:
-    url: "http://your-dimp-server:32861/fhir"
+    url: "http://your-dimp-server:32861"  # server root; /fhir appended by client
     bundle_split_threshold_mb: 10  # 1-100 MB, default: 10
 
 pipeline:
@@ -26,7 +26,7 @@ pipeline:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `url` | string | - | DIMP service URL (required) |
+| `url` | string | - | DIMP server root URL (required). Do not include `/fhir` — the client appends it. |
 | `bundle_split_threshold_mb` | int | 10 | Split Bundles larger than this (1-100 MB) |
 
 ## Bundle Splitting

@@ -111,13 +111,13 @@ DIMP pseudonymization service.
 ```yaml
 services:
   dimp:
-    url: "http://dimp:32861/fhir"
+    url: "http://dimp:32861"
     bundle_split_threshold_mb: 10
 ```
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `url` | string | - | DIMP service URL (required if dimp step enabled) |
+| `url` | string | - | DIMP server root URL (required if dimp step enabled). Do not include `/fhir` — the client appends it. |
 | `bundle_split_threshold_mb` | int | 10 | Split Bundles larger than this (1-100 MB) |
 
 ### Flattening
@@ -153,7 +153,7 @@ Upload FHIR resources directly to a FHIR server.
 services:
   send:
     send_as: "direct_resource_load"
-    url: "https://fhir-server.example.com/fhir"
+    url: "https://fhir-server.example.com"
     batch_size: 100
     auth:
       username: "${FHIR_USER}"
@@ -168,7 +168,7 @@ Package files for DSF-based transfer.
 services:
   send:
     send_as: "transfer_load"
-    url: "https://transfer.example.com/fhir"
+    url: "https://transfer.example.com"
     auth:
       oauth_issuer_uri: "${OAUTH_ISSUER}"
       oauth_client_id: "${OAUTH_CLIENT}"
@@ -181,7 +181,7 @@ services:
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `send_as` | string | - | `direct_resource_load` or `transfer_load` |
-| `url` | string | - | FHIR server base URL |
+| `url` | string | - | FHIR server root URL. Do not include `/fhir` — the client appends it. |
 | `batch_size` | int | 100 | Resources per transaction (direct mode, 1-1000) |
 
 **Authentication (choose one):**
@@ -411,7 +411,7 @@ services:
     username: "${TORCH_USER}"
     password: "${TORCH_PASS}"
   dimp:
-    url: "http://dimp:32861/fhir"
+    url: "http://dimp:32861"
 
 pipeline:
   enabled_steps:
@@ -428,7 +428,7 @@ services:
   local_import:
     dir: "/data/fhir"
   dimp:
-    url: "http://dimp:32861/fhir"
+    url: "http://dimp:32861"
   flattening:
     service_url: "http://fhir-flattener:8000"
     lookup_path: "/config/lookup.json"
@@ -455,10 +455,10 @@ services:
     username: "${TORCH_USER}"
     password: "${TORCH_PASS}"
   dimp:
-    url: "http://dimp:32861/fhir"
+    url: "http://dimp:32861"
   send:
     send_as: "transfer_load"
-    url: "https://transfer.mii.de/fhir"
+    url: "https://transfer.mii.de"
     auth:
       oauth_issuer_uri: "${OAUTH_ISSUER}"
       oauth_client_id: "${OAUTH_CLIENT}"

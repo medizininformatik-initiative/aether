@@ -21,7 +21,7 @@ services:
 
   # DIMP Pseudonymization Service
   dimp:
-    url: "http://fhir-pseudonymizer:8080/fhir"
+    url: "http://fhir-pseudonymizer:8080"
     bundle_split_threshold_mb: 10
 
   # Flattening Service (FHIR to CSV transformation)
@@ -43,7 +43,7 @@ services:
 
   # Send step configuration (Blaze FHIR server for e2e testing)
   send:
-    url: "http://blaze-fhir:8080/fhir"
+    url: "http://blaze-fhir:8080"
     send_as: "transfer_load"
     transfer:
       project_identifier: "MII-E2E-TEST"

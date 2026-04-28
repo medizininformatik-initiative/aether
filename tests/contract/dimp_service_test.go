@@ -21,7 +21,7 @@ func TestDIMPService_Pseudonymize_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify request
 		assert.Equal(t, "POST", r.Method)
-		assert.Equal(t, "/$de-identify", r.URL.Path)
+		assert.Equal(t, "/fhir/$de-identify", r.URL.Path)
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 
 		// Read original resource

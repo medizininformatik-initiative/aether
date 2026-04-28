@@ -293,7 +293,7 @@ func TestDIMPStepWithSmallBundleNoSplit(t *testing.T) {
 func createMockDIMPServer(t *testing.T) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only accept de-identify requests
-		if r.URL.Path != "/$de-identify" {
+		if r.URL.Path != "/fhir/$de-identify" {
 			http.Error(w, "Invalid path", http.StatusNotFound)
 			return
 		}

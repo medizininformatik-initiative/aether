@@ -26,18 +26,26 @@ services:
     batch_size_mb: integer               # default: 500
 
   send:
-    send_as: string                      # "direct_resource_load" or "transfer_load"
-    url: string
-    batch_size: integer                  # 1-1000, default: 100
-    auth:
+    send_as: string                      # "direct_resource_load", "transfer_load", or "s3_upload"
+    url: string                          # required for FHIR modes; ignored for s3_upload
+    batch_size: integer                  # 0-1000, default: 100 (direct_resource_load only)
+    auth:                                # FHIR auth, or proxy auth in s3_upload mode
       username: string
       password: string
       oauth_issuer_uri: string
       oauth_client_id: string
       oauth_client_secret: string
-    transfer:
+    transfer:                            # transfer_load only
       project_identifier: string
       organization_identifier: string
+    s3:                                  # s3_upload only
+      bucket: string                     # required
+      region: string                     # required
+      access_key_id: string              # required
+      secret_access_key: string          # required
+      endpoint: string                   # custom S3-compatible endpoint
+      use_path_style: boolean            # default: false
+      timeout: duration                  # default: PT30M
 
   validation:
     url: string
@@ -48,7 +56,7 @@ services:
   local_import:
     dir: string
 
- .json_preprocessing:
+  crtdl_preprocessing:
     enabled: boolean                       # default: false
     enrichments_path: string               # Path to external JSON file
     enrichments:                           # Inline enrichment rules
@@ -67,6 +75,10 @@ retry:
   max_attempts: integer                  # 1-10, default: 5
   initial_backoff_ms: integer            # default: 1000
   max_backoff_ms: integer                # default: 30000
+
+tls:
+  ca_cert_path: string                   # PEM bundle of additional trusted certs
+  insecure_skip_verify: boolean          # default: false
 
 compression:
   enabled: boolean                       # default: true
@@ -139,10 +151,11 @@ services:
 | `lookup_path` | string | - | Path to lookup table file |
 | `formats` | []string | ["csv"] | Output formats |
 | `timeout` | duration | 30m | Request timeout |
+| `batch_size_mb` | int | 500 | Total memory budget in MB, divided across attribute groups (0 = use default) |
 
 ### Send
 
-Destination server for uploading processed data.
+Destination server or object store for uploading processed data. Mode is selected via `send_as`.
 
 #### Direct Resource Load
 
@@ -177,18 +190,38 @@ services:
       organization_identifier: "your-org.example.de"
 ```
 
+#### S3 Upload
+
+Upload files to an S3-compatible bucket (AWS S3, MinIO, Ceph).
+
+```yaml
+services:
+  send:
+    send_as: "s3_upload"
+    s3:
+      bucket: "${S3_BUCKET}"
+      region: "eu-central-1"
+      access_key_id: "${AWS_ACCESS_KEY_ID}"
+      secret_access_key: "${AWS_SECRET_ACCESS_KEY}"
+      # endpoint: "http://minio.example.com:9000"
+      # use_path_style: true
+      # timeout: PT30M
+```
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `send_as` | string | - | `direct_resource_load` or `transfer_load` |
-| `url` | string | - | FHIR server root URL. Do not include `/fhir` — the client appends it. |
-| `batch_size` | int | 100 | Resources per transaction (direct mode, 1-1000) |
+| `send_as` | string | - | `direct_resource_load`, `transfer_load`, or `s3_upload` |
+| `url` | string | - | FHIR server root URL — required for FHIR modes, ignored for `s3_upload`. Do not include `/fhir`; the client appends it. |
+| `batch_size` | int | 100 | Resources per transaction (`direct_resource_load` only, 0-1000) |
 
-**Authentication (choose one):**
+**Authentication (choose one for FHIR modes):**
 
 | Option | Description |
 |--------|-------------|
 | `auth.username` + `auth.password` | Basic authentication |
 | `auth.oauth_issuer_uri` + `oauth_client_id` + `oauth_client_secret` | OAuth2 client credentials |
+
+In `s3_upload` mode the `auth` block is optional and used only as upstream proxy authentication (basic auth via `Proxy-Authorization`); the S3 API itself is authenticated via `s3.access_key_id` / `s3.secret_access_key`.
 
 **Transfer settings (transfer_load mode only):**
 
@@ -196,6 +229,18 @@ services:
 |--------|-------------|
 | `transfer.project_identifier` | MII project identifier |
 | `transfer.organization_identifier` | Organization identifier |
+
+**S3 settings (s3_upload mode only):**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `s3.bucket` | string | - | Target bucket name (required) |
+| `s3.region` | string | - | AWS region, e.g. `eu-central-1` (required) |
+| `s3.access_key_id` | string | - | S3 access key (required) |
+| `s3.secret_access_key` | string | - | S3 secret key (required) |
+| `s3.endpoint` | string | - | Custom endpoint URL (MinIO, Ceph, etc.). Leave empty for AWS S3. |
+| `s3.use_path_style` | bool | false | Use path-style addressing (required for MinIO and many S3-compatible stores) |
+| `s3.timeout` | duration | PT30M | Per-request timeout |
 
 ### Validation
 
@@ -239,7 +284,7 @@ Enriches CRTDL documents with additional attributes before sending to TORCH. Thi
 
 ```yaml
 services:
- .json_preprocessing:
+  crtdl_preprocessing:
     enabled: true
     enrichments:
       - group_reference: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/PatientPseudonymisiert"
@@ -351,6 +396,21 @@ retry:
 | `max_backoff_ms` | int | 30000 | - | Max backoff delay |
 
 Exponential backoff: `wait = min(initial * 2^attempt, max)`
+
+## TLS
+
+Trust custom or internal certificates and, when needed, disable verification entirely. Applied to every outgoing HTTP client (TORCH, DIMP, validation, flattening, send, HTTP import).
+
+```yaml
+tls:
+  ca_cert_path: "/path/to/certs.pem"
+  insecure_skip_verify: false
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ca_cert_path` | string | - | PEM bundle of additional CA or server certificates to trust. System CAs remain trusted alongside these. Supports `${ENV}` substitution. |
+| `insecure_skip_verify` | bool | false | Skip TLS verification entirely. Development/testing only. |
 
 ## Compression
 

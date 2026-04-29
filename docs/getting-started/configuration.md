@@ -86,6 +86,23 @@ services:
       organization_identifier: "your-org.example.de"
 ```
 
+**S3 upload (AWS S3, MinIO, Ceph):**
+```yaml
+services:
+  send:
+    send_as: "s3_upload"
+    s3:
+      bucket: "${S3_BUCKET}"
+      region: "eu-central-1"
+      access_key_id: "${AWS_ACCESS_KEY_ID}"
+      secret_access_key: "${AWS_SECRET_ACCESS_KEY}"
+      # endpoint: "http://minio.example.com:9000"   # for non-AWS stores
+      # use_path_style: true                         # required for MinIO
+      # timeout: PT30M
+```
+
+See the [Send step guide](../guides/steps/send.md) for full S3 options and proxy-auth behaviour.
+
 ### Local Import
 
 ```yaml
@@ -141,6 +158,55 @@ compression:
 ```
 
 Output files use `.ndjson.zst` extension when enabled.
+
+## TLS
+
+Trust custom or internal certificates and, when needed, disable verification entirely:
+
+```yaml
+tls:
+  # PEM bundle of additional CA or server certificates to trust
+  # (system CAs are still trusted alongside these)
+  ca_cert_path: "${CA_CERT_PATH}"
+
+  # Skip certificate verification — development/testing only
+  insecure_skip_verify: false
+```
+
+`tls` applies to every outgoing HTTP client, including TORCH, DIMP, validation, flattening, send (FHIR + S3), and HTTP import.
+
+## Retry
+
+Transient failures (network errors, 5xx responses, S3 `SlowDown` / `ServiceUnavailable` / timeouts) are retried with exponential backoff:
+
+```yaml
+retry:
+  max_attempts: 5            # 1-10
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+```
+
+## CRTDL Preprocessing
+
+Enriches CRTDL files with extra attributes (e.g. pseudonymisation identifiers) before sending them to TORCH. Disabled by default.
+
+```yaml
+services:
+  crtdl_preprocessing:
+    enabled: true
+
+    # Option A: external rules file
+    enrichments_path: "/path/to/dimp-enrichments.json"
+
+    # Option B: inline rules (mutually exclusive with enrichments_path)
+    # enrichments:
+    #   - group_reference: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient"
+    #     create_if_not_exists:
+    #       group_name: "Patient"
+    #     attributes_to_add:
+    #       - attribute_ref: "Patient.identifier:PseudonymisierterIdentifier"
+    #         must_have: true
+```
 
 ## Environment Variables
 

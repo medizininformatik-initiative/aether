@@ -29,16 +29,16 @@ pipeline:
 
 ```bash
 # Pipeline pauses automatically at wait step
-aether pipeline start crtdl.json
+aether pipeline start aether.yaml crtdl.json
 
 # Check status - shows "waiting"
-aether pipeline status <job-id>
+aether pipeline status aether.yaml <job-id>
 
 # Place modified data in the wait directory
 # e.g., jobs/<job-id>/import_wait/
 
 # Resume pipeline
-aether pipeline continue <job-id>
+aether pipeline continue aether.yaml <job-id>
 ```
 
 ## Wait Directory

@@ -4,7 +4,8 @@ Get Aether running in 5 minutes.
 
 ## 1. Create Configuration
 
-Create `aether.yaml` in your working directory:
+Create an `aether.yaml` somewhere on disk. Every command takes the path to this
+file as its first positional argument:
 
 ```yaml
 services:
@@ -29,7 +30,7 @@ Replace URLs and credentials with your actual server details.
 ## 2. Run a Pipeline
 
 ```bash
-aether pipeline start your-crtdl.json
+aether pipeline start aether.yaml your-crtdl.json
 ```
 
 Aether will:
@@ -45,10 +46,10 @@ Output files use `.ndjson.zst` extension (zstd compressed).
 
 ```bash
 # List all jobs
-aether job list
+aether job list aether.yaml
 
 # Check a specific job
-aether pipeline status <job-id>
+aether pipeline status aether.yaml <job-id>
 ```
 
 ## 4. Resume if Needed
@@ -56,7 +57,7 @@ aether pipeline status <job-id>
 If a pipeline fails or pauses, resume it:
 
 ```bash
-aether pipeline continue <job-id>
+aether pipeline continue aether.yaml <job-id>
 ```
 
 ## Alternative: Direct TORCH URL
@@ -64,7 +65,7 @@ aether pipeline continue <job-id>
 If you already have a TORCH extraction URL, skip the CRTDL submission:
 
 ```bash
-aether pipeline start "https://torch.example.com/fhir/extraction/result-123"
+aether pipeline start aether.yaml crtdl.json "https://torch.example.com/fhir/extraction/result-123"
 ```
 
 Aether auto-detects URLs containing `/fhir/extraction/` or `/fhir/result/` and polls them directly. See [TORCH Integration](../guides/torch-integration.md#direct-torch-url-import) for details.
@@ -88,10 +89,10 @@ pipeline:
 
 ```bash
 # Use config directory
-aether pipeline start
+aether pipeline start aether.yaml crtdl.json
 
 # Or override with --dir flag
-aether pipeline start --dir /other/path
+aether pipeline start aether.yaml crtdl.json --dir /other/path
 ```
 
 ## Next Steps

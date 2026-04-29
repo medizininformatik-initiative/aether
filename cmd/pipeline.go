@@ -35,55 +35,61 @@ Available subcommands:
 
 // pipelineStartCmd represents the pipeline start command
 var pipelineStartCmd = &cobra.Command{
-	Use:   "start <crtdl> [input]",
+	Use:   "start <config> <crtdl> [input]",
 	Short: "Start a new pipeline job",
 	Long: `Start a new Data Use Process pipeline job.
 
-The CRTDL file is always required as the first positional argument. The
-optional second positional is the input source for the enabled import step:
-  • omitted (torch_import): CRTDL is submitted to TORCH for extraction
-  • omitted (local_import): data dir is read from --dir or config
-  • local directory path (local_import): files imported from disk
-  • HTTP(S) URL (http_import): single NDJSON file downloaded
-  • TORCH result URL (torch_import): auto-detected when the URL contains
-    /fhir/extraction/ or /fhir/result/; extraction is skipped and results
-    are polled directly
+Arguments:
+  <config>  Path to aether.yaml (required, first positional)
+  <crtdl>   CRTDL JSON file (required, second positional)
+  [input]   Optional input source for the enabled import step:
+              • omitted (torch_import): CRTDL is submitted to TORCH
+              • omitted (local_import): data dir is read from --dir or config
+              • local directory path (local_import): files imported from disk
+              • HTTP(S) URL (http_import): single NDJSON file downloaded
+              • TORCH result URL (torch_import): auto-detected when the URL
+                contains /fhir/extraction/ or /fhir/result/; extraction is
+                skipped and results are polled directly
 
 Combining http_import with a CRTDL requires --allow-http-crtdl since HTTP
 data may not match the CRTDL query.
 
 Examples:
   # Extract data using CRTDL query via TORCH
-  aether pipeline start crtdl.json
+  aether pipeline start aether.yaml crtdl.json
 
   # Local import with CRTDL for flattening (data dir from config)
-  aether pipeline start crtdl.json
+  aether pipeline start aether.yaml crtdl.json
 
   # Local import with CRTDL (data dir as positional)
-  aether pipeline start crtdl.json /path/to/fhir/data
+  aether pipeline start aether.yaml crtdl.json /path/to/fhir/data
 
   # Local import with CRTDL (data dir via flag)
-  aether pipeline start crtdl.json --dir /path/to/fhir/data
+  aether pipeline start aether.yaml crtdl.json --dir /path/to/fhir/data
 
   # HTTP import piped through flattening (acknowledges data/CRTDL mismatch)
-  aether pipeline start crtdl.json https://example.com/fhir/Patient.ndjson \
+  aether pipeline start aether.yaml crtdl.json https://example.com/fhir/Patient.ndjson \
       --allow-http-crtdl
 
   # Direct TORCH URL (skip extraction, poll and download results)
-  aether pipeline start crtdl.json \
+  aether pipeline start aether.yaml crtdl.json \
       "https://torch.example.com/fhir/extraction/result-123"
 
   # Start without progress indicators
-  aether pipeline start crtdl.json --no-progress`,
-	Args: cobra.RangeArgs(1, 2),
+  aether pipeline start aether.yaml crtdl.json --no-progress`,
+	Args: cobra.RangeArgs(2, 3),
 	RunE: runPipelineStart,
 }
 
 // pipelineStatusCmd represents the pipeline status command
 var pipelineStatusCmd = &cobra.Command{
-	Use:   "status [job-id]",
+	Use:   "status <config> <job-id>",
 	Short: "Check pipeline job status",
 	Long: `Display the current status of a pipeline job.
+
+Arguments:
+  <config>  Path to aether.yaml (required, first positional)
+  <job-id>  Pipeline job ID (required, second positional)
 
 Shows:
   • Job ID and current status
@@ -94,23 +100,27 @@ Shows:
 
 The status command is designed for quick checks (<2s response time).
 Use 'watch' for continuous monitoring:
-  watch -n 5 aether pipeline status <job-id>
+  watch -n 5 aether pipeline status aether.yaml <job-id>
 
 Examples:
   # Check job status
-  aether pipeline status abc-123-def
+  aether pipeline status aether.yaml abc-123-def
 
   # Continuous monitoring (every 5 seconds)
-  watch -n 5 aether pipeline status abc-123-def`,
-	Args: cobra.ExactArgs(1),
+  watch -n 5 aether pipeline status aether.yaml abc-123-def`,
+	Args: cobra.ExactArgs(2),
 	RunE: runPipelineStatus,
 }
 
 // pipelineContinueCmd represents the pipeline continue command
 var pipelineContinueCmd = &cobra.Command{
-	Use:   "continue [job-id]",
+	Use:   "continue <config> <job-id>",
 	Short: "Resume a pipeline job",
 	Long: `Resume pipeline execution from the next enabled step.
+
+Arguments:
+  <config>  Path to aether.yaml (required, first positional)
+  <job-id>  Pipeline job ID (required, second positional)
 
 This command is useful for:
   • Resuming after terminal close (session-independent)
@@ -125,24 +135,24 @@ Common Scenarios:
 
   1. Resume after closing terminal:
      Terminal closed mid-pipeline? Just run continue:
-       aether pipeline continue <job-id>
+       aether pipeline continue aether.yaml <job-id>
 
   2. Retry after fixing transient error:
      Service was down and retries exhausted? Fix the issue, then:
-       aether pipeline continue <job-id>
+       aether pipeline continue aether.yaml <job-id>
 
   3. Continue after manual data correction:
      Fixed malformed FHIR data? Resume processing:
-       aether pipeline continue <job-id>
+       aether pipeline continue aether.yaml <job-id>
 
 Examples:
   # Resume a paused job
-  aether pipeline continue abc-123-def
+  aether pipeline continue aether.yaml abc-123-def
 
   # Check status first, then resume
-  aether pipeline status abc-123-def
-  aether pipeline continue abc-123-def`,
-	Args: cobra.ExactArgs(1),
+  aether pipeline status aether.yaml abc-123-def
+  aether pipeline continue aether.yaml abc-123-def`,
+	Args: cobra.ExactArgs(2),
 	RunE: runPipelineContinue,
 }
 
@@ -319,7 +329,7 @@ func executeStep(job *models.PipelineJob, stepName models.StepName, config *mode
 		fmt.Printf("\n⏸ Pipeline paused at wait step\n")
 		fmt.Printf("  Wait directory: %s\n", waitDir)
 		fmt.Printf("  The directory is EMPTY - place your modified data there\n")
-		fmt.Printf("\n  To continue: aether pipeline continue %s\n", job.JobID)
+		fmt.Printf("\n  To continue: aether pipeline continue <config> %s\n", job.JobID)
 		return errPipelinePaused // Signal to break out of pipeline loop
 
 	default:
@@ -328,21 +338,22 @@ func executeStep(job *models.PipelineJob, stepName models.StepName, config *mode
 }
 
 func runPipelineStart(cmd *cobra.Command, args []string) error {
-	// First positional is always the CRTDL; second (optional) is the input
-	// source for the enabled import step.
-	crtdlPath := args[0]
+	// Positional contract: <config> <crtdl> [input]. The third positional, if
+	// supplied, is the input source for the enabled import step.
+	cfgPath := args[0]
+	crtdlPath := args[1]
 	var inputSource string
-	if len(args) > 1 {
-		inputSource = args[1]
+	if len(args) > 2 {
+		inputSource = args[2]
 	}
 
 	if t, err := lib.DetectInputType(crtdlPath); err != nil {
 		return fmt.Errorf("invalid CRTDL argument %q: %w", crtdlPath, err)
 	} else if t != models.InputTypeCRTDL {
-		return fmt.Errorf("first argument must be a CRTDL file, got %s: %q", t, crtdlPath)
+		return fmt.Errorf("second argument must be a CRTDL file, got %s: %q", t, crtdlPath)
 	}
 
-	config, err := services.LoadConfig(cfgFile)
+	config, err := services.LoadConfig(cfgPath)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -356,7 +367,7 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	if config.Pipeline.IsStepEnabled(models.StepLocalImport) && !config.Pipeline.IsStepEnabled(models.StepTorchImport) {
 		hasSourceDir := config.Services.LocalImport.Dir != "" || inputSource != ""
 		if !hasSourceDir {
-			return fmt.Errorf("local_import step enabled but no directory specified\n\nProvide directory via:\n  1. Positional: aether pipeline start <crtdl> /path/to/data\n  2. --dir flag: aether pipeline start <crtdl> --dir /path/to/data\n  3. Config file: services.local_import.dir in aether.yaml")
+			return fmt.Errorf("local_import step enabled but no directory specified\n\nProvide directory via:\n  1. Positional: aether pipeline start <config> <crtdl> /path/to/data\n  2. --dir flag: aether pipeline start <config> <crtdl> --dir /path/to/data\n  3. Config file: services.local_import.dir in aether.yaml")
 		}
 	}
 
@@ -480,9 +491,10 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 }
 
 func runPipelineStatus(cmd *cobra.Command, args []string) error {
-	jobID := args[0]
+	cfgPath := args[0]
+	jobID := args[1]
 
-	config, err := services.LoadConfig(cfgFile)
+	config, err := services.LoadConfig(cfgPath)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -518,9 +530,10 @@ func runPipelineStatus(cmd *cobra.Command, args []string) error {
 }
 
 func runPipelineContinue(cmd *cobra.Command, args []string) error {
-	jobID := args[0]
+	cfgPath := args[0]
+	jobID := args[1]
 
-	config, err := services.LoadConfig(cfgFile)
+	config, err := services.LoadConfig(cfgPath)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -633,7 +646,7 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 			fmt.Printf("\n⏸ Pipeline still paused at wait step\n")
 			fmt.Printf("  Wait directory: %s\n", waitDir)
 			fmt.Printf("  The directory is EMPTY - place your modified data there\n")
-			fmt.Printf("\n  To continue: aether pipeline continue %s\n", job.JobID)
+			fmt.Printf("\n  To continue: aether pipeline continue <config> %s\n", job.JobID)
 			return errPipelinePaused
 		}
 

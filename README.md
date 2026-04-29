@@ -41,7 +41,7 @@ aether --help
 
 ## Configuration
 
-Create `aether.yaml` in your working directory:
+Create an `aether.yaml` file (any path is fine — pass it as the first positional arg):
 
 ```yaml
 services:
@@ -63,23 +63,25 @@ jobs_dir: "./jobs"
 
 ## Usage
 
+Every subcommand takes the path to your `aether.yaml` as the first positional argument.
+
 ### Run a Pipeline
 
 ```bash
-aether pipeline start your-crtdl.json
+aether pipeline start aether.yaml your-crtdl.json
 ```
 
 ### Check Status
 
 ```bash
-aether job list
-aether pipeline status <job-id>
+aether job list aether.yaml
+aether pipeline status aether.yaml <job-id>
 ```
 
 ### Resume a Pipeline
 
 ```bash
-aether pipeline continue <job-id>
+aether pipeline continue aether.yaml <job-id>
 ```
 
 ## More Information

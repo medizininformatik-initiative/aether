@@ -31,9 +31,12 @@ Available subcommands:
 
 // jobListCmd represents the job list command
 var jobListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   "list <config>",
 	Short: "List all pipeline jobs",
 	Long: `List all pipeline jobs in the jobs directory.
+
+Arguments:
+  <config>  Path to aether.yaml (required, first positional)
 
 Shows:
   • Job ID (YYYYMMDD_HHMM_UUID or legacy UUID)
@@ -53,24 +56,29 @@ Status Symbols:
 
 Examples:
   # List all jobs
-  aether job list
+  aether job list aether.yaml
 
   # Continuously monitor all jobs
-  watch -n 5 aether job list
+  watch -n 5 aether job list aether.yaml
 
 Typical Workflow:
-  1. Start pipeline:  aether pipeline start crtdl.json
-  2. List jobs:       aether job list
+  1. Start pipeline:  aether pipeline start aether.yaml crtdl.json
+  2. List jobs:       aether job list aether.yaml
   3. Get job ID from list
-  4. Check status:    aether pipeline status <job-id>`,
+  4. Check status:    aether pipeline status aether.yaml <job-id>`,
+	Args: cobra.ExactArgs(1),
 	RunE: runJobList,
 }
 
 // jobRunCmd represents the job run command
 var jobRunCmd = &cobra.Command{
-	Use:   "run <job-id> --step <step-name>",
+	Use:   "run <config> <job-id> --step <step-name>",
 	Short: "Execute a specific pipeline step manually",
 	Long: `Execute a specific pipeline step for a job manually.
+
+Arguments:
+  <config>  Path to aether.yaml (required, first positional)
+  <job-id>  Pipeline job ID (required, second positional)
 
 This command allows you to run individual pipeline steps independently,
 useful for:
@@ -90,16 +98,16 @@ Prerequisites:
 
 Examples:
   # Run import step manually
-  aether job run abc123 --step import
+  aether job run aether.yaml abc123 --step import
 
   # Run DIMP pseudonymization step
-  aether job run abc123 --step dimp
+  aether job run aether.yaml abc123 --step dimp
 
 Error Handling:
   • Transient errors (network, 5xx) are retried automatically
   • Non-transient errors (4xx, validation) stop execution
   • Use 'pipeline status' to check step status after execution`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.ExactArgs(2),
 	RunE: runJobRun,
 }
 
@@ -118,8 +126,9 @@ func init() {
 }
 
 func runJobList(cmd *cobra.Command, args []string) error {
-	// Load configuration
-	config, err := services.LoadConfig(cfgFile)
+	cfgPath := args[0]
+
+	config, err := services.LoadConfig(cfgPath)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -229,16 +238,15 @@ func formatDuration(d time.Duration) string {
 }
 
 func runJobRun(cmd *cobra.Command, args []string) error {
-	jobID := args[0]
+	cfgPath := args[0]
+	jobID := args[1]
 
-	// Validate step name
 	stepName, err := validateStepName(stepFlag)
 	if err != nil {
 		return err
 	}
 
-	// Load configuration
-	config, err := services.LoadConfig(cfgFile)
+	config, err := services.LoadConfig(cfgPath)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}

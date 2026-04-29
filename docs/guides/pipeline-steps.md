@@ -71,17 +71,17 @@ pipeline:
 
 ```bash
 # List all jobs
-aether job list
+aether job list aether.yaml
 
 # Check specific job
-aether pipeline status <job-id>
+aether pipeline status aether.yaml <job-id>
 ```
 
 ## Resuming
 
 ```bash
 # Resume failed or paused job
-aether pipeline continue <job-id>
+aether pipeline continue aether.yaml <job-id>
 ```
 
 Completed steps are not re-run.

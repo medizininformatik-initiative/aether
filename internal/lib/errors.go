@@ -255,7 +255,7 @@ func ErrJobNotFound(jobID string) *AetherError {
 		Message:  fmt.Sprintf("Job '%s' not found", jobID),
 		Guidance: []string{
 			"Check the job ID is correct",
-			"Use 'aether job list' to see all available jobs",
+			"Use 'aether job list <config>' to see all available jobs",
 			"The job may have been deleted",
 		},
 		IsRetryable: false,
@@ -285,8 +285,8 @@ func ErrStepPrerequisiteNotMet(stepName models.StepName, prerequisite models.Ste
 		Message:  fmt.Sprintf("Cannot run %s: prerequisite step %s has not completed", stepName, prerequisite),
 		Guidance: []string{
 			fmt.Sprintf("Ensure %s step completes successfully first", prerequisite),
-			"Use 'aether pipeline status <job-id>' to check step progress",
-			fmt.Sprintf("Run 'aether pipeline continue <job-id>' to resume from %s", prerequisite),
+			"Use 'aether pipeline status <config> <job-id>' to check step progress",
+			fmt.Sprintf("Run 'aether pipeline continue <config> <job-id>' to resume from %s", prerequisite),
 		},
 		IsRetryable: false,
 	}

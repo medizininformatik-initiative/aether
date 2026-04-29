@@ -29,7 +29,7 @@ pipeline:
 ## Running a TORCH Query
 
 ```bash
-aether pipeline start your-crtdl.json
+aether pipeline start aether.yaml your-crtdl.json
 ```
 
 Aether will show progress as it:
@@ -71,7 +71,7 @@ During status polling, transient HTTP errors (timeouts, connection resets) are t
 If you already have a TORCH extraction or result URL, you can pass it directly to skip the CRTDL submission step:
 
 ```bash
-aether pipeline start "https://torch.example.com/fhir/extraction/result-123"
+aether pipeline start aether.yaml crtdl.json "https://torch.example.com/fhir/extraction/result-123"
 ```
 
 Aether auto-detects TORCH URLs by looking for `/fhir/extraction/` or `/fhir/result/` in the URL (case-sensitive). When a TORCH URL is provided, Aether:

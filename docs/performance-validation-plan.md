@@ -259,7 +259,7 @@ aether --version
 
 **Step 2: Configuration**
 ```bash
-cp config/aether.example.yaml ~/.config/aether/aether.yaml
+cp config/aether.example.yaml ./aether.yaml
 # Edit configuration with service URLs
 ```
 - ✅ Example config file exists

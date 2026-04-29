@@ -1,6 +1,6 @@
 # Configuration
 
-Aether uses a YAML configuration file. Create `aether.yaml` in your working directory.
+Aether uses a YAML configuration file. Create an `aether.yaml` anywhere on disk and pass its path as the first positional argument on every command. Aether does not auto-discover config files.
 
 ## Basic Configuration
 

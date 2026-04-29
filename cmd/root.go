@@ -13,8 +13,7 @@ import (
 )
 
 var (
-	// Global flags
-	cfgFile string
+	// verbose toggles debug-level logging across all subcommands.
 	verbose bool
 
 	// version is set via SetVersion before Execute
@@ -43,22 +42,22 @@ Quick Start:
        cp config/aether.example.yaml aether.yaml
 
   2. Start a pipeline:
-       aether pipeline start crtdl.json
+       aether pipeline start aether.yaml crtdl.json
 
   3. Check status:
-       aether pipeline status <job-id>
+       aether pipeline status aether.yaml <job-id>
 
   4. List all jobs:
-       aether job list
+       aether job list aether.yaml
 
   5. Resume a job:
-       aether pipeline continue <job-id>
+       aether pipeline continue aether.yaml <job-id>
 
 Configuration:
-  The CLI looks for configuration in the following order:
-    1. --config flag
-    2. ./aether.yaml (current directory)
-    3. ~/.config/aether/aether.yaml (user config directory)
+  Every command that needs configuration takes the path to your
+  aether.yaml as the first positional argument. There is no
+  --config flag and no implicit discovery of ./aether.yaml or
+  ~/.config/aether/aether.yaml — point at the file explicitly.
 
 For more information:
   Documentation: https://github.com/medizininformatik-initiative/aether
@@ -84,7 +83,6 @@ func Execute() {
 
 func init() {
 	// Persistent flags (available to all subcommands)
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ./aether.yaml, ~/.config/aether/aether.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose logging")
 
 	// Add version template

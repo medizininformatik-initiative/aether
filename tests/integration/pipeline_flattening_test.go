@@ -468,3 +468,123 @@ func TestExecuteFlatteningStep_FlattenerServiceError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "flattener failed")
 }
+
+// TestExecuteFlatteningStep_NonBundleStreamRouting exercises the streaming path
+// where clinical resources arrive in NDJSON as top-level (non-Bundle) objects
+// and are routed via a provenance index sourced from a separate Bundle file.
+// Covers the non-Bundle branch in streamAndFlattenResources.
+func TestExecuteFlatteningStep_NonBundleStreamRouting(t *testing.T) {
+	flushed := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/fhir/ViewDefinition/$run" {
+			flushed = true
+			w.Header().Set("Content-Type", "text/csv")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("1,Alice\n2,Bob\n"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	jobID := "test-non-bundle-routing"
+	jobDir := filepath.Join(tempDir, "jobs", jobID)
+	inputDir := filepath.Join(jobDir, "import")
+	outputDir := filepath.Join(jobDir, "csv")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+
+	groupID := "group-patient-nb"
+
+	crtdlPath := filepath.Join(tempDir, "test.json")
+	crtdlContent := `{
+		"dataExtraction": {
+			"attributeGroups": [{
+				"id": "` + groupID + `",
+				"name": "Patients",
+				"groupReference": "https://example.com/Patient",
+				"attributes": [
+					{"attributeRef": "Patient.id", "mustHave": true},
+					{"attributeRef": "Patient.name", "mustHave": false}
+				]
+			}]
+		}
+	}`
+	require.NoError(t, os.WriteFile(crtdlPath, []byte(crtdlContent), 0644))
+
+	lookupPath := filepath.Join(tempDir, "lookup.json")
+	lookupContent := `[{
+		"url": "https://example.com/Patient",
+		"resourceType": "Patient",
+		"elements": {
+			"Patient.id": {"viewDefinition": {"select": [{"column": [{"name": "id", "path": "id"}]}]}},
+			"Patient.name": {"viewDefinition": {"select": [{"column": [{"name": "name", "path": "name[0].text"}]}]}}
+		}
+	}]`
+	require.NoError(t, os.WriteFile(lookupPath, []byte(lookupContent), 0644))
+
+	// File A: Bundle containing only Provenance entries (builds provenance index in pass 1).
+	provBundle := makeBundle("prov-bundle",
+		makeProvenance("prov-a", "Patient/1", groupID),
+		makeProvenance("prov-b", "Patient/2", groupID),
+	)
+	provData, err := json.Marshal(provBundle)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "01-prov.ndjson"), append(provData, '\n'), 0644))
+
+	// File B: NDJSON of raw, top-level Patient resources (exercises non-Bundle pass 2 routing).
+	patientFile, err := os.Create(filepath.Join(inputDir, "02-patients.ndjson"))
+	require.NoError(t, err)
+	for _, p := range []map[string]any{
+		{
+			"resourceType": "Patient", "id": "1",
+			"meta": map[string]any{"profile": []any{"https://example.com/Patient"}},
+			"name": []any{map[string]any{"text": "Alice"}},
+		},
+		{
+			"resourceType": "Patient", "id": "2",
+			"meta": map[string]any{"profile": []any{"https://example.com/Patient"}},
+			"name": []any{map[string]any{"text": "Bob"}},
+		},
+	} {
+		b, mErr := json.Marshal(p)
+		require.NoError(t, mErr)
+		_, wErr := patientFile.Write(append(b, '\n'))
+		require.NoError(t, wErr)
+	}
+	require.NoError(t, patientFile.Close())
+
+	job := &models.PipelineJob{
+		JobID:       jobID,
+		Status:      models.JobStatusInProgress,
+		InputSource: crtdlPath,
+		InputType:   models.InputTypeCRTDL,
+		CRTDLPath:   crtdlPath,
+		Config: models.ProjectConfig{
+			Services: models.ServiceConfig{
+				Flattening: models.FlatteningConfig{
+					ServiceURL: server.URL,
+					LookupPath: lookupPath,
+					Formats:    []string{"csv"},
+					Timeout:    30 * time.Second,
+					// Tiny memory budget forces a flush inside the non-Bundle branch
+					// after each resource is appended.
+					BatchSizeMB: 1,
+				},
+			},
+			Pipeline: models.PipelineConfig{
+				EnabledSteps: []models.StepName{models.StepLocalImport, models.StepFlattening},
+			},
+			Retry: models.RetryConfig{MaxAttempts: 1},
+		},
+	}
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	err = pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	require.NoError(t, err)
+	assert.True(t, flushed, "flattener service should have been called")
+
+	csvFiles, err := filepath.Glob(filepath.Join(outputDir, "*.csv"))
+	require.NoError(t, err)
+	require.Len(t, csvFiles, 1)
+}

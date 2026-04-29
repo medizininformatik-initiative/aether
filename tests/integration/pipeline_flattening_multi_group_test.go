@@ -91,7 +91,7 @@ func TestMultiGroupSameResourceType_ProvenanceRouting(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filePath, append(data, '\n'), 0644))
 
-	resources, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+	resources, index, err := pipeline.LoadResourcesFromFile(filePath, logger)
 	require.NoError(t, err)
 
 	assert.Len(t, resources, 2, "expected 2 Procedure resources (Provenance filtered out)")
@@ -114,7 +114,7 @@ func TestMultiGroupSameResourceType_WithTorchOutput(t *testing.T) {
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
 
-	resources, index, err := pipeline.LoadResourcesFromFile(ndjsonPath, logger, lib.DefaultMaxNDJSONLineSize)
+	resources, index, err := pipeline.LoadResourcesFromFile(ndjsonPath, logger)
 	require.NoError(t, err)
 
 	// Torch output: 2 Conditions, 2 Encounters, 1 Patient, 2 Procedures (+ 5 Provenances excluded)
@@ -266,7 +266,7 @@ func TestMultiGroupSameResourceType_WithTesterCRTDL(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filePath, append(bundleData, '\n'), 0644))
 
-	resources, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+	resources, index, err := pipeline.LoadResourcesFromFile(filePath, logger)
 	require.NoError(t, err)
 
 	assert.Len(t, resources, 5, "expected 5 clinical resources")

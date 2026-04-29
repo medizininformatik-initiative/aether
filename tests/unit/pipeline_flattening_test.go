@@ -174,7 +174,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, resources)
 
-		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger)
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
 		assert.Equal(t, "1", result[0]["id"])
@@ -193,7 +193,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		err := os.WriteFile(filePath, []byte(content), 0644)
 		require.NoError(t, err)
 
-		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger)
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
 	})
@@ -210,7 +210,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		bundle := makeBundle("bundle-1", patient, condition, provPatient, provCondition)
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger)
 		require.NoError(t, err)
 
 		// Only clinical resources returned, no Provenance
@@ -242,9 +242,31 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger)
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
+	})
+
+	t.Run("skips malformed top-level resources and continues", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "mixed.ndjson")
+
+		// Mix valid resource with non-object JSON values that decode as RawMessage
+		// but fail to unmarshal into map[string]any (covers logger.Warn branch).
+		content := `{"resourceType":"Patient","id":"good-1"}
+42
+"not-an-object"
+[1,2,3]
+{"resourceType":"Patient","id":"good-2"}
+`
+		err := os.WriteFile(filePath, []byte(content), 0644)
+		require.NoError(t, err)
+
+		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger)
+		require.NoError(t, err)
+		assert.Len(t, result, 2)
+		assert.Equal(t, "good-1", result[0]["id"])
+		assert.Equal(t, "good-2", result[1]["id"])
 	})
 
 	t.Run("handles Bundle entry without resource field", func(t *testing.T) {
@@ -262,7 +284,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger)
 		require.NoError(t, err)
 		assert.Empty(t, result)
 	})
@@ -282,7 +304,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger)
 		require.NoError(t, err)
 		assert.Empty(t, result)
 	})
@@ -298,18 +320,18 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger)
 		require.NoError(t, err)
 		assert.Empty(t, result)
 	})
 
 	t.Run("returns error for nonexistent file", func(t *testing.T) {
-		_, _, err := pipeline.LoadResourcesFromFile("/nonexistent/path/file.ndjson", logger, lib.DefaultMaxNDJSONLineSize)
+		_, _, err := pipeline.LoadResourcesFromFile("/nonexistent/path/file.ndjson", logger)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to open file")
 	})
 
-	t.Run("handles invalid JSON line gracefully", func(t *testing.T) {
+	t.Run("returns error on invalid JSON", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		filePath := filepath.Join(tmpDir, "invalid.ndjson")
 
@@ -320,9 +342,9 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		err := os.WriteFile(filePath, []byte(content), 0644)
 		require.NoError(t, err)
 
-		result, _, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
-		require.NoError(t, err)
-		assert.Len(t, result, 2)
+		_, _, err = pipeline.LoadResourcesFromFile(filePath, logger)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error reading file")
 	})
 
 	t.Run("provenance with multiple targets maps all to same group", func(t *testing.T) {
@@ -365,7 +387,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger)
 		require.NoError(t, err)
 		assert.Len(t, result, 2) // Patient + Observation, no Provenance
 		assert.Equal(t, []string{"group-x"}, index["Patient/p1"])
@@ -405,7 +427,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger)
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 		assert.Empty(t, index)
@@ -437,7 +459,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		bundle := makeBundle("b1", patient, prov)
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger)
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 		assert.Empty(t, index)
@@ -471,7 +493,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		bundle := makeBundle("b1", patient, prov)
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger)
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 		// Only the valid target entry should be indexed
@@ -507,7 +529,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		bundle := makeBundle("b1", patient, prov)
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger)
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 		// Only the valid reference should be indexed
@@ -530,7 +552,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		bundle := makeBundle("b1", patient, prov)
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger)
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 		assert.Empty(t, index)
@@ -556,7 +578,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		bundle := makeBundle("b1", patient, prov)
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger)
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 		assert.Empty(t, index)
@@ -596,7 +618,7 @@ func TestLoadResourcesFromFile(t *testing.T) {
 		}
 		writeTestNDJSON(t, filePath, []map[string]any{bundle})
 
-		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+		result, index, err := pipeline.LoadResourcesFromFile(filePath, logger)
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 		assert.Empty(t, index)
@@ -623,7 +645,7 @@ func TestLoadAllResources(t *testing.T) {
 		writeTestNDJSON(t, file1, []map[string]any{bundle1})
 		writeTestNDJSON(t, file2, []map[string]any{bundle2})
 
-		result, index, err := pipeline.LoadAllResources([]string{file1, file2}, logger, lib.DefaultMaxNDJSONLineSize)
+		result, index, err := pipeline.LoadAllResources([]string{file1, file2}, logger)
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
 		assert.Equal(t, []string{"group-a"}, index["Patient/1"])
@@ -637,13 +659,13 @@ func TestLoadAllResources(t *testing.T) {
 			{"resourceType": "Patient", "id": "1"},
 		})
 
-		_, _, err := pipeline.LoadAllResources([]string{file1, "/nonexistent/file.ndjson"}, logger, lib.DefaultMaxNDJSONLineSize)
+		_, _, err := pipeline.LoadAllResources([]string{file1, "/nonexistent/file.ndjson"}, logger)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to load")
 	})
 
 	t.Run("handles empty file list", func(t *testing.T) {
-		result, index, err := pipeline.LoadAllResources([]string{}, logger, lib.DefaultMaxNDJSONLineSize)
+		result, index, err := pipeline.LoadAllResources([]string{}, logger)
 		require.NoError(t, err)
 		assert.Empty(t, result)
 		assert.Empty(t, index)
@@ -1064,7 +1086,7 @@ func TestLoadResourcesFromFile_ScannerError(t *testing.T) {
 	}
 	writeTestNDJSON(t, filePath, resources)
 
-	result, _, err := pipeline.LoadResourcesFromFile(filePath, logger, lib.DefaultMaxNDJSONLineSize)
+	result, _, err := pipeline.LoadResourcesFromFile(filePath, logger)
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
 }
@@ -1380,9 +1402,8 @@ func TestExecuteFlatteningStep_StreamingEdgeCases(t *testing.T) {
 	lookupPath := filepath.Join(tempDir, "lookup.json")
 	writeTestLookupTable(t, lookupPath, profileURL, "Patient")
 
-	// NDJSON with many edge cases:
-	// - empty lines (skipped)
-	// - invalid JSON (skipped with warning)
+	// NDJSON with many edge cases (json.Decoder tolerates whitespace between values):
+	// - empty lines (whitespace, skipped by decoder)
 	// - standalone resources without provenance (no match - provenance routing)
 	// - Bundle with invalid entries (skipped gracefully)
 	// - Bundle with valid entries + Provenance (processed)
@@ -1393,8 +1414,7 @@ func TestExecuteFlatteningStep_StreamingEdgeCases(t *testing.T) {
 	validBundleJSON, _ := json.Marshal(validBundle)
 
 	ndjsonContent := strings.Join([]string{
-		``,               // empty line
-		`{invalid json}`, // invalid JSON
+		``, // empty line
 		`{"resourceType":"Patient","id":"no-provenance"}`,                                                                  // no provenance mapping
 		`{"resourceType":"Patient","id":"meta-string","meta":"not a map"}`,                                                 // meta not a map
 		`{"resourceType":"Bundle","type":"collection","entry":["not a map",{"fullUrl":"urn:1"},{"resource":"not a map"}]}`, // Bundle with only invalid entries

@@ -226,8 +226,7 @@ Persisted Results
 
 ### Memory Usage
 
-- Streams FHIR NDJSON line-by-line (no buffering entire files)
-- NDJSON scanner buffer supports lines up to 100MB by default (configurable via `pipeline.max_ndjson_line_size_mb`) to handle large FHIR Bundles
+- Streams FHIR NDJSON resource-by-resource via `json.Decoder` (memory bounded by the largest individual resource, no per-line cap)
 - Job state loaded only when needed
 - Progress bars updated incrementally
 

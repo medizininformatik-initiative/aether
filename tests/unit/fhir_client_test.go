@@ -399,13 +399,12 @@ func TestFHIRClient_CreateTransactionBundle_InvalidJSON(t *testing.T) {
 	}
 	client := services.NewFHIRClient(config, httpClient, logger)
 
-	// Invalid JSON in the NDJSON line - JSON marshaling of raw message will fail
+	// Invalid JSON in the NDJSON stream - json.Decoder rejects it at decode time
 	reader := strings.NewReader(`{invalid json}`)
 
 	_, err := client.UploadNDJSON("test.ndjson", reader)
-	// The invalid JSON will cause marshal error
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "marshal")
+	assert.Contains(t, err.Error(), "error reading test.ndjson")
 }
 
 func TestFHIRClient_CreateTransactionBundle_EmptyID(t *testing.T) {

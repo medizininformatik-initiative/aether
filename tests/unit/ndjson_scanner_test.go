@@ -15,87 +15,82 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 )
 
-// TestNewNDJSONScanner_DefaultBuffer verifies the scanner handles lines larger than
-// the old 1MB limit (regression test for issue #195)
-func TestNewNDJSONScanner_DefaultBuffer(t *testing.T) {
-	// Create a FHIR Bundle JSON line that exceeds 1MB
-	largeBundle := generateLargeFHIRBundle(1500)
-	bundleJSON, err := json.Marshal(largeBundle)
-	require.NoError(t, err)
-	require.Greater(t, len(bundleJSON), 1024*1024, "Test bundle must exceed 1MB to test the fix")
-
-	reader := bytes.NewReader(bundleJSON)
-	scanner := lib.NewNDJSONScanner(reader)
-
-	// Should successfully scan the large line
-	assert.True(t, scanner.Scan(), "Scanner should handle lines > 1MB")
-	assert.NoError(t, scanner.Err())
-	assert.Equal(t, len(bundleJSON), len(scanner.Bytes()))
-}
-
-// TestNewNDJSONScannerWithMaxSize_CustomSize verifies custom buffer size works
-func TestNewNDJSONScannerWithMaxSize_CustomSize(t *testing.T) {
-	smallLine := []byte(`{"resourceType":"Patient","id":"1"}`)
-	reader := bytes.NewReader(smallLine)
-	scanner := lib.NewNDJSONScannerWithMaxSize(reader, 1024)
-
-	assert.True(t, scanner.Scan())
-	assert.NoError(t, scanner.Err())
-	assert.Equal(t, string(smallLine), scanner.Text())
-}
-
-// TestNewNDJSONScannerWithMaxSize_ExceedsLimit verifies scanner fails gracefully
-// when a line exceeds the configured max
-func TestNewNDJSONScannerWithMaxSize_ExceedsLimit(t *testing.T) {
-	maxSize := 4096
-	// Create a line larger than maxSize (no newline, so scanner must buffer it all)
-	largeLine := strings.Repeat("x", maxSize*2)
-	reader := bytes.NewReader([]byte(largeLine))
-	scanner := lib.NewNDJSONScannerWithMaxSize(reader, maxSize)
-
-	// Should fail since line exceeds max
-	assert.False(t, scanner.Scan())
-	assert.Error(t, scanner.Err())
-	assert.Contains(t, scanner.Err().Error(), "token too long")
-}
-
-// TestDefaultMaxNDJSONLineSize verifies the constant is 100MB
-func TestDefaultMaxNDJSONLineSize(t *testing.T) {
-	assert.Equal(t, 100*1024*1024, lib.DefaultMaxNDJSONLineSize)
-}
-
-// TestReadNDJSON_LargeBundle verifies ReadNDJSON handles Bundles > 1MB
-// This is the core regression test for issue #195
+// TestReadNDJSON_LargeBundle verifies ReadNDJSON parses a Bundle whose
+// serialized size exceeds the prior 100MB scanner cap. This is the regression
+// test for issue #335 — json.Decoder does not impose a per-line buffer limit.
 func TestReadNDJSON_LargeBundle(t *testing.T) {
-	largeBundle := generateLargeFHIRBundle(1500)
+	if testing.Short() {
+		t.Skip("skipping >100MB test in short mode")
+	}
+
+	// Generate a Bundle that serializes to >100MB to prove the old cap is gone.
+	largeBundle := generateLargeFHIRBundle(120000)
 	bundleJSON, err := json.Marshal(largeBundle)
 	require.NoError(t, err)
-	require.Greater(t, len(bundleJSON), 1024*1024, "Test bundle must exceed 1MB")
+	require.Greater(t, len(bundleJSON), 100*1024*1024,
+		"test bundle must exceed 100MB to verify the cap removal")
 
 	reader := bytes.NewReader(append(bundleJSON, '\n'))
 
-	var resources []lib.FHIRResource
-	lineCount, err := lib.ReadNDJSON(reader, func(r lib.FHIRResource) error {
-		resources = append(resources, r)
+	count, err := lib.ReadNDJSON(reader, func(r lib.FHIRResource) error {
+		rt, terr := r.GetResourceType()
+		require.NoError(t, terr)
+		assert.Equal(t, "Bundle", rt)
 		return nil
 	})
-
-	require.NoError(t, err, "ReadNDJSON should handle lines > 1MB (issue #195)")
-	assert.Equal(t, 1, lineCount)
-	assert.Len(t, resources, 1)
-
-	resourceType, err := resources[0].GetResourceType()
 	require.NoError(t, err)
-	assert.Equal(t, "Bundle", resourceType)
+	assert.Equal(t, 1, count)
+}
+
+// TestReadNDJSON_MultipleResources confirms decoding a multi-line stream still
+// yields one resource per JSON value.
+func TestReadNDJSON_MultipleResources(t *testing.T) {
+	patient := []byte(`{"resourceType":"Patient","id":"p1"}`)
+	observation := []byte(`{"resourceType":"Observation","id":"o1","status":"final"}`)
+
+	var content []byte
+	content = append(content, patient...)
+	content = append(content, '\n')
+	content = append(content, observation...)
+	content = append(content, '\n')
+
+	var seen []string
+	count, err := lib.ReadNDJSON(bytes.NewReader(content), func(r lib.FHIRResource) error {
+		rt, _ := r.GetResourceType()
+		seen = append(seen, rt)
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+	assert.Equal(t, []string{"Patient", "Observation"}, seen)
+}
+
+// TestReadNDJSON_ConcatenatedJSON confirms json.Decoder accepts both
+// newline-delimited and concatenated JSON streams (no separator required).
+func TestReadNDJSON_ConcatenatedJSON(t *testing.T) {
+	concat := []byte(`{"resourceType":"Patient","id":"p1"}{"resourceType":"Patient","id":"p2"}`)
+
+	count, err := lib.ReadNDJSON(bytes.NewReader(concat), func(r lib.FHIRResource) error { return nil })
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+}
+
+// TestReadNDJSON_DecodeError surfaces parse errors with the resource index.
+func TestReadNDJSON_DecodeError(t *testing.T) {
+	bad := []byte(`{"resourceType":"Patient"}` + "\n" + `{not json}`)
+
+	count, err := lib.ReadNDJSON(bytes.NewReader(bad), func(r lib.FHIRResource) error { return nil })
+	require.Error(t, err)
+	assert.Equal(t, 1, count)
+	assert.Contains(t, err.Error(), "decode at resource 2")
 }
 
 // TestCountResourcesInFile_LargeBundle verifies CountResourcesInFile works
-// with NDJSON files containing large Bundles (regression test for issue #195)
+// with NDJSON files containing large Bundles (regression for issue #335).
 func TestCountResourcesInFile_LargeBundle(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "large.ndjson")
 
-	// Write two resources: one large Bundle and one small Patient
 	largeBundle := generateLargeFHIRBundle(1500)
 	bundleJSON, err := json.Marshal(largeBundle)
 	require.NoError(t, err)
@@ -117,12 +112,12 @@ func TestCountResourcesInFile_LargeBundle(t *testing.T) {
 	require.NoError(t, err)
 
 	count, err := lib.CountResourcesInFile(filePath)
-	require.NoError(t, err, "CountResourcesInFile should handle large bundles (issue #195)")
+	require.NoError(t, err)
 	assert.Equal(t, 2, count)
 }
 
-// generateLargeFHIRBundle creates a FHIR Bundle with enough entries to exceed 1MB.
-// Each entry is ~2KB, so 600 entries produce a ~1.2MB JSON line.
+// generateLargeFHIRBundle creates a FHIR Bundle with the requested number of
+// Observation entries. Each entry serializes to roughly 1KB.
 func generateLargeFHIRBundle(numEntries int) map[string]any {
 	entries := make([]map[string]any, numEntries)
 	for i := 0; i < numEntries; i++ {

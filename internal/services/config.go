@@ -183,9 +183,6 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 		config.Pipeline.EnabledSteps = append(config.Pipeline.EnabledSteps, models.StepName(stepStr))
 	}
 
-	// Get max NDJSON line size (optional, defaults to 100MB via MaxNDJSONLineSize())
-	config.Pipeline.MaxNDJSONLineSizeMB = viper.GetInt("pipeline.max_ndjson_line_size_mb")
-
 	// Apply defaults for missing fields only if config wasn't found
 	if !configFound {
 		defaults := models.DefaultConfig()

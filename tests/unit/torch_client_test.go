@@ -6,8 +6,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -826,6 +828,47 @@ func TestTORCHClient_EncodeCRTDLToBase64_InvalidJSON(t *testing.T) {
 
 // Tests for response parsing edge cases
 
+// atServer yields the live stub's own URL — for tests whose BaseURL or output
+// URL should point at the stub.
+func atServer(serverURL string) string { return serverURL }
+
+// staticURL ignores the stub URL and always returns u — for fixed test values.
+func staticURL(u string) func(string) string {
+	return func(string) string { return u }
+}
+
+// pollSimpleOutput starts a TORCH stub returning a single simple-format output
+// whose url is urlFor(stubURL), configures a client with baseURLFor(stubURL) as
+// BaseURL, polls the stub, and returns the resolved file URLs alongside the
+// stub's URL (for assertions that reference the host).
+func pollSimpleOutput(t *testing.T, baseURLFor, urlFor func(serverURL string) string) ([]string, string, error) {
+	t.Helper()
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"requiresAccessToken": false,
+			"output":              []map[string]any{{"type": "data", "url": urlFor(server.URL)}},
+		})
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	cfg := models.TORCHConfig{
+		BaseURL:            baseURLFor(server.URL),
+		Username:           "testuser",
+		Password:           "testpass",
+		ExtractionTimeout:  1 * time.Minute,
+		PollingInterval:    1 * time.Second,
+		MaxPollingInterval: 5 * time.Second,
+	}
+	client := services.NewTORCHClient(cfg, httpClient, logger)
+	urls, err := client.PollExtractionStatus(server.URL+"/fhir/extraction/job-123", false)
+	return urls, server.URL, err
+}
+
 func TestTORCHClient_ParseExtractionResult_FHIRFormat(t *testing.T) {
 	var serverURL string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -870,41 +913,58 @@ func TestTORCHClient_ParseExtractionResult_FHIRFormat(t *testing.T) {
 }
 
 func TestTORCHClient_ParseExtractionResult_SimpleFormat(t *testing.T) {
-	var serverURL string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		result := map[string]any{
-			"requiresAccessToken": false,
-			"output": []map[string]any{
-				{
-					"type": "data",
-					"url":  serverURL + "/downloads/data.ndjson",
-				},
-			},
-		}
-		_ = json.NewEncoder(w).Encode(result)
-	}))
-	serverURL = server.URL
-	defer server.Close()
-
-	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-	torchConfig := models.TORCHConfig{
-		BaseURL:            server.URL,
-		Username:           "testuser",
-		Password:           "testpass",
-		ExtractionTimeout:  1 * time.Minute,
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 5 * time.Second,
-	}
-
-	client := services.NewTORCHClient(torchConfig, httpClient, logger)
-	urls, err := client.PollExtractionStatus(server.URL+"/fhir/extraction/job-123", false)
+	urls, _, err := pollSimpleOutput(t, atServer, func(s string) string { return s + "/downloads/data.ndjson" })
 
 	assert.NoError(t, err)
 	assert.Len(t, urls, 1)
 	assert.Contains(t, urls[0], "data.ndjson")
+}
+
+// Reproduces the issue: when TORCH returns scheme-less host:port URLs
+// (e.g. "localhost:8080/output/x.ndjson"), makeAbsoluteURL must prepend
+// BaseURL's scheme rather than concatenating BaseURL — which would produce
+// "http://localhost:8080localhost:8080/output/x.ndjson".
+func TestTORCHClient_ParseExtractionResult_SchemelessHostPortURL(t *testing.T) {
+	// Simulate TORCH returning "<host>:<port>/output/abc.ndjson" — no scheme.
+	urls, serverURL, err := pollSimpleOutput(t, atServer, func(s string) string {
+		return strings.TrimPrefix(s, "http://") + "/output/abc.ndjson"
+	})
+
+	require.NoError(t, err)
+	require.Len(t, urls, 1)
+
+	serverHost := strings.TrimPrefix(serverURL, "http://")
+	// URL must be parseable and have exactly one host — not "<host><host>"
+	parsed, perr := url.Parse(urls[0])
+	require.NoError(t, perr, "returned URL must be valid: %q", urls[0])
+	assert.Equal(t, "http", parsed.Scheme, "scheme must be http, got URL: %q", urls[0])
+	assert.Equal(t, serverHost, parsed.Host, "host must appear exactly once, got URL: %q", urls[0])
+	assert.NotContains(t, urls[0], serverHost+serverHost, "host must not be duplicated: %q", urls[0])
+}
+
+// When BaseURL has no scheme (misconfiguration) and TORCH returns a
+// path-relative URL, makeAbsoluteURL cannot resolve it and must return the raw
+// URL unchanged rather than producing a broken absolute URL. "not-a-url" parses
+// without error but yields an empty scheme, which is the unresolvable case.
+func TestTORCHClient_ParseExtractionResult_SchemelessBaseURL(t *testing.T) {
+	const relativeURL = "/output/abc.ndjson"
+	urls, _, err := pollSimpleOutput(t, staticURL("not-a-url"), staticURL(relativeURL))
+
+	require.NoError(t, err)
+	require.Len(t, urls, 1)
+	assert.Equal(t, relativeURL, urls[0], "unresolvable URL must be returned unchanged")
+}
+
+// When TORCH returns a path-relative URL that is itself unparseable (contains a
+// control character), makeAbsoluteURL must return the raw URL unchanged instead
+// of panicking or resolving against base.
+func TestTORCHClient_ParseExtractionResult_UnparseableRelativeURL(t *testing.T) {
+	const brokenURL = "/output/\x7f.ndjson"
+	urls, _, err := pollSimpleOutput(t, atServer, staticURL(brokenURL))
+
+	require.NoError(t, err)
+	require.Len(t, urls, 1)
+	assert.Equal(t, brokenURL, urls[0], "unparseable URL must be returned unchanged")
 }
 
 func TestTORCHClient_ParseExtractionResult_InvalidJSON(t *testing.T) {

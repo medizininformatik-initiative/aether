@@ -236,6 +236,20 @@ func loadEnrichmentsFromFile(path string) ([]models.GroupEnrichment, error) {
 
 // --- Internal Helper Functions ---
 
+// cloneExtra deep-copies a map of preserved unknown JSON fields.
+func cloneExtra(in map[string]json.RawMessage) map[string]json.RawMessage {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]json.RawMessage, len(in))
+	for k, v := range in {
+		b := make(json.RawMessage, len(v))
+		copy(b, v)
+		out[k] = b
+	}
+	return out
+}
+
 // deepCopyCRTDL creates a deep copy of a CRTDL document.
 func deepCopyCRTDL(doc models.CRTDLDocument) models.CRTDLDocument {
 	result := models.CRTDLDocument{
@@ -243,7 +257,9 @@ func deepCopyCRTDL(doc models.CRTDLDocument) models.CRTDLDocument {
 		Version: doc.Version,
 		DataExtraction: models.DataExtraction{
 			AttributeGroups: make([]models.AttributeGroup, len(doc.DataExtraction.AttributeGroups)),
+			Extra:           cloneExtra(doc.DataExtraction.Extra),
 		},
+		Extra: cloneExtra(doc.Extra),
 	}
 
 	// Deep copy CohortDefinition (json.RawMessage is a []byte)
@@ -266,6 +282,7 @@ func deepCopyGroup(group models.AttributeGroup) models.AttributeGroup {
 		Name:           group.Name,
 		GroupReference: group.GroupReference,
 		Attributes:     make([]models.Attribute, len(group.Attributes)),
+		Extra:          cloneExtra(group.Extra),
 	}
 
 	for i, attr := range group.Attributes {
@@ -280,6 +297,7 @@ func deepCopyAttribute(attr models.Attribute) models.Attribute {
 	result := models.Attribute{
 		AttributeRef: attr.AttributeRef,
 		MustHave:     attr.MustHave,
+		Extra:        cloneExtra(attr.Extra),
 	}
 
 	if len(attr.LinkedGroups) > 0 {

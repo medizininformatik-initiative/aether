@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,12 +17,11 @@ import (
 
 // FHIRClient handles sending NDJSON files to a FHIR server
 type FHIRClient struct {
-	url         string
-	batchSize   int
-	auth        models.AuthConfig
-	httpClient  *HTTPClient
-	logger      *lib.Logger
-	MaxLineSize int // Maximum NDJSON line size in bytes; 0 uses models.DefaultMaxNDJSONLineSize
+	url        string
+	batchSize  int
+	auth       models.AuthConfig
+	httpClient *HTTPClient
+	logger     *lib.Logger
 }
 
 // FHIRUploadStats contains statistics from uploading an NDJSON file
@@ -79,22 +79,20 @@ func (c *FHIRClient) UploadNDJSON(filePath string, reader io.Reader) (*FHIRUploa
 		batchSize = 100 // default
 	}
 
-	maxLineSize := c.MaxLineSize
-	if maxLineSize <= 0 {
-		maxLineSize = models.DefaultMaxNDJSONLineSize
-	}
-	scanner := lib.NewNDJSONScannerWithMaxSize(reader, maxLineSize)
-
+	dec := json.NewDecoder(reader)
 	var batch []json.RawMessage
 	stats := &FHIRUploadStats{}
 
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(bytes.TrimSpace(line)) == 0 {
-			continue
+	for {
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return stats, fmt.Errorf("error reading %s: %w", filepath.Base(filePath), err)
 		}
 
-		batch = append(batch, json.RawMessage(line))
+		batch = append(batch, raw)
 
 		if len(batch) >= batchSize {
 			if err := c.sendBatch(batch); err != nil {
@@ -104,10 +102,6 @@ func (c *FHIRClient) UploadNDJSON(filePath string, reader io.Reader) (*FHIRUploa
 			stats.BatchesSent++
 			batch = nil
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return stats, fmt.Errorf("error reading %s: %w", filepath.Base(filePath), err)
 	}
 
 	// Send remaining resources

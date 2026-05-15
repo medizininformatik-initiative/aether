@@ -114,10 +114,6 @@ pipeline:
     - wait          # Pause for inspection (optional)
     - flattening    # FHIR to CSV (requires CRTDL)
     - send          # Upload to destination
-
-  # Max NDJSON line size in MB (default: 100)
-  # Increase if you encounter "token too long" errors with large Bundles
-  # max_ndjson_line_size_mb: 100
 ```
 
 ### Step Placement Rules

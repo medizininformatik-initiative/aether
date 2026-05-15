@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
@@ -118,7 +118,7 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 		"job_id", job.JobID)
 
 	// Pass 1: scan input files for provenance index
-	provenanceIndex, err := scanProvenanceIndex(files, logger, job.Config.Pipeline.MaxNDJSONLineSize())
+	provenanceIndex, err := scanProvenanceIndex(files)
 	if err != nil {
 		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
 		recordStepError(step, err, models.ErrorTypeNonTransient)
@@ -183,7 +183,6 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 		flattenerClient,
 		csvWriter,
 		logger,
-		job.Config.Pipeline.MaxNDJSONLineSize(),
 		job.Config.Services.Flattening.GetBatchSizeBytes(),
 	)
 	if err != nil {
@@ -224,45 +223,22 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 // scanProvenanceIndex performs a lightweight first pass over all input files,
 // extracting only Provenance resources from Bundles to build the provenance index.
 // Clinical resources are discarded to keep memory usage minimal.
-func scanProvenanceIndex(files []string, logger *lib.Logger, maxLineSize int) (models.ProvenanceIndex, error) {
+func scanProvenanceIndex(files []string) (models.ProvenanceIndex, error) {
 	mergedIndex := make(models.ProvenanceIndex)
 
 	for _, filePath := range files {
-		reader, err := lib.OpenFileForReading(filePath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), fmt.Errorf("failed to open file: %w", err))
-		}
-
-		scanner := lib.NewNDJSONScannerWithMaxSize(reader, maxLineSize)
-		lineNum := 0
-
-		for scanner.Scan() {
-			lineNum++
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" {
-				continue
-			}
-
-			var resource map[string]any
-			if err := json.Unmarshal([]byte(line), &resource); err != nil {
-				continue // skip invalid JSON during provenance scan
-			}
-
-			// Only Bundles contain Provenance resources
-			if resourceType, ok := resource["resourceType"].(string); ok && resourceType == "Bundle" {
+		_, err := lib.ReadNDJSONFile(filePath, func(resource lib.FHIRResource) error {
+			if rt, ok := resource["resourceType"].(string); ok && rt == "Bundle" {
 				_, bundleIndex := extractBundleResources(resource)
 				for k, v := range bundleIndex {
 					mergedIndex[k] = append(mergedIndex[k], v...)
 				}
 			}
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), err)
 		}
-
-		if err := scanner.Err(); err != nil {
-			_ = reader.Close()
-			return nil, fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), fmt.Errorf("error reading file: %w", err))
-		}
-
-		_ = reader.Close()
 	}
 
 	return mergedIndex, nil
@@ -282,7 +258,6 @@ func streamAndFlattenResources(
 	flattenerClient *services.FlattenerClient,
 	csvWriter *services.CSVWriter,
 	logger *lib.Logger,
-	maxLineSize int,
 	batchSizeBytes int,
 ) ([]int, error) {
 	numGroups := len(groups)
@@ -302,75 +277,65 @@ func streamAndFlattenResources(
 
 	// Stream through all files
 	for _, filePath := range files {
-		reader, err := lib.OpenFileForReading(filePath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load resources: %w", fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), fmt.Errorf("failed to open file: %w", err)))
-		}
-
-		scanner := lib.NewNDJSONScannerWithMaxSize(reader, maxLineSize)
-		lineNum := 0
-
-		for scanner.Scan() {
-			lineNum++
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" {
-				continue
+		err := func() error {
+			reader, err := lib.OpenFileForReading(filePath)
+			if err != nil {
+				return fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), err)
 			}
+			defer func() { _ = reader.Close() }()
 
-			var resource map[string]any
-			if err := json.Unmarshal([]byte(line), &resource); err != nil {
-				logger.Warn("Failed to parse resource",
-					"file", filepath.Base(filePath),
-					"line", lineNum,
-					"error", err)
-				continue
-			}
+			dec := json.NewDecoder(reader)
 
-			// If resource is a Bundle, extract clinical entries (skip Provenance)
-			if resourceType, ok := resource["resourceType"].(string); ok && resourceType == "Bundle" {
-				clinicalResources, _ := extractBundleResources(resource)
-				for _, entryResource := range clinicalResources {
-					entryBytes, marshalErr := json.Marshal(entryResource)
-					if marshalErr != nil {
-						continue
+			for {
+				startOffset := dec.InputOffset()
+				var resource map[string]any
+				if err := dec.Decode(&resource); err != nil {
+					if errors.Is(err, io.EOF) {
+						return nil
 					}
-					for _, groupIdx := range routeResourceToGroups(entryResource, provenanceIndex, groupIDToIndex, viewDefs) {
-						batches[groupIdx].resources = append(batches[groupIdx].resources, entryResource)
-						batches[groupIdx].byteSize += len(entryBytes)
+					return fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), err)
+				}
+				resourceSize := int(dec.InputOffset() - startOffset)
+
+				// If resource is a Bundle, extract clinical entries (skip Provenance)
+				if resourceType, ok := resource["resourceType"].(string); ok && resourceType == "Bundle" {
+					clinicalResources, _ := extractBundleResources(resource)
+					for _, entryResource := range clinicalResources {
+						entryBytes, marshalErr := json.Marshal(entryResource)
+						if marshalErr != nil {
+							continue
+						}
+						for _, groupIdx := range routeResourceToGroups(entryResource, provenanceIndex, groupIDToIndex, viewDefs) {
+							batches[groupIdx].resources = append(batches[groupIdx].resources, entryResource)
+							batches[groupIdx].byteSize += len(entryBytes)
+							totals[groupIdx]++
+
+							if batches[groupIdx].byteSize >= perGroupBytes {
+								if err := flushGroupBatch(&batches[groupIdx], viewDefs[groupIdx], headers[groupIdx], filenames[groupIdx], flattenerClient, csvWriter, logger, groups[groupIdx].Name); err != nil {
+									return err
+								}
+							}
+						}
+					}
+				} else {
+					// Non-Bundle resource: route via provenance index
+					for _, groupIdx := range routeResourceToGroups(resource, provenanceIndex, groupIDToIndex, viewDefs) {
+						batches[groupIdx].resources = append(batches[groupIdx].resources, resource)
+						batches[groupIdx].byteSize += resourceSize
 						totals[groupIdx]++
 
 						if batches[groupIdx].byteSize >= perGroupBytes {
 							if err := flushGroupBatch(&batches[groupIdx], viewDefs[groupIdx], headers[groupIdx], filenames[groupIdx], flattenerClient, csvWriter, logger, groups[groupIdx].Name); err != nil {
-								_ = reader.Close()
-								return nil, err
+								return err
 							}
 						}
 					}
 				}
-			} else {
-				// Non-Bundle resource: route via provenance index
-				resourceSize := len(scanner.Bytes())
-				for _, groupIdx := range routeResourceToGroups(resource, provenanceIndex, groupIDToIndex, viewDefs) {
-					batches[groupIdx].resources = append(batches[groupIdx].resources, resource)
-					batches[groupIdx].byteSize += resourceSize
-					totals[groupIdx]++
-
-					if batches[groupIdx].byteSize >= perGroupBytes {
-						if err := flushGroupBatch(&batches[groupIdx], viewDefs[groupIdx], headers[groupIdx], filenames[groupIdx], flattenerClient, csvWriter, logger, groups[groupIdx].Name); err != nil {
-							_ = reader.Close()
-							return nil, err
-						}
-					}
-				}
 			}
+		}()
+		if err != nil {
+			return nil, err
 		}
-
-		if err := scanner.Err(); err != nil {
-			_ = reader.Close()
-			return nil, fmt.Errorf("failed to load resources: %w", fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), fmt.Errorf("error reading file: %w", err)))
-		}
-
-		_ = reader.Close()
 	}
 
 	// Flush remaining non-empty batches
@@ -449,12 +414,12 @@ func flushGroupBatch(
 // LoadAllResources loads all FHIR resources from the given NDJSON files.
 // Returns clinical resources (excluding Provenance) and a provenance index
 // that maps resource references to CRTDL attribute group IDs.
-func LoadAllResources(files []string, logger *lib.Logger, maxLineSize int) ([]map[string]any, models.ProvenanceIndex, error) {
+func LoadAllResources(files []string, logger *lib.Logger) ([]map[string]any, models.ProvenanceIndex, error) {
 	var allResources []map[string]any
 	mergedIndex := make(models.ProvenanceIndex)
 
 	for _, filePath := range files {
-		resources, index, err := LoadResourcesFromFile(filePath, logger, maxLineSize)
+		resources, index, err := LoadResourcesFromFile(filePath, logger)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), err)
 		}
@@ -471,7 +436,7 @@ func LoadAllResources(files []string, logger *lib.Logger, maxLineSize int) ([]ma
 // Handles both compressed (.ndjson.zst) and uncompressed (.ndjson) files.
 // For Bundles, Provenance resources are separated into a provenance index
 // and excluded from the returned resource list.
-func LoadResourcesFromFile(filePath string, logger *lib.Logger, maxLineSize int) ([]map[string]any, models.ProvenanceIndex, error) {
+func LoadResourcesFromFile(filePath string, logger *lib.Logger) ([]map[string]any, models.ProvenanceIndex, error) {
 	reader, err := lib.OpenFileForReading(filePath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to open file: %w", err)
@@ -480,21 +445,24 @@ func LoadResourcesFromFile(filePath string, logger *lib.Logger, maxLineSize int)
 
 	var resources []map[string]any
 	index := make(models.ProvenanceIndex)
-	scanner := lib.NewNDJSONScannerWithMaxSize(reader, maxLineSize)
+	dec := json.NewDecoder(reader)
+	resourceNum := 0
 
-	lineNum := 0
-	for scanner.Scan() {
-		lineNum++
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
+	for {
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, nil, fmt.Errorf("error reading file: %w", err)
 		}
+		resourceNum++
 
 		var resource map[string]any
-		if err := json.Unmarshal([]byte(line), &resource); err != nil {
+		if err := json.Unmarshal(raw, &resource); err != nil {
 			logger.Warn("Failed to parse resource",
 				"file", filepath.Base(filePath),
-				"line", lineNum,
+				"resource_number", resourceNum,
 				"error", err)
 			continue
 		}
@@ -509,10 +477,6 @@ func LoadResourcesFromFile(filePath string, logger *lib.Logger, maxLineSize int)
 		} else {
 			resources = append(resources, resource)
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, nil, fmt.Errorf("error reading file: %w", err)
 	}
 
 	return resources, index, nil

@@ -62,7 +62,6 @@ services:
 
 pipeline:
   enabled_steps: [string]
-  max_ndjson_line_size_mb: integer           # default: 100
 
 retry:
   max_attempts: integer                  # 1-10, default: 5
@@ -312,13 +311,11 @@ pipeline:
     - local_import
     - dimp
     - flattening
-  max_ndjson_line_size_mb: 100
 ```
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `enabled_steps` | []string | - | Pipeline steps to execute in order |
-| `max_ndjson_line_size_mb` | int | 100 | Maximum NDJSON line size in MB. Increase if you encounter "token too long" errors when reading large FHIR Bundles. Set to 0 to use default. |
 
 **Available steps:**
 

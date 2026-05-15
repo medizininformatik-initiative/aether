@@ -2,10 +2,11 @@ package pipeline
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
@@ -171,24 +172,22 @@ func processDIMPFile(inputFile, outputFile string, dimpClient *services.DIMPClie
 	thresholdBytes := thresholdMB * 1024 * 1024
 
 	processor := NewResourceProcessor(dimpClient, logger, thresholdBytes, inputFile)
-	scanner := lib.NewNDJSONScannerWithMaxSize(fileCtx.InFile, job.Config.Pipeline.MaxNDJSONLineSize())
+	dec := json.NewDecoder(fileCtx.InFile)
 
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-
+	for {
 		var resource map[string]any
-		if err := json.Unmarshal([]byte(line), &resource); err != nil {
+		if err := dec.Decode(&resource); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			if progressBar != nil {
 				_ = progressBar.Clear()
 			}
 			logger.Error("Failed to parse FHIR resource",
 				"file", filepath.Base(inputFile),
-				"line_number", processor.GetResourceCount()+1,
+				"resource_number", processor.GetResourceCount()+1,
 				"error", err)
-			return processor.GetResourceCount(), fmt.Errorf("failed to parse resource at line %d: %w", processor.GetResourceCount()+1, err)
+			return processor.GetResourceCount(), fmt.Errorf("failed to parse resource %d: %w", processor.GetResourceCount()+1, err)
 		}
 
 		resourceType, _ := resource["resourceType"].(string)
@@ -196,11 +195,12 @@ func processDIMPFile(inputFile, outputFile string, dimpClient *services.DIMPClie
 
 		logger.Debug("Processing FHIR resource",
 			"file", filepath.Base(inputFile),
-			"line_number", processor.GetResourceCount()+1,
+			"resource_number", processor.GetResourceCount()+1,
 			"resourceType", resourceType,
 			"id", resourceID)
 
 		var pseudonymized map[string]any
+		var err error
 
 		if resourceType == "Bundle" {
 			pseudonymized, err = processor.ProcessBundle(resource, resourceID)
@@ -214,7 +214,7 @@ func processDIMPFile(inputFile, outputFile string, dimpClient *services.DIMPClie
 			}
 
 			fmt.Printf("\n✗ DIMP pseudonymization failed\n")
-			fmt.Printf("  File: %s (line %d)\n", filepath.Base(inputFile), processor.GetResourceCount()+1)
+			fmt.Printf("  File: %s (resource %d)\n", filepath.Base(inputFile), processor.GetResourceCount()+1)
 			fmt.Printf("  Resource: %s/%s\n", resourceType, resourceID)
 			fmt.Printf("  Error: %v\n\n", err)
 
@@ -230,10 +230,6 @@ func processDIMPFile(inputFile, outputFile string, dimpClient *services.DIMPClie
 		if progressBar != nil {
 			_ = progressBar.Add(1)
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return processor.GetResourceCount(), fmt.Errorf("error reading file: %w", err)
 	}
 
 	if progressBar != nil {

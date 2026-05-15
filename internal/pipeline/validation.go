@@ -3,7 +3,9 @@ package pipeline
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -190,27 +192,18 @@ func validateFile(inputFile, reportFile string, client *services.ValidationClien
 	defer func() { _ = inFile.Close() }()
 
 	// Parse all resources from NDJSON
-	scanner := lib.NewNDJSONScanner(inFile)
+	dec := json.NewDecoder(inFile)
 	var resources []map[string]any
-	lineNum := 0
 
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-
+	for {
 		var resource map[string]any
-		if err := json.Unmarshal([]byte(line), &resource); err != nil {
-			return lineNum, 0, fmt.Errorf("failed to parse resource at line %d: %w", lineNum+1, err)
+		if err := dec.Decode(&resource); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return len(resources), 0, fmt.Errorf("failed to parse resource %d: %w", len(resources)+1, err)
 		}
-
 		resources = append(resources, resource)
-		lineNum++
-	}
-
-	if err := scanner.Err(); err != nil {
-		return 0, 0, fmt.Errorf("error reading file: %w", err)
 	}
 
 	if len(resources) == 0 {

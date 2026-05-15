@@ -237,12 +237,6 @@ pipeline:
     - flattening      # Transform FHIR to CSV using fhir-flattener (CRTDL input only)
     # - send           # Uncomment to send data to DSF transfer server
 
-  # Maximum NDJSON line size in megabytes (MB)
-  # FHIR Bundles with many resources can produce very large single-line JSON objects.
-  # Increase this if you encounter "token too long" errors when reading NDJSON files.
-  # Default: 100 MB (omit or set to 0 for default)
-  # max_ndjson_line_size_mb: 100
-
 retry:
   # Maximum number of retry attempts for transient errors (network, 5xx)
   # Range: 1-10

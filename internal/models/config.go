@@ -306,23 +306,9 @@ func (c *SendConfig) GetBatchSize() int {
 	return c.BatchSize
 }
 
-// DefaultMaxNDJSONLineSize is the default maximum line size for NDJSON scanning (100MB).
-// FHIR Bundles with hundreds of resources can produce multi-megabyte lines.
-const DefaultMaxNDJSONLineSize = 100 * 1024 * 1024
-
 // PipelineConfig defines which steps are enabled and their execution order
 type PipelineConfig struct {
-	EnabledSteps        []StepName `yaml:"enabled_steps" json:"enabled_steps"`
-	MaxNDJSONLineSizeMB int        `yaml:"max_ndjson_line_size_mb" json:"max_ndjson_line_size_mb" mapstructure:"max_ndjson_line_size_mb"`
-}
-
-// MaxNDJSONLineSize returns the maximum NDJSON line size in bytes.
-// Defaults to DefaultMaxNDJSONLineSize (100MB) if not configured.
-func (c PipelineConfig) MaxNDJSONLineSize() int {
-	if c.MaxNDJSONLineSizeMB <= 0 {
-		return DefaultMaxNDJSONLineSize
-	}
-	return c.MaxNDJSONLineSizeMB * 1024 * 1024
+	EnabledSteps []StepName `yaml:"enabled_steps" json:"enabled_steps"`
 }
 
 // RetryConfig controls retry behavior for transient errors

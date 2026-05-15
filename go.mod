@@ -1,6 +1,8 @@
 module github.com/medizininformatik-initiative/aether
 
-go 1.25
+go 1.26
+
+toolchain go1.26.3
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.7

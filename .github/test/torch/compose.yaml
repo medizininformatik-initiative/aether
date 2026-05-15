@@ -7,7 +7,7 @@ services:
   torch-proxy:
       networks: [ "aether", "torch" ]
       restart: unless-stopped
-      image: nginxinc/nginx-unprivileged:1.30-alpine@sha256:9d4ab2b70ec4b86e8576f783066d178d4725dc8c4b3bd060cb09f6d058ba9291
+      image: nginxinc/nginx-unprivileged:1.30-alpine@sha256:2c5a98dcd9bfb568fd6a305e0637f0410beafdbf644443112ab47d6a713ba43e
       ports: [ ":80" ]
       volumes:
         - ./torch.nginx.conf:/etc/nginx/nginx.conf

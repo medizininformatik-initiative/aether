@@ -71,7 +71,7 @@ services:
 
 The `create_if_not_exists` option creates the group in the CRTDL if it doesn't already exist. This is useful for groups like `PatientPseudonymisiert` that may not be part of the original research query but are needed by DIMP.
 
-Enrichment rules can also be loaded from an external JSON file. See [CRTDL Preprocessing](../api-reference/config-reference.md.json-preprocessing) in the configuration reference for details.
+Enrichment rules can also be loaded from an external JSON file. See [CRTDL Preprocessing](../api-reference/config-reference.md#crtdl-preprocessing) in the configuration reference for details.
 
 ## Large Bundles
 

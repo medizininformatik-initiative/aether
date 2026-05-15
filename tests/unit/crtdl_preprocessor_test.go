@@ -1070,3 +1070,158 @@ func TestLoadEnrichments_FromFile_SnakeCaseRejected(t *testing.T) {
 	require.Error(t, err, "snake_case fields in JSON file should be rejected")
 	assert.Contains(t, err.Error(), "snake_case", "error should mention snake_case")
 }
+
+// --- Unknown Field Preservation (Issue #356) ---
+
+// TestEnrichCRTDL_PreservesUnknownAttributeGroupField verifies that fields
+// not modeled by the AttributeGroup struct (e.g. includeReferenceOnly) survive
+// the unmarshal → enrich → marshal round-trip.
+func TestEnrichCRTDL_PreservesUnknownAttributeGroupField(t *testing.T) {
+	rawCRTDL := `{
+		"version": "http://json-schema.org/to-be-done/schema#",
+		"display": "",
+		"dataExtraction": {
+			"attributeGroups": [
+				{
+					"id": "med-group",
+					"name": "Medication",
+					"groupReference": "https://example.org/Medication",
+					"includeReferenceOnly": true,
+					"attributes": [
+						{"attributeRef": "Medication.code", "mustHave": false}
+					]
+				}
+			]
+		}
+	}`
+
+	var doc models.CRTDLDocument
+	require.NoError(t, json.Unmarshal([]byte(rawCRTDL), &doc))
+
+	enrichments := []models.GroupEnrichment{
+		{
+			GroupReference: "https://example.org/Medication",
+			AttributesToAdd: []models.EnrichmentAttribute{
+				{AttributeRef: "Medication.ingredient", MustHave: false},
+			},
+		},
+	}
+
+	enriched, err := services.EnrichCRTDL(doc, enrichments)
+	require.NoError(t, err)
+
+	out, err := json.Marshal(enriched)
+	require.NoError(t, err)
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(out, &got))
+	groups := got["dataExtraction"].(map[string]any)["attributeGroups"].([]any)
+	require.Len(t, groups, 1)
+	medGroup := groups[0].(map[string]any)
+	assert.Equal(t, true, medGroup["includeReferenceOnly"],
+		"includeReferenceOnly must be preserved through enrichment")
+
+	attrs := medGroup["attributes"].([]any)
+	assert.Len(t, attrs, 2, "enrichment should still have added attribute")
+}
+
+// TestEnrichCRTDL_PreservesUnknownAttributeField verifies that unknown fields
+// at the Attribute level survive enrichment.
+func TestEnrichCRTDL_PreservesUnknownAttributeField(t *testing.T) {
+	rawCRTDL := `{
+		"dataExtraction": {
+			"attributeGroups": [
+				{
+					"id": "p",
+					"name": "Patient",
+					"groupReference": "https://example.org/Patient",
+					"attributes": [
+						{
+							"attributeRef": "Patient.id",
+							"mustHave": true,
+							"customExtension": "preserveMe"
+						}
+					]
+				}
+			]
+		}
+	}`
+
+	var doc models.CRTDLDocument
+	require.NoError(t, json.Unmarshal([]byte(rawCRTDL), &doc))
+
+	enriched, err := services.EnrichCRTDL(doc, []models.GroupEnrichment{
+		{
+			GroupReference: "https://example.org/Patient",
+			AttributesToAdd: []models.EnrichmentAttribute{
+				{AttributeRef: "Patient.gender", MustHave: false},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	out, err := json.Marshal(enriched)
+	require.NoError(t, err)
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(out, &got))
+	attrs := got["dataExtraction"].(map[string]any)["attributeGroups"].([]any)[0].(map[string]any)["attributes"].([]any)
+	var patientID map[string]any
+	for _, a := range attrs {
+		m := a.(map[string]any)
+		if m["attributeRef"] == "Patient.id" {
+			patientID = m
+			break
+		}
+	}
+	require.NotNil(t, patientID, "Patient.id attribute should exist")
+	assert.Equal(t, "preserveMe", patientID["customExtension"],
+		"unknown attribute-level field must be preserved")
+}
+
+// TestCRTDLDocument_RoundTripPreservesUnknownFieldsAllLevels verifies a plain
+// JSON round-trip preserves unknown fields at all four document levels.
+func TestCRTDLDocument_RoundTripPreservesUnknownFieldsAllLevels(t *testing.T) {
+	raw := `{
+		"display": "x",
+		"version": "v1",
+		"topLevelExtra": "doc-level",
+		"dataExtraction": {
+			"sectionExtra": "section-level",
+			"attributeGroups": [
+				{
+					"id": "g",
+					"name": "G",
+					"groupReference": "https://example.org/G",
+					"groupExtra": "group-level",
+					"includeReferenceOnly": true,
+					"attributes": [
+						{
+							"attributeRef": "G.id",
+							"mustHave": true,
+							"attrExtra": "attr-level"
+						}
+					]
+				}
+			]
+		}
+	}`
+
+	var doc models.CRTDLDocument
+	require.NoError(t, json.Unmarshal([]byte(raw), &doc))
+
+	out, err := json.Marshal(doc)
+	require.NoError(t, err)
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(out, &got))
+
+	assert.Equal(t, "doc-level", got["topLevelExtra"], "doc-level unknown field preserved")
+	de := got["dataExtraction"].(map[string]any)
+	assert.Equal(t, "section-level", de["sectionExtra"], "dataExtraction-level unknown field preserved")
+	group := de["attributeGroups"].([]any)[0].(map[string]any)
+	assert.Equal(t, "group-level", group["groupExtra"], "group-level unknown field preserved")
+	assert.Equal(t, true, group["includeReferenceOnly"], "includeReferenceOnly preserved")
+	attr := group["attributes"].([]any)[0].(map[string]any)
+	assert.Equal(t, "attr-level", attr["attrExtra"], "attribute-level unknown field preserved")
+}

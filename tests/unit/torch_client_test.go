@@ -370,6 +370,140 @@ func TestTORCHClient_PollExtractionStatus_DiagnosticsNotRepeated(t *testing.T) {
 	assert.Equal(t, 4, pollCount)
 }
 
+// captureStdoutForTest redirects os.Stdout to a pipe and returns a closure that
+// stops capture and returns the buffered output. Spinner output is written via
+// fmt.Printf to os.Stdout, so this is the only practical way to assert on it
+// without changing the Spinner's package-private write path.
+func captureStdoutForTest(t *testing.T) func() string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = w
+	return func() string {
+		_ = w.Close()
+		os.Stdout = old
+		buf, _ := io.ReadAll(r)
+		return string(buf)
+	}
+}
+
+// Regression for issue #384: TORCH reports an in-progress diagnostic
+// (e.g., "cohort Size: 0") via OperationOutcome on early polls, then transitions
+// to HTTP 200 without any further diagnostic. The success completion line must
+// not echo that stale in-progress text.
+func TestTORCHClient_PollExtractionStatus_CompletionLineDoesNotShowStaleDiagnostic(t *testing.T) {
+	pollCount := 0
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pollCount++
+		if pollCount == 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"resourceType": "OperationOutcome",
+				"issue": []map[string]any{
+					{
+						"severity":    "information",
+						"code":        "informational",
+						"diagnostics": "cohort Size: 0",
+					},
+				},
+			})
+			return
+		}
+		result := map[string]any{
+			"resourceType": "Parameters",
+			"parameter": []map[string]any{
+				{
+					"name": "output",
+					"part": []map[string]any{
+						{"name": "url", "valueUrl": serverURL + "/output/result.ndjson"},
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(result)
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:            server.URL,
+		Username:           "testuser",
+		Password:           "testpass",
+		ExtractionTimeout:  1 * time.Minute,
+		PollingInterval:    50 * time.Millisecond,
+		MaxPollingInterval: 100 * time.Millisecond,
+	}
+
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+
+	read := captureStdoutForTest(t)
+	urls, err := client.PollExtractionStatus(server.URL+"/fhir/extraction/job-123", true)
+	output := read()
+
+	require.NoError(t, err)
+	require.Len(t, urls, 1)
+
+	// The spinner uses \r (not \n) for in-progress updates, so the stale
+	// "cohort Size: 0" diagnostic and the final completion text share a single
+	// line in the captured output. Extract only the segment starting at the
+	// success marker "✓ " — that is what the terminal renders to the user
+	// after the spinner stops.
+	markerIdx := strings.Index(output, "✓ ")
+	require.GreaterOrEqual(t, markerIdx, 0, "expected success marker in output: %q", output)
+	completionSegment := output[markerIdx:]
+	if nl := strings.Index(completionSegment, "\n"); nl >= 0 {
+		completionSegment = completionSegment[:nl]
+	}
+	assert.NotContains(t, completionSegment, "cohort Size: 0", "completion line must not echo stale progress diagnostic")
+	assert.Contains(t, completionSegment, "TORCH extraction complete", "completion line should show a meaningful summary")
+	assert.Contains(t, completionSegment, "1 file", "completion line should report the file count")
+}
+
+// Regression: failure paths in PollExtractionStatus historically deferred
+// spinner.Stop(true), printing a success marker even on server errors. The
+// failure marker "✗" must be printed when the poll returns a non-recoverable
+// error response.
+func TestTORCHClient_PollExtractionStatus_FailureShowsFailureMarker(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"resourceType": "OperationOutcome",
+			"issue": []map[string]any{
+				{"severity": "error", "code": "processing", "diagnostics": "boom"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:            server.URL,
+		Username:           "testuser",
+		Password:           "testpass",
+		ExtractionTimeout:  1 * time.Minute,
+		PollingInterval:    50 * time.Millisecond,
+		MaxPollingInterval: 100 * time.Millisecond,
+	}
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+
+	read := captureStdoutForTest(t)
+	_, err := client.PollExtractionStatus(server.URL+"/fhir/extraction/job-123", true)
+	output := read()
+
+	require.Error(t, err)
+	assert.Contains(t, output, "✗", "failure path should print failure marker")
+	assert.NotContains(t, output, "✓", "failure path must not print success marker")
+}
+
 func TestTORCHClient_PollExtractionStatus_EmptyOutput(t *testing.T) {
 	// Mock TORCH server that returns success but with empty output array
 	// This happens when CRTDL query matches no data
@@ -1834,4 +1968,93 @@ func TestTORCHClient_SubmitExtractionWithContent_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, server.URL+"/fhir/extraction/job-enriched123", extractionURL)
+}
+
+// Regression: the spinner completion line must use the plural "N files" label
+// when the TORCH extraction yields more than one output file. Covers the
+// plural branch of filesLabel.
+func TestTORCHClient_PollExtractionStatus_PluralFilesLabel(t *testing.T) {
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		result := map[string]any{
+			"resourceType": "Parameters",
+			"parameter": []map[string]any{
+				{
+					"name": "output",
+					"part": []map[string]any{
+						{"name": "url", "valueUrl": serverURL + "/output/result-1.ndjson"},
+					},
+				},
+				{
+					"name": "output",
+					"part": []map[string]any{
+						{"name": "url", "valueUrl": serverURL + "/output/result-2.ndjson"},
+					},
+				},
+				{
+					"name": "output",
+					"part": []map[string]any{
+						{"name": "url", "valueUrl": serverURL + "/output/result-3.ndjson"},
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(result)
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:            server.URL,
+		Username:           "testuser",
+		Password:           "testpass",
+		ExtractionTimeout:  1 * time.Minute,
+		PollingInterval:    50 * time.Millisecond,
+		MaxPollingInterval: 100 * time.Millisecond,
+	}
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+
+	read := captureStdoutForTest(t)
+	urls, err := client.PollExtractionStatus(server.URL+"/fhir/extraction/job-123", true)
+	output := read()
+
+	require.NoError(t, err)
+	require.Len(t, urls, 3)
+
+	markerIdx := strings.Index(output, "✓ ")
+	require.GreaterOrEqual(t, markerIdx, 0, "expected success marker in output: %q", output)
+	completionSegment := output[markerIdx:]
+	if nl := strings.Index(completionSegment, "\n"); nl >= 0 {
+		completionSegment = completionSegment[:nl]
+	}
+	assert.Contains(t, completionSegment, "3 files", "completion line should use plural file label")
+	assert.NotContains(t, completionSegment, "1 file ", "completion line should not use singular file label")
+}
+
+// PollExtractionStatus should surface an error when the extraction URL cannot
+// be turned into a valid HTTP request (e.g., invalid URL escape). Covers the
+// createPollRequest error branch.
+func TestTORCHClient_PollExtractionStatus_InvalidURLError(t *testing.T) {
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:            "http://unused.invalid",
+		Username:           "testuser",
+		Password:           "testpass",
+		ExtractionTimeout:  1 * time.Minute,
+		PollingInterval:    50 * time.Millisecond,
+		MaxPollingInterval: 100 * time.Millisecond,
+	}
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+
+	// "%%" is an invalid percent-escape sequence: http.NewRequest -> url.Parse
+	// rejects it with `invalid URL escape "%%"`.
+	_, err := client.PollExtractionStatus("http://example.com/%%", false)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to create poll request")
 }

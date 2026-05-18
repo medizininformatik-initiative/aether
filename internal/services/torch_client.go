@@ -301,21 +301,32 @@ func (c *TORCHClient) SubmitExtractionWithContent(crtdlContent []byte) (string, 
 // Returns the list of file URLs when extraction is complete
 // Per TORCH API: GET Content-Location URL until HTTP 200, handle HTTP 202 as in-progress
 // Uses spinner for polling (duration unknown until extraction completes)
-func (c *TORCHClient) PollExtractionStatus(extractionURL string, showProgress bool) ([]string, error) {
+func (c *TORCHClient) PollExtractionStatus(extractionURL string, showProgress bool) (fileURLs []string, err error) {
 	c.logger.Info("Polling TORCH extraction status", "url", extractionURL)
 
 	// Setup polling configuration
 	pollConfig := NewPollConfig(c.config)
 
-	// Start spinner for polling (duration unknown)
+	// Start spinner for polling (duration unknown).
+	// UpdateMessage during polling overwrites the spinner's description with the
+	// most recent TORCH progress diagnostic, which can be a stale in-progress
+	// value (e.g., "cohort Size: 0") by the time the extraction completes. The
+	// deferred Stop is therefore primed with a definitive final message based on
+	// the actual outcome before the named return values are observed.
 	var spinner *ui.Spinner
 	if showProgress {
 		spinner = ui.NewSpinner("Waiting for TORCH extraction to complete")
 		spinner.Start()
 		defer func() {
-			if spinner != nil {
-				spinner.Stop(true)
+			if spinner == nil {
+				return
 			}
+			if err == nil {
+				spinner.UpdateMessage(fmt.Sprintf("TORCH extraction complete (%s)", filesLabel(len(fileURLs))))
+			} else {
+				spinner.UpdateMessage("TORCH extraction failed")
+			}
+			spinner.Stop(err == nil)
 		}()
 	}
 
@@ -335,32 +346,32 @@ func (c *TORCHClient) PollExtractionStatus(extractionURL string, showProgress bo
 		c.logger.Debug("Polling TORCH extraction", "attempt", pollConfig.PollCount, "interval", pollConfig.PollInterval)
 
 		// Create poll request with authentication
-		req, err := createPollRequest(extractionURL, c)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create poll request: %w", err)
+		req, reqErr := createPollRequest(extractionURL, c)
+		if reqErr != nil {
+			return nil, fmt.Errorf("failed to create poll request: %w", reqErr)
 		}
 
 		// Send request
-		resp, err := c.httpClient.client.Do(req)
-		if err != nil {
+		resp, doErr := c.httpClient.client.Do(req)
+		if doErr != nil {
 			// Treat transient HTTP errors (timeouts, connection resets) as recoverable
 			// during polling — the extraction may still be running on the server.
 			// The overall extraction timeout provides the safety net.
-			c.logger.Warn("TORCH poll request failed, will retry", "error", err, "attempt", pollConfig.PollCount)
+			c.logger.Warn("TORCH poll request failed, will retry", "error", doErr, "attempt", pollConfig.PollCount)
 			time.Sleep(pollConfig.PollInterval)
 			pollConfig.UpdateInterval()
 			continue
 		}
 
 		// Handle response
-		complete, fileURLs, diagnostics, err := handlePollResponse(resp, c)
-		if err != nil {
-			return nil, err
+		complete, urls, diagnostics, handleErr := handlePollResponse(resp, c)
+		if handleErr != nil {
+			return nil, handleErr
 		}
 
 		if complete {
 			c.logger.Info("TORCH extraction completed", "polls", pollConfig.PollCount)
-			return fileURLs, nil
+			return urls, nil
 		}
 
 		// Log progress diagnostics from OperationOutcome (only when changed)
@@ -376,6 +387,14 @@ func (c *TORCHClient) PollExtractionStatus(extractionURL string, showProgress bo
 		time.Sleep(pollConfig.PollInterval)
 		pollConfig.UpdateInterval()
 	}
+}
+
+// filesLabel returns a singular/plural file label for a count.
+func filesLabel(n int) string {
+	if n == 1 {
+		return "1 file"
+	}
+	return fmt.Sprintf("%d files", n)
 }
 
 // DownloadExtractionFiles downloads all NDJSON files from the extraction result

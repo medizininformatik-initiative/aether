@@ -9,7 +9,10 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
-// CreateJob initializes a new pipeline job.
+// CreateJob initializes a new pipeline job with the given jobID.
+//
+// Callers generate jobID and attach any per-job logging before calling, so
+// CreateJob has no side effects on shared state such as the logger.
 //
 // crtdlPath is the CRTDL file attached to the job; every job carries a CRTDL
 // so it is normally non-empty (the "" case is kept only for tests that
@@ -22,11 +25,8 @@ import (
 //   - Empty string: torch_import submits the CRTDL to TORCH, or local_import
 //     falls back to config.Services.LocalImport.Dir
 //
-// Returns the created job with generated UUID and initialized steps.
-func CreateJob(inputSource string, crtdlPath string, config models.ProjectConfig, logger *lib.Logger) (*models.PipelineJob, error) {
-	// Generate unique job ID with human-readable timestamp prefix
-	jobID := models.GenerateJobID()
-
+// Returns the created job with initialized steps.
+func CreateJob(jobID string, inputSource string, crtdlPath string, config models.ProjectConfig, logger *lib.Logger) (*models.PipelineJob, error) {
 	// Determine input type based on what was provided
 	var inputType models.InputType
 	var err error

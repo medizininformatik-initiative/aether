@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -18,18 +19,62 @@ const (
 	LogLevelError
 )
 
-// Logger provides structured logging for the application
+// Logger provides structured logging for the application.
+//
+// It fans out to two independent sinks: a console sink filtered by the
+// configured level, and an optional per-job file sink that always records full
+// DEBUG output so jobs/<job-id>/job.log is a complete diagnostic record
+// regardless of the console verbosity.
 type Logger struct {
-	level  LogLevel
-	logger *log.Logger
+	level      LogLevel
+	console    *log.Logger
+	fileLogger *log.Logger
+	file       *os.File
 }
 
-// NewLogger creates a new logger instance
+// NewLogger creates a new logger that writes console output to stderr.
 func NewLogger(level LogLevel) *Logger {
+	return NewLoggerWithWriter(level, os.Stderr)
+}
+
+// NewLoggerWithWriter creates a logger whose console sink writes to w. Primarily
+// used for tests that need to capture and assert on console output.
+func NewLoggerWithWriter(level LogLevel, w io.Writer) *Logger {
 	return &Logger{
-		level:  level,
-		logger: log.New(os.Stderr, "", log.LstdFlags),
+		level:   level,
+		console: log.New(w, "", log.LstdFlags),
 	}
+}
+
+// AttachJobLogFile routes a full-DEBUG copy of every log line to the file at
+// path, opened in append mode so repeated runs (e.g. pipeline continue) extend
+// one chronological record. Call Close to release the handle.
+func (l *Logger) AttachJobLogFile(path string) error {
+	// Close any previously attached file so re-attaching never leaks a handle.
+	if l.file != nil {
+		_ = l.file.Close()
+		l.file = nil
+		l.fileLogger = nil
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return fmt.Errorf("opening job log file %s: %w", path, err)
+	}
+	l.file = f
+	l.fileLogger = log.New(f, "", log.LstdFlags)
+	return nil
+}
+
+// Close releases the attached job log file, if any. Safe to call when no file
+// is attached.
+func (l *Logger) Close() error {
+	if l.file == nil {
+		return nil
+	}
+	err := l.file.Close()
+	l.file = nil
+	l.fileLogger = nil
+	return err
 }
 
 // DefaultLogger returns a logger with INFO level
@@ -37,39 +82,39 @@ var DefaultLogger = NewLogger(LogLevelInfo)
 
 // Debug logs a debug message
 func (l *Logger) Debug(message string, fields ...any) {
-	if l.level <= LogLevelDebug {
-		l.log("DEBUG", message, fields...)
-	}
+	l.log(LogLevelDebug, "DEBUG", message, fields...)
 }
 
 // Info logs an informational message
 func (l *Logger) Info(message string, fields ...any) {
-	if l.level <= LogLevelInfo {
-		l.log("INFO", message, fields...)
-	}
+	l.log(LogLevelInfo, "INFO", message, fields...)
 }
 
 // Warn logs a warning message
 func (l *Logger) Warn(message string, fields ...any) {
-	if l.level <= LogLevelWarn {
-		l.log("WARN", message, fields...)
-	}
+	l.log(LogLevelWarn, "WARN", message, fields...)
 }
 
 // Error logs an error message
 func (l *Logger) Error(message string, fields ...any) {
-	if l.level <= LogLevelError {
-		l.log("ERROR", message, fields...)
-	}
+	l.log(LogLevelError, "ERROR", message, fields...)
 }
 
-// log formats and writes a log message with optional fields
-func (l *Logger) log(level string, message string, fields ...any) {
+// log formats a message once and fans it out: to the console only when its
+// severity meets the configured level, and to the attached job log file always.
+func (l *Logger) log(lvl LogLevel, label string, message string, fields ...any) {
 	var fieldsStr string
 	if len(fields) > 0 {
 		fieldsStr = fmt.Sprintf(" | %v", fields)
 	}
-	l.logger.Printf("[%s] %s%s", level, message, fieldsStr)
+	line := fmt.Sprintf("[%s] %s%s", label, message, fieldsStr)
+
+	if lvl >= l.level {
+		l.console.Println(line)
+	}
+	if l.fileLogger != nil {
+		l.fileLogger.Println(line)
+	}
 }
 
 // LogOperation logs the start and completion of an operation

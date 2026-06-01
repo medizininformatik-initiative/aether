@@ -13,6 +13,8 @@ import (
 
 const (
 	StateFileName = "state.json"
+	// JobLogFileName is the per-job log file stored in the job directory.
+	JobLogFileName = "job.log"
 )
 
 // StateFileOps interface for file operations in state management, allowing mocking in tests
@@ -49,6 +51,11 @@ func GetJobDir(jobsBaseDir string, jobID string) string {
 // GetStateFilePath returns the full path to a job's state file
 func GetStateFilePath(jobsBaseDir string, jobID string) string {
 	return filepath.Join(GetJobDir(jobsBaseDir, jobID), StateFileName)
+}
+
+// GetJobLogFilePath returns the full path to a job's log file.
+func GetJobLogFilePath(jobsBaseDir string, jobID string) string {
+	return filepath.Join(GetJobDir(jobsBaseDir, jobID), JobLogFileName)
 }
 
 // LoadJobState reads a job's state from disk

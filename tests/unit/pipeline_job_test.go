@@ -282,13 +282,39 @@ func TestCreateJob_EmptyInputSource(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 
 	// Create job with empty input source
-	job, err := pipeline.CreateJob("", "", config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", "", config, logger)
 
 	require.NoError(t, err, "CreateJob should succeed with empty input source")
 	assert.NotNil(t, job)
 	assert.Equal(t, models.InputTypeLocal, job.InputType, "Input type should be local")
 	assert.Equal(t, "", job.InputSource, "Input source should be empty")
 	assert.Equal(t, string(models.StepLocalImport), job.CurrentStep, "Current step should be local_import")
+}
+
+// TestCreateJob_DoesNotAttachJobLog pins the contract that CreateJob keeps the
+// logger side effect out: attaching per-job logging is the caller's job, so
+// CreateJob must not create job.log on its own.
+func TestCreateJob_DoesNotAttachJobLog(t *testing.T) {
+	tmpDir := t.TempDir()
+	jobsDir := filepath.Join(tmpDir, "jobs")
+
+	config := models.ProjectConfig{
+		JobsDir: jobsDir,
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepLocalImport},
+		},
+		Services: models.ServiceConfig{
+			LocalImport: models.LocalImportConfig{Dir: filepath.Join(tmpDir, "local_import")},
+		},
+	}
+
+	jobID := models.GenerateJobID()
+	_, err := pipeline.CreateJob(jobID, "", "", config, lib.NewLogger(lib.LogLevelDebug))
+	require.NoError(t, err)
+
+	_, statErr := os.Stat(services.GetJobLogFilePath(jobsDir, jobID))
+	assert.True(t, os.IsNotExist(statErr),
+		"CreateJob must not create job.log; the caller owns log attachment")
 }
 
 // TestCreateJob_FailsWhenSaveStateAfterCRTDLPreparationFails covers job.go
@@ -344,7 +370,7 @@ func TestCreateJob_FailsWhenSaveStateAfterCRTDLPreparationFails(t *testing.T) {
 	}
 	services.StateFileOpsProvider = ops
 
-	job, err := pipeline.CreateJob(crtdlPath, "", config, lib.NewLogger(lib.LogLevelDebug))
+	job, err := pipeline.CreateJob(models.GenerateJobID(), crtdlPath, "", config, lib.NewLogger(lib.LogLevelDebug))
 
 	require.Error(t, err, "CreateJob must surface the second SaveJobState failure")
 	assert.Nil(t, job)
@@ -369,7 +395,7 @@ func TestCreateJob_NoImportStepEnabled(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 
 	// Create job - should fail because no import step is enabled
-	job, err := pipeline.CreateJob("/some/path", "", config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "/some/path", "", config, logger)
 
 	require.Error(t, err, "CreateJob should fail when no import step is enabled")
 	assert.Nil(t, job)
@@ -401,7 +427,7 @@ func TestCreateJob_CRTDLFlagWithHTTPInput(t *testing.T) {
 		},
 	}
 
-	job, err := pipeline.CreateJob("https://example.com/data.ndjson", crtdlPath, config, lib.NewLogger(lib.LogLevelDebug))
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "https://example.com/data.ndjson", crtdlPath, config, lib.NewLogger(lib.LogLevelDebug))
 
 	require.NoError(t, err)
 	require.NotNil(t, job)
@@ -429,7 +455,7 @@ func TestCreateJob_TorchCRTDLOnly(t *testing.T) {
 		},
 	}
 
-	job, err := pipeline.CreateJob("", crtdlPath, config, lib.NewLogger(lib.LogLevelDebug))
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", crtdlPath, config, lib.NewLogger(lib.LogLevelDebug))
 
 	require.NoError(t, err)
 	require.NotNil(t, job)
@@ -453,7 +479,7 @@ func TestCreateJob_InvalidCRTDL(t *testing.T) {
 		},
 	}
 
-	job, err := pipeline.CreateJob("https://example.com/data.ndjson", missingCRTDL, config, lib.NewLogger(lib.LogLevelDebug))
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "https://example.com/data.ndjson", missingCRTDL, config, lib.NewLogger(lib.LogLevelDebug))
 
 	require.Error(t, err, "CreateJob must fail when CRTDL file is unreadable")
 	assert.Nil(t, job)
@@ -478,7 +504,7 @@ func TestCreateJob_CRTDLFlagOnlyNoPositional(t *testing.T) {
 		},
 	}
 
-	job, err := pipeline.CreateJob("", crtdlPath, config, lib.NewLogger(lib.LogLevelDebug))
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", crtdlPath, config, lib.NewLogger(lib.LogLevelDebug))
 
 	require.NoError(t, err)
 	require.NotNil(t, job)

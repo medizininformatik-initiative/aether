@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -389,9 +390,21 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 		logLevel = lib.LogLevelDebug
 	}
 	logger := lib.NewLogger(logLevel)
+	defer func() { _ = logger.Close() }()
+
+	// Attach job.log before CreateJob so its diagnostics are captured too. The
+	// caller owns this side effect; Close runs via the defer above.
+	jobID := models.GenerateJobID()
+	jobDir := services.GetJobDir(config.JobsDir, jobID)
+	if err := os.MkdirAll(jobDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create job directory: %w", err)
+	}
+	if err := logger.AttachJobLogFile(services.GetJobLogFilePath(config.JobsDir, jobID)); err != nil {
+		return fmt.Errorf("failed to attach job log file: %w", err)
+	}
 
 	logger.Info("Creating new pipeline job", "crtdl", crtdlPath, "input", inputSource, "localImportDir", config.Services.LocalImport.Dir)
-	job, err := pipeline.CreateJob(inputSource, crtdlPath, *config, logger)
+	job, err := pipeline.CreateJob(jobID, inputSource, crtdlPath, *config, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create job: %w", err)
 	}
@@ -543,11 +556,17 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 		logLevel = lib.LogLevelDebug
 	}
 	logger := lib.NewLogger(logLevel)
+	defer func() { _ = logger.Close() }()
 
 	fmt.Printf("Loading job %s...\n", jobID)
 	job, err := pipeline.LoadJob(config.JobsDir, jobID)
 	if err != nil {
 		return fmt.Errorf("failed to load job: %w", err)
+	}
+
+	// Append this run's logs to the job's existing job.log.
+	if err := logger.AttachJobLogFile(services.GetJobLogFilePath(config.JobsDir, jobID)); err != nil {
+		return fmt.Errorf("failed to attach job log file: %w", err)
 	}
 
 	if job.Status == models.JobStatusCompleted {

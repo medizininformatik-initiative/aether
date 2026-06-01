@@ -153,7 +153,7 @@ func TestPipeline_TORCHExtraction_EndToEnd(t *testing.T) {
 
 	// Create job with CRTDL input
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", crtdlPath, config, logger)
 	require.NoError(t, err)
 
 	// CRTDL is attached via the CRTDL-positional CLI contract, no external
@@ -262,7 +262,7 @@ func TestPipeline_TORCHExtraction_EmptyResult(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", crtdlPath, config, logger)
 	require.NoError(t, err)
 
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
@@ -310,7 +310,7 @@ func TestPipeline_TORCHExtraction_ServerUnavailable(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", crtdlPath, config, logger)
 	require.NoError(t, err)
 
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
@@ -404,7 +404,7 @@ func TestPipeline_DirectTORCHURL_Download(t *testing.T) {
 
 	// Create job with TORCH result URL input
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob(torchResultURL, "", config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), torchResultURL, "", config, logger)
 	require.NoError(t, err)
 
 	// Verify job was created with correct input type
@@ -497,7 +497,7 @@ func TestPipeline_DirectTORCHURL_EmptyResult(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob(torchResultURL, "", config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), torchResultURL, "", config, logger)
 	require.NoError(t, err)
 
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
@@ -759,7 +759,7 @@ func TestPipeline_TORCHExtraction_WithWaitStep_DataModification(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 
 	// Step 1: Create job with CRTDL input
-	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", crtdlPath, config, logger)
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(jobsDir, job.JobID, "crtdl.json"), job.CRTDLPath)
 
@@ -989,7 +989,7 @@ func TestPipeline_TORCHExtraction_WithPreprocessing(t *testing.T) {
 
 	// Create job with CRTDL input
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", crtdlPath, config, logger)
 	require.NoError(t, err)
 
 	// Execute import step (triggers TORCH extraction with preprocessing)
@@ -1159,7 +1159,7 @@ func TestPipeline_TORCHExtraction_JobResumption(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 
 	// PHASE 1: Start extraction (simulate initial job creation)
-	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", crtdlPath, config, logger)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(jobsDir, job.JobID, "crtdl.json"), job.CRTDLPath)
 
@@ -1298,7 +1298,7 @@ func TestPipeline_TORCHExtraction_PreprocessingError_InvalidEnrichmentsPath(t *t
 	// CRTDL is used by every downstream step). An invalid enrichments path
 	// must therefore be reported by CreateJob, not by the import step.
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	_, err := pipeline.CreateJob("", crtdlPath, config, logger)
+	_, err := pipeline.CreateJob(models.GenerateJobID(), "", crtdlPath, config, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "prepare CRTDL", "Error should mention CRTDL preparation failure")
 	assert.Contains(t, err.Error(), "load enrichments", "Error should surface the underlying enrichments-loading failure")
@@ -1422,7 +1422,7 @@ func TestPipeline_TORCHExtraction_PreprocessingDisabled_UsesOriginalCRTDL(t *tes
 
 	// Create job with CRTDL input
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", crtdlPath, config, logger)
 	require.NoError(t, err)
 
 	// Execute import step - should use original CRTDL without preprocessing
@@ -1624,7 +1624,7 @@ func TestPipeline_TORCHExtraction_PreprocessingEnabled_EmptyEnrichments(t *testi
 
 	// Create job with CRTDL input
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	job, err := pipeline.CreateJob("", crtdlPath, config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", crtdlPath, config, logger)
 	require.NoError(t, err)
 
 	// Execute import step - should use original CRTDL content when no enrichments configured

@@ -27,7 +27,7 @@ func TestGetJobOutputDir(t *testing.T) {
 		{models.StepLocalImport, "/tmp/jobs/test-job-123/import"},
 		{models.StepTorchImport, "/tmp/jobs/test-job-123/import"},
 		{models.StepHttpImport, "/tmp/jobs/test-job-123/import"},
-		{models.StepDIMP, "/tmp/jobs/test-job-123/pseudonymized"},
+		{models.StepDIMP, "/tmp/jobs/test-job-123/dimp"},
 		{models.StepFlattening, "/tmp/jobs/test-job-123/csv"},
 		{models.StepSend, "/tmp/jobs/test-job-123/send"},
 		{models.StepWait, "/tmp/jobs/test-job-123"},

@@ -165,7 +165,7 @@ func EnsureJobDirs(jobsBaseDir string, jobID string) (map[models.StepName]string
 		models.StepTorchImport: filepath.Join(jobDir, "import"),
 		models.StepLocalImport: filepath.Join(jobDir, "import"),
 		models.StepHttpImport:  filepath.Join(jobDir, "import"),
-		models.StepDIMP:        filepath.Join(jobDir, "pseudonymized"),
+		models.StepDIMP:        filepath.Join(jobDir, "dimp"),
 		models.StepValidation:  filepath.Join(jobDir, "validation"),
 		models.StepFlattening:  filepath.Join(jobDir, "csv"),
 		models.StepSend:        filepath.Join(jobDir, "send"),
@@ -188,7 +188,7 @@ func GetJobOutputDir(jobsBaseDir string, jobID string, step models.StepName) str
 	case models.StepTorchImport, models.StepLocalImport, models.StepHttpImport:
 		return filepath.Join(jobDir, "import")
 	case models.StepDIMP:
-		return filepath.Join(jobDir, "pseudonymized")
+		return filepath.Join(jobDir, "dimp")
 	case models.StepValidation:
 		return filepath.Join(jobDir, "validation")
 	case models.StepFlattening:

@@ -23,7 +23,7 @@ type groupBatch struct {
 }
 
 // ExecuteFlatteningStep transforms FHIR NDJSON data into CSV files using the fhir-flattener API
-// Reads from pseudonymized/ (if DIMP enabled) or import/ directory
+// Reads from dimp/ (if DIMP enabled) or import/ directory
 // Outputs to csv/ directory
 func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
 	stepName := models.StepFlattening

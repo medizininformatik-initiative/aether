@@ -824,7 +824,7 @@ func TestPipeline_TORCHExtraction_WithWaitStep_DataModification(t *testing.T) {
 	require.NoError(t, err)
 
 	// Step 7: Verify DIMP output contains the MODIFIED data (not the original)
-	pseudonymizedDir := filepath.Join(jobsDir, dimpReadyJob.JobID, "pseudonymized")
+	pseudonymizedDir := filepath.Join(jobsDir, dimpReadyJob.JobID, "dimp")
 	dimpFiles, err := os.ReadDir(pseudonymizedDir)
 	require.NoError(t, err)
 	require.NotEmpty(t, dimpFiles, "Should have pseudonymized output files")

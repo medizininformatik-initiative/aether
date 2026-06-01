@@ -95,7 +95,7 @@ func TestGetWaitStepDir(t *testing.T) {
 		{
 			name:        "After DIMP",
 			prevStep:    models.StepDIMP,
-			expectedDir: "/tmp/jobs/test-job-123/pseudonymized_wait",
+			expectedDir: "/tmp/jobs/test-job-123/dimp_wait",
 		},
 	}
 
@@ -665,10 +665,10 @@ func TestGetStepInputDir_AfterValidation(t *testing.T) {
 			expectedDir: "/tmp/jobs/test-job/import",
 		},
 		{
-			name:        "Step after validation reads from pseudonymized",
+			name:        "Step after validation reads from dimp",
 			steps:       []models.StepName{models.StepLocalImport, models.StepDIMP, models.StepValidation, models.StepFlattening},
 			stepIndex:   3,
-			expectedDir: "/tmp/jobs/test-job/pseudonymized",
+			expectedDir: "/tmp/jobs/test-job/dimp",
 		},
 		{
 			name:        "Validation itself reads from import",
@@ -677,10 +677,10 @@ func TestGetStepInputDir_AfterValidation(t *testing.T) {
 			expectedDir: "/tmp/jobs/test-job/import",
 		},
 		{
-			name:        "Validation reads from pseudonymized after DIMP",
+			name:        "Validation reads from dimp after DIMP",
 			steps:       []models.StepName{models.StepLocalImport, models.StepDIMP, models.StepValidation},
 			stepIndex:   2,
-			expectedDir: "/tmp/jobs/test-job/pseudonymized",
+			expectedDir: "/tmp/jobs/test-job/dimp",
 		},
 	}
 

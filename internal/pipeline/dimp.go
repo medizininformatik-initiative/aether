@@ -16,7 +16,7 @@ import (
 )
 
 // ExecuteDIMPStep processes FHIR resources through the DIMP pseudonymization service
-// Reads from import/ directory, writes to pseudonymized/ directory
+// Reads from import/ directory, writes to dimp/ directory
 // Orchestrates Bundle splitting and oversized resource detection before pseudonymization
 func ExecuteDIMPStep(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
 	stepName := models.StepDIMP
@@ -48,7 +48,7 @@ func ExecuteDIMPStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 	jobID := filepath.Base(jobDir)
 	stepIndex := getStepIndexInEnabledSteps(job.Config.Pipeline.EnabledSteps, stepName)
 	importDir := services.GetStepInputDir(jobsBaseDir, jobID, job.Config.Pipeline.EnabledSteps, stepIndex)
-	outputDir := filepath.Join(jobDir, "pseudonymized")
+	outputDir := filepath.Join(jobDir, "dimp")
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)

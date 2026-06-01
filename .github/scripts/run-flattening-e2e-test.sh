@@ -33,13 +33,13 @@ echo "Creating job: $JOB_ID"
 echo "Setting up pre-staged job state..."
 docker compose exec -T aether-runner sh -c "
     mkdir -p /app/jobs/$JOB_ID/import
-    mkdir -p /app/jobs/$JOB_ID/pseudonymized
+    mkdir -p /app/jobs/$JOB_ID/dimp
 
     # Copy NDJSON files to import directory (original data with Provenance)
     cp /app/example-flattening/testdata/fhir-data.ndjson /app/jobs/$JOB_ID/import/
 
-    # Copy NDJSON files to pseudonymized directory (simulating completed DIMP step)
-    cp /app/example-flattening/testdata/fhir-data.ndjson /app/jobs/$JOB_ID/pseudonymized/
+    # Copy NDJSON files to dimp directory (simulating completed DIMP step)
+    cp /app/example-flattening/testdata/fhir-data.ndjson /app/jobs/$JOB_ID/dimp/
 "
 
 # Create state.json with proper variable expansion

@@ -36,7 +36,7 @@ func TestDIMPConsistency_SplitVsUnsplit(t *testing.T) {
 		jobID := "test-unsplit"
 		jobDir := filepath.Join(tmpDir, "jobs", jobID)
 		importDir := filepath.Join(jobDir, "import")
-		pseudonymizedDir := filepath.Join(jobDir, "pseudonymized")
+		pseudonymizedDir := filepath.Join(jobDir, "dimp")
 
 		require.NoError(t, os.MkdirAll(importDir, 0755))
 		require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
@@ -99,7 +99,7 @@ func TestDIMPConsistency_SplitVsUnsplit(t *testing.T) {
 		jobID := "test-split"
 		jobDir := filepath.Join(tmpDir, "jobs", jobID)
 		importDir := filepath.Join(jobDir, "import")
-		pseudonymizedDir := filepath.Join(jobDir, "pseudonymized")
+		pseudonymizedDir := filepath.Join(jobDir, "dimp")
 
 		require.NoError(t, os.MkdirAll(importDir, 0755))
 		require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))

@@ -143,7 +143,7 @@ aether/
 jobs/{job-uuid}/
 ├── state.json              ✓ Job state (atomic writes)
 ├── import/                 ✓ Imported FHIR files (13 files)
-├── pseudonymized/          ✓ DIMP output (Phase 5)
+├── dimp/                  ✓ DIMP output (Phase 5)
 ├── csv/                    ✓ CSV conversion (Phase 6)
 └── parquet/                ✓ Parquet conversion (Phase 6)
 ```

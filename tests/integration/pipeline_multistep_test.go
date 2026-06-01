@@ -118,7 +118,7 @@ func TestPipelineMultiStep_AutomaticExecution(t *testing.T) {
 	assert.Equal(t, models.StepStatusCompleted, dimpStep.Status, "DIMP step should be completed")
 
 	// Verify pseudonymized files were created
-	pseudonymizedDir := filepath.Join(jobDir, "pseudonymized")
+	pseudonymizedDir := filepath.Join(jobDir, "dimp")
 	entries, err := os.ReadDir(pseudonymizedDir)
 	require.NoError(t, err)
 	assert.NotEmpty(t, entries, "Pseudonymized directory should contain files")

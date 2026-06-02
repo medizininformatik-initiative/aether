@@ -28,7 +28,7 @@ jobs_dir: "./jobs"
 ## Running Pseudonymization
 
 ```bash
-aether pipeline start your-crtdl.json
+aether pipeline start aether.yaml your-crtdl.json
 ```
 
 Aether will:
@@ -54,7 +54,7 @@ CRTDL preprocessing automatically enriches your CRTDL with the required attribut
 
 ```yaml
 services:
- .json_preprocessing:
+  crtdl_preprocessing:
     enabled: true
     enrichments:
       - group_reference: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/PatientPseudonymisiert"

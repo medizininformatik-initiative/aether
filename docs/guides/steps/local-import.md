@@ -18,22 +18,22 @@ pipeline:
 
 ```bash
 # Use directory from config
-aether pipeline start
+aether pipeline start aether.yaml crtdl.json
 
 # Override directory via flag
-aether pipeline start --dir /other/path
+aether pipeline start aether.yaml crtdl.json --dir /other/path
 
-# With CRTDL for flattening
-aether pipeline start crtdl.json --dir /path/to/data
+# Override directory as positional (deprecated, prints warning)
+aether pipeline start aether.yaml crtdl.json /other/path
 ```
 
 ## Configuration Options
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `dir` | string | Default import directory (overridable with `--dir` flag) |
+| `dir` | string | Default import directory (overridable with `--dir` flag or as the third positional argument) |
 
 ## Notes
 
-- The `--dir` flag takes precedence over the config file setting
-- When using flattening step, a CRTDL file is still required as input
+- The `--dir` flag takes precedence over the config file setting; passing the directory as a positional argument still works but is deprecated.
+- A CRTDL JSON file is always required as the second positional argument — downstream steps such as flattening and CRTDL preprocessing depend on it.

@@ -51,7 +51,7 @@ services:
     password: "your-password"
 
   dimp:
-    url: "http://your-dimp-server:32861/fhir"
+    url: "http://your-dimp-server:32861"  # server root; /fhir appended by client
 
 pipeline:
   enabled_steps:

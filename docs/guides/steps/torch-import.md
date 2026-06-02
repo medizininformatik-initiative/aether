@@ -22,9 +22,11 @@ services:
     base_url: "https://your-torch-server.org"
     username: "your-username"
     password: "your-password"
-    extraction_timeout: PT30M  # default
-    polling_interval: PT5S     # default
-    max_polling_interval: PT30S # default
+    extraction_timeout: PT30M    # default
+    polling_interval: PT5S       # default
+    max_polling_interval: PT30S  # default
+    file_ready_retries: 10       # default
+    file_ready_interval: PT10S   # default
 
 pipeline:
   enabled_steps:
@@ -36,13 +38,13 @@ pipeline:
 ### With CRTDL file
 
 ```bash
-aether pipeline start crtdl.json
+aether pipeline start aether.yaml crtdl.json
 ```
 
 ### With TORCH URL
 
 ```bash
-aether pipeline start "https://torch.example.com/fhir/extraction/result-123"
+aether pipeline start aether.yaml crtdl.json "https://torch.example.com/fhir/extraction/result-123"
 ```
 
 URLs containing `/fhir/extraction/` or `/fhir/result/` are automatically recognized as TORCH URLs. See the [TORCH Integration guide](../torch-integration.md#direct-torch-url-import) for details.
@@ -57,3 +59,5 @@ URLs containing `/fhir/extraction/` or `/fhir/result/` are automatically recogni
 | `extraction_timeout` | duration | PT30M | Max wait time for extraction |
 | `polling_interval` | duration | PT5S | Initial status check interval |
 | `max_polling_interval` | duration | PT30S | Max interval (exponential backoff) |
+| `file_ready_retries` | int | 10 | Retries while waiting for files to appear after extraction completes |
+| `file_ready_interval` | duration | PT10S | Interval between file-availability checks |

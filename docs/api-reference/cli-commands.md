@@ -5,13 +5,16 @@ Reference for Aether CLI commands.
 ## Global Options
 
 ```bash
-aether [global-options] <command> [command-options]
+aether [global-options] <command> ...
 ```
 
-- `--config FILE` - Path to configuration file (default: ./aether.yaml)
 - `--verbose, -v` - Enable verbose logging
 - `--help, -h` - Show help
 - `--version` - Show version
+
+Every subcommand that needs configuration takes the path to `aether.yaml` as
+its first positional argument. There is no `--config` flag and no implicit
+discovery of `./aether.yaml` or `~/.config/aether/aether.yaml`.
 
 ## Pipeline Commands
 
@@ -20,11 +23,12 @@ aether [global-options] <command> [command-options]
 Start a new pipeline job.
 
 ```bash
-aether pipeline start .json> [input] [options]
+aether pipeline start <config> <crtdl> [input] [options]
 ```
 
 **Arguments:**
-- `.json>` - CRTDL file path. Required for every pipeline run.
+- `<config>` - Path to `aether.yaml` (required, first positional)
+- `<crtdl>` - CRTDL JSON file (required, second positional)
 - `[input]` - Optional import-step input:
   - omitted: torch_import submits the CRTDL; local_import uses `--dir`/config
   - local directory (local_import)
@@ -34,27 +38,27 @@ aether pipeline start .json> [input] [options]
 **Options:**
 - `--no-progress` - Disable progress indicators
 - `--dir PATH` - Directory for local import (overrides config)
-- `--allow-http.json` - Acknowledge that HTTP data may not match the CRTDL query (required when `http_import` is enabled)
+- `--allow-http-crtdl` - Acknowledge that HTTP data may not match the CRTDL query (required when `http_import` is enabled)
 
 **Examples:**
 ```bash
 # TORCH extraction with CRTDL
-aether pipeline start crtdl.json
+aether pipeline start aether.yaml crtdl.json
 
 # Direct TORCH URL (skip extraction, poll and download results)
-aether pipeline start crtdl.json "https://torch.example.com/fhir/extraction/result-123"
+aether pipeline start aether.yaml crtdl.json "https://torch.example.com/fhir/extraction/result-123"
 
 # Local import with CRTDL for flattening (dir from flag)
-aether pipeline start crtdl.json --dir /path/to/data
+aether pipeline start aether.yaml crtdl.json --dir /path/to/data
 
 # Local import with CRTDL for flattening (dir as positional)
-aether pipeline start crtdl.json /path/to/data
+aether pipeline start aether.yaml crtdl.json /path/to/data
 
 # HTTP download piped through flattening
-aether pipeline start crtdl.json https://example.com/fhir/data.ndjson --allow-http.json
+aether pipeline start aether.yaml crtdl.json https://example.com/fhir/data.ndjson --allow-http-crtdl
 
 # Disable progress bars
-aether pipeline start crtdl.json --no-progress
+aether pipeline start aether.yaml crtdl.json --no-progress
 ```
 
 ### aether pipeline status
@@ -62,7 +66,7 @@ aether pipeline start crtdl.json --no-progress
 Check pipeline job status.
 
 ```bash
-aether pipeline status <job-id>
+aether pipeline status <config> <job-id>
 ```
 
 **Output:**
@@ -73,7 +77,7 @@ aether pipeline status <job-id>
 
 **Example:**
 ```bash
-aether pipeline status abc-123-def
+aether pipeline status aether.yaml abc-123-def
 ```
 
 ### aether pipeline continue
@@ -81,7 +85,7 @@ aether pipeline status abc-123-def
 Resume a paused or failed pipeline.
 
 ```bash
-aether pipeline continue <job-id>
+aether pipeline continue <config> <job-id>
 ```
 
 **Use cases:**
@@ -92,10 +96,10 @@ aether pipeline continue <job-id>
 **Examples:**
 ```bash
 # Resume failed job
-aether pipeline continue abc-123-def
+aether pipeline continue aether.yaml abc-123-def
 
 # Resume from wait step (after placing files)
-aether pipeline continue abc-123-def
+aether pipeline continue aether.yaml abc-123-def
 ```
 
 ## Job Commands
@@ -105,7 +109,7 @@ aether pipeline continue abc-123-def
 List all pipeline jobs.
 
 ```bash
-aether job list
+aether job list <config>
 ```
 
 **Output columns:**
@@ -123,7 +127,7 @@ aether job list
 
 **Example:**
 ```bash
-aether job list
+aether job list aether.yaml
 ```
 
 ### aether job run
@@ -131,7 +135,7 @@ aether job list
 Execute a specific pipeline step manually.
 
 ```bash
-aether job run <job-id> --step <step-name>
+aether job run <config> <job-id> --step <step-name>
 ```
 
 **Options:**
@@ -142,10 +146,10 @@ aether job run <job-id> --step <step-name>
 **Examples:**
 ```bash
 # Run DIMP step manually
-aether job run abc-123-def --step dimp
+aether job run aether.yaml abc-123-def --step dimp
 
 # Run import step manually
-aether job run abc-123-def --step local_import
+aether job run aether.yaml abc-123-def --step local_import
 ```
 
 ## Other Commands
@@ -194,10 +198,10 @@ aether help pipeline start
 
 ## Configuration Loading
 
-Aether loads configuration in this order:
-1. `--config` flag
-2. `./aether.yaml` (current directory)
-3. `~/.config/aether/aether.yaml` (user config)
+The path to `aether.yaml` is the first positional argument of every command
+that needs configuration; aether does not auto-discover it. CLI flags and
+`AETHER_*` environment variables still override individual values from the
+file.
 
 ## Environment Variables
 

@@ -109,7 +109,7 @@ Aether completions provide suggestions for:
   - `pipeline start`, `pipeline status`, `pipeline continue`
   - `job list`, `job run`
   - `completion bash`, `completion zsh`, `completion fish`, `completion powershell`
-- **Flags**: `--config`, `--verbose`, `--help`, `--version`, `--no-progress`, `--step`
+- **Flags**: `--verbose`, `--help`, `--version`, `--no-progress`, `--dir`, `--allow-http-crtdl`, `--step`
 - **Job IDs**: Tab-complete existing job IDs for `pipeline status` and `pipeline continue`
 - **File paths**: Autocomplete paths for `pipeline start` input
 
@@ -130,7 +130,7 @@ aether pipeline start <TAB>
 # Shows: files and directories in current path
 
 aether --<TAB>
-# Shows: --config  --verbose  --help  --version
+# Shows: --verbose  --help  --version
 ```
 
 ## Troubleshooting

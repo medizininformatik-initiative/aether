@@ -32,4 +32,4 @@ echo "  DIMP: http://fhir-pseudonymizer:8080 (internal)"
 echo ""
 
 # Run aether continue inside the Docker network
-docker compose exec -T aether-runner /app/aether pipeline continue "$JOB_ID" --config aether.yaml
+docker compose exec -T aether-runner /app/aether pipeline continue aether.yaml "$JOB_ID"

@@ -73,38 +73,15 @@ func TestExpandEnvVars(t *testing.T) {
 	}
 }
 
-// TestLoadConfig_NoConfigFile tests loading with default values when no config file exists
-func TestLoadConfig_NoConfigFile(t *testing.T) {
-	// Clear any existing config
+// TestLoadConfig_EmptyPath verifies LoadConfig errors when no config path is supplied.
+// Auto-discovery of ./aether.yaml and ~/.config/aether/aether.yaml was removed: the
+// caller must always pass an explicit config path (now a positional argument).
+func TestLoadConfig_EmptyPath(t *testing.T) {
 	viper.Reset()
 
-	// Use an existing directory so viper looks for config in standard locations
-	tmpDir := t.TempDir()
-	jobsDir := filepath.Join(tmpDir, "jobs")
-	require.NoError(t, os.MkdirAll(jobsDir, 0755))
-
-	// Load config - since it won't find one in standard locations, it should use defaults
-	config, err := services.LoadConfig("")
-	require.NoError(t, err)
-	require.NotNil(t, config)
-
-	// Verify default values are applied
-	assert.NotNil(t, config.Pipeline.EnabledSteps)
-}
-
-// TestLoadConfig_ConfigFileNotFound_UsesDefaults tests that defaults are used when file not found
-func TestLoadConfig_ConfigFileNotFound_UsesDefaults(t *testing.T) {
-	// Clear any existing config
-	viper.Reset()
-
-	config, err := services.LoadConfig("")
-	require.NoError(t, err)
-	require.NotNil(t, config)
-
-	// Verify defaults are applied
-	assert.True(t, len(config.Pipeline.EnabledSteps) > 0)
-	assert.Greater(t, config.Services.DIMP.BundleSplitThresholdMB, 0)
-	assert.Greater(t, config.Retry.MaxAttempts, 0)
+	_, err := services.LoadConfig("")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "config file is required")
 }
 
 // TestLoadConfig_CreateJobsDir tests that jobs directory is created if it doesn't exist

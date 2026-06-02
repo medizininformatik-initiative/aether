@@ -17,7 +17,7 @@ echo ""
 echo "Pipeline: torch → send (s3_upload)"
 
 # Run aether inside the Docker network where it can resolve internal hostnames
-OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline start torch/queries/example-crtdl.json --config aether-s3-upload.yaml 2>&1) || true
+OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline start aether-s3-upload.yaml torch/queries/example-crtdl.json 2>&1) || true
 echo "$OUTPUT"
 
 # Extract job ID from output (format: "Created pipeline job: <YYYYMMDD_HHMM_UUID or UUID>")
@@ -39,7 +39,7 @@ if ! echo "$OUTPUT" | grep -q "Pipeline completed successfully"; then
     for i in {1..5}; do
         echo ""
         echo "Checking job status (attempt $i)..."
-        STATUS_OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline status "$JOB_ID" --config aether-s3-upload.yaml 2>&1) || true
+        STATUS_OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline status aether-s3-upload.yaml "$JOB_ID" 2>&1) || true
         echo "$STATUS_OUTPUT"
 
         if echo "$STATUS_OUTPUT" | grep -q "completed"; then

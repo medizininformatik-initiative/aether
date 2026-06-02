@@ -51,38 +51,26 @@ func ExpandEnvVars(s string) string {
 	return expanded
 }
 
-// LoadConfig loads configuration from file and merges with CLI flags
+// LoadConfig loads configuration from the given file and merges with CLI flags.
+// The config file path is required; auto-discovery of ./aether.yaml or
+// ~/.config/aether/aether.yaml is intentionally not performed.
 // Priority order (highest to lowest):
 //  1. CLI flags (via viper bindings)
 //  2. Environment variables
 //  3. Configuration file
 //  4. Default values
 func LoadConfig(configFile string) (*models.ProjectConfig, error) {
-	// Set config file path if provided
-	if configFile != "" {
-		viper.SetConfigFile(configFile)
-	} else {
-		// Search for config in standard locations
-		viper.SetConfigName("aether")
-		viper.SetConfigType("yaml")
-		viper.AddConfigPath(".")
-		viper.AddConfigPath("$HOME/.config/aether")
-		viper.AddConfigPath("/etc/aether")
+	if configFile == "" {
+		return nil, fmt.Errorf("config file is required: pass aether.yaml as the first positional argument (e.g. `aether pipeline start aether.yaml crtdl.json`)")
 	}
+	viper.SetConfigFile(configFile)
 
 	// Enable environment variable override with AETHER_ prefix
 	viper.SetEnvPrefix("AETHER")
 	viper.AutomaticEnv()
 
-	// Read config file (optional - don't fail if not found)
-	configFound := true
 	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			// Config file was found but couldn't be read
-			return nil, fmt.Errorf("failed to read config file: %w", err)
-		}
-		// Config file not found - use defaults only
-		configFound = false
+		return nil, fmt.Errorf("failed to read config file %q: %w", configFile, err)
 	}
 
 	// Build config manually from viper values
@@ -183,100 +171,67 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 		config.Pipeline.EnabledSteps = append(config.Pipeline.EnabledSteps, models.StepName(stepStr))
 	}
 
-	// Apply defaults for missing fields only if config wasn't found
-	if !configFound {
-		defaults := models.DefaultConfig()
-		if len(config.Pipeline.EnabledSteps) == 0 {
-			config.Pipeline.EnabledSteps = defaults.Pipeline.EnabledSteps
-		}
-		if config.Services.DIMP.URL == "" && defaults.Services.DIMP.URL != "" {
-			config.Services.DIMP.URL = defaults.Services.DIMP.URL
-		}
-		if config.Services.DIMP.BundleSplitThresholdMB == 0 {
-			config.Services.DIMP.BundleSplitThresholdMB = defaults.Services.DIMP.BundleSplitThresholdMB
-		}
-		if config.Retry.MaxAttempts == 0 {
-			config.Retry = defaults.Retry
-		}
-		if config.JobsDir == "" {
-			config.JobsDir = defaults.JobsDir
-		}
-		if config.Compression.Level == "" {
-			config.Compression.Level = defaults.Compression.Level
-		}
-		if config.Services.Flattening.BatchSizeMB == 0 {
-			config.Services.Flattening.BatchSizeMB = defaults.Services.Flattening.BatchSizeMB
-		}
-	} else {
-		// Config was loaded, apply defaults only for truly missing values
-		if config.Retry.MaxAttempts == 0 {
-			config.Retry.MaxAttempts = 5
-		}
-		if config.Retry.InitialBackoffMs == 0 {
-			config.Retry.InitialBackoffMs = 1000
-		}
-		if config.Retry.MaxBackoffMs == 0 {
-			config.Retry.MaxBackoffMs = 30000
-		}
-		if config.JobsDir == "" {
-			config.JobsDir = "./jobs"
-		}
-		// Apply TORCH defaults for missing values
-		if config.Services.TORCH.ExtractionTimeout == 0 {
-			config.Services.TORCH.ExtractionTimeout = 30 * time.Minute
-		}
-		if config.Services.TORCH.PollingInterval == 0 {
-			config.Services.TORCH.PollingInterval = 5 * time.Second
-		}
-		if config.Services.TORCH.MaxPollingInterval == 0 {
-			config.Services.TORCH.MaxPollingInterval = 30 * time.Second
-		}
-		if config.Services.TORCH.FileReadyRetries == 0 {
-			config.Services.TORCH.FileReadyRetries = 10
-		}
-		if config.Services.TORCH.FileReadyInterval == 0 {
-			config.Services.TORCH.FileReadyInterval = 10 * time.Second
-		}
-		// Apply DIMP Bundle split threshold default if not set
-		if config.Services.DIMP.BundleSplitThresholdMB == 0 {
-			config.Services.DIMP.BundleSplitThresholdMB = 10 // 10MB default
-		}
-		// Apply validation defaults if not set
-		if config.Services.Validation.MaxConcurrentRequests == 0 {
-			config.Services.Validation.MaxConcurrentRequests = 4
-		}
-		if config.Services.Validation.BundleChunkSizeMB == 0 {
-			config.Services.Validation.BundleChunkSizeMB = 10 // 10MB default, same as DIMP threshold
-		}
-		if config.Services.Validation.FailOnError == nil {
-			defaultFailOnError := true
-			config.Services.Validation.FailOnError = &defaultFailOnError
-		}
-		// Apply compression level default if not set
-		if config.Compression.Level == "" {
-			config.Compression.Level = "default"
-		}
-		// Apply Flattening defaults if not set
-		if config.Services.Flattening.Timeout == 0 {
-			config.Services.Flattening.Timeout = 30 * time.Minute
-		}
-		if len(config.Services.Flattening.Formats) == 0 {
-			config.Services.Flattening.Formats = []string{"csv"}
-		}
-		if config.Services.Flattening.BatchSizeMB == 0 {
-			config.Services.Flattening.BatchSizeMB = 500
-		}
-		// Apply Send batch size default if not set
-		if config.Services.Send.BatchSize == 0 {
-			config.Services.Send.BatchSize = 100
-		}
-		// Apply S3 defaults if not set
-		if config.Services.Send.S3.Region == "" {
-			config.Services.Send.S3.Region = "eu-central-1"
-		}
-		if config.Services.Send.S3.Timeout == 0 {
-			config.Services.Send.S3.Timeout = 30 * time.Minute
-		}
+	// Apply defaults for any values missing from the loaded config file.
+	if config.Retry.MaxAttempts == 0 {
+		config.Retry.MaxAttempts = 5
+	}
+	if config.Retry.InitialBackoffMs == 0 {
+		config.Retry.InitialBackoffMs = 1000
+	}
+	if config.Retry.MaxBackoffMs == 0 {
+		config.Retry.MaxBackoffMs = 30000
+	}
+	if config.JobsDir == "" {
+		config.JobsDir = "./jobs"
+	}
+	if config.Services.TORCH.ExtractionTimeout == 0 {
+		config.Services.TORCH.ExtractionTimeout = 30 * time.Minute
+	}
+	if config.Services.TORCH.PollingInterval == 0 {
+		config.Services.TORCH.PollingInterval = 5 * time.Second
+	}
+	if config.Services.TORCH.MaxPollingInterval == 0 {
+		config.Services.TORCH.MaxPollingInterval = 30 * time.Second
+	}
+	if config.Services.TORCH.FileReadyRetries == 0 {
+		config.Services.TORCH.FileReadyRetries = 10
+	}
+	if config.Services.TORCH.FileReadyInterval == 0 {
+		config.Services.TORCH.FileReadyInterval = 10 * time.Second
+	}
+	if config.Services.DIMP.BundleSplitThresholdMB == 0 {
+		config.Services.DIMP.BundleSplitThresholdMB = 10
+	}
+	if config.Services.Validation.MaxConcurrentRequests == 0 {
+		config.Services.Validation.MaxConcurrentRequests = 4
+	}
+	if config.Services.Validation.BundleChunkSizeMB == 0 {
+		config.Services.Validation.BundleChunkSizeMB = 10
+	}
+	if config.Services.Validation.FailOnError == nil {
+		defaultFailOnError := true
+		config.Services.Validation.FailOnError = &defaultFailOnError
+	}
+	if config.Compression.Level == "" {
+		config.Compression.Level = "default"
+	}
+	if config.Services.Flattening.Timeout == 0 {
+		config.Services.Flattening.Timeout = 30 * time.Minute
+	}
+	if len(config.Services.Flattening.Formats) == 0 {
+		config.Services.Flattening.Formats = []string{"csv"}
+	}
+	if config.Services.Flattening.BatchSizeMB == 0 {
+		config.Services.Flattening.BatchSizeMB = 500
+	}
+	if config.Services.Send.BatchSize == 0 {
+		config.Services.Send.BatchSize = 100
+	}
+	if config.Services.Send.S3.Region == "" {
+		config.Services.Send.S3.Region = "eu-central-1"
+	}
+	if config.Services.Send.S3.Timeout == 0 {
+		config.Services.Send.S3.Timeout = 30 * time.Minute
 	}
 
 	// Validate the configuration

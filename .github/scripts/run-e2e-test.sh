@@ -36,7 +36,7 @@ echo "  Blaze (send target): http://blaze-fhir:8080/fhir (internal)"
 
 # Run aether inside the Docker network where it can resolve internal hostnames
 # Capture output to extract job ID
-OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline start torch/queries/example-crtdl.json --config aether.yaml 2>&1) || true
+OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline start aether.yaml torch/queries/example-crtdl.json 2>&1) || true
 echo "$OUTPUT"
 
 # Extract job ID from output (format: "Created pipeline job: <YYYYMMDD_HHMM_UUID or UUID>")
@@ -63,7 +63,7 @@ if echo "$OUTPUT" | grep -q "Pipeline paused at wait step"; then
     while true; do
         echo ""
         echo "Continuing pipeline..."
-        CONTINUE_OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline continue "$JOB_ID" --config aether.yaml 2>&1) || {
+        CONTINUE_OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline continue aether.yaml "$JOB_ID" 2>&1) || {
             echo "$CONTINUE_OUTPUT"
             # Check if it's just a pause at another wait step
             if echo "$CONTINUE_OUTPUT" | grep -q "Pipeline paused at wait step\|Pipeline still paused"; then

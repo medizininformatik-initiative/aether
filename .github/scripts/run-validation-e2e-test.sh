@@ -113,7 +113,7 @@ echo ""
 # Config sets fail_on_error: false, so the pipeline should succeed.
 # Report files capture all OperationOutcomes for review.
 PIPELINE_EXIT=0
-OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline continue "$JOB_ID" --config aether-validation.yaml 2>&1) || PIPELINE_EXIT=$?
+OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline continue aether-validation.yaml "$JOB_ID" 2>&1) || PIPELINE_EXIT=$?
 echo "$OUTPUT"
 
 if [ $PIPELINE_EXIT -eq 0 ]; then

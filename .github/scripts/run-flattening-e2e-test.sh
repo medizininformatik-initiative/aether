@@ -112,7 +112,7 @@ echo "  Job ID: $JOB_ID"
 echo "  Flattener: http://fhir-flattener:8000 (internal)"
 
 # Run the pipeline continue command
-OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline continue "$JOB_ID" --config aether-flattening.yaml 2>&1) || {
+OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline continue aether-flattening.yaml "$JOB_ID" 2>&1) || {
     echo -e "${RED}Pipeline failed:${NC}"
     echo "$OUTPUT"
     exit 1
@@ -122,7 +122,7 @@ echo "$OUTPUT"
 # Check if pipeline completed
 if ! echo "$OUTPUT" | grep -q "Job completed successfully\|completed"; then
     echo -e "${YELLOW}Pipeline may not have completed. Checking job status...${NC}"
-    docker compose exec -T aether-runner /app/aether pipeline status "$JOB_ID" --config aether-flattening.yaml
+    docker compose exec -T aether-runner /app/aether pipeline status aether-flattening.yaml "$JOB_ID"
 fi
 
 echo ""

@@ -388,10 +388,10 @@ func captureStdoutForTest(t *testing.T) func() string {
 	}
 }
 
-// Regression for issue #384: TORCH reports an in-progress diagnostic
-// (e.g., "cohort Size: 0") via OperationOutcome on early polls, then transitions
-// to HTTP 200 without any further diagnostic. The success completion line must
-// not echo that stale in-progress text.
+// When TORCH reports an in-progress diagnostic (e.g., "cohort Size: 0") via
+// OperationOutcome on early polls, then transitions to HTTP 200 without any
+// further diagnostic, the success completion line must not echo that stale
+// in-progress text.
 func TestTORCHClient_PollExtractionStatus_CompletionLineDoesNotShowStaleDiagnostic(t *testing.T) {
 	pollCount := 0
 	var serverURL string
@@ -466,10 +466,8 @@ func TestTORCHClient_PollExtractionStatus_CompletionLineDoesNotShowStaleDiagnost
 	assert.Contains(t, completionSegment, "1 file", "completion line should report the file count")
 }
 
-// Regression: failure paths in PollExtractionStatus historically deferred
-// spinner.Stop(true), printing a success marker even on server errors. The
-// failure marker "✗" must be printed when the poll returns a non-recoverable
-// error response.
+// When a poll returns a non-recoverable error response, PollExtractionStatus
+// must print the failure marker "✗" rather than the success marker.
 func TestTORCHClient_PollExtractionStatus_FailureShowsFailureMarker(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -1970,9 +1968,9 @@ func TestTORCHClient_SubmitExtractionWithContent_Success(t *testing.T) {
 	assert.Equal(t, server.URL+"/fhir/extraction/job-enriched123", extractionURL)
 }
 
-// Regression: the spinner completion line must use the plural "N files" label
-// when the TORCH extraction yields more than one output file. Covers the
-// plural branch of filesLabel.
+// The spinner completion line must use the plural "N files" label when the
+// TORCH extraction yields more than one output file. Covers the plural branch
+// of filesLabel.
 func TestTORCHClient_PollExtractionStatus_PluralFilesLabel(t *testing.T) {
 	var serverURL string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

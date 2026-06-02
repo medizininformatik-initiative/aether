@@ -318,9 +318,6 @@ func (c *TORCHClient) PollExtractionStatus(extractionURL string, showProgress bo
 		spinner = ui.NewSpinner("Waiting for TORCH extraction to complete")
 		spinner.Start()
 		defer func() {
-			if spinner == nil {
-				return
-			}
 			if err == nil {
 				spinner.UpdateMessage(fmt.Sprintf("TORCH extraction complete (%s)", filesLabel(len(fileURLs))))
 			} else {

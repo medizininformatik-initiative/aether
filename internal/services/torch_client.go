@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -192,7 +193,7 @@ func (c *TORCHClient) SubmitExtraction(crtdlPath string) (string, error) {
 	}
 
 	// Ensure URL is absolute (handle relative URLs from TORCH)
-	contentLocation = c.makeAbsoluteURL(contentLocation)
+	contentLocation = makeAbsoluteURL(c.config.BaseURL, contentLocation, c.logger)
 	c.logger.Info("TORCH extraction submitted successfully", "extraction_url", contentLocation)
 
 	return contentLocation, nil
@@ -290,7 +291,7 @@ func (c *TORCHClient) SubmitExtractionWithContent(crtdlContent []byte) (string, 
 	}
 
 	// Ensure URL is absolute (handle relative URLs from TORCH)
-	contentLocation = c.makeAbsoluteURL(contentLocation)
+	contentLocation = makeAbsoluteURL(c.config.BaseURL, contentLocation, c.logger)
 	c.logger.Info("TORCH extraction submitted successfully", "extraction_url", contentLocation)
 
 	return contentLocation, nil
@@ -663,7 +664,7 @@ func (c *TORCHClient) extractURLsFromSimpleFormat(result TORCHSimpleResponse) []
 	for _, output := range result.Output {
 		if output.URL != "" {
 			// Ensure URL is absolute (handle relative URLs from TORCH)
-			fileURLs = append(fileURLs, c.makeAbsoluteURL(output.URL))
+			fileURLs = append(fileURLs, makeAbsoluteURL(c.config.BaseURL, output.URL, c.logger))
 		}
 	}
 	c.logger.Debug("Extracted URLs from simple format", "file_count", len(fileURLs))
@@ -678,7 +679,7 @@ func (c *TORCHClient) extractURLsFromFHIRFormat(result TORCHExtractionResult) []
 			for _, part := range param.Part {
 				if part.Name == "url" && part.ValueURL != "" {
 					// Ensure URL is absolute (handle relative URLs from TORCH)
-					fileURLs = append(fileURLs, c.makeAbsoluteURL(part.ValueURL))
+					fileURLs = append(fileURLs, makeAbsoluteURL(c.config.BaseURL, part.ValueURL, c.logger))
 				}
 			}
 		}
@@ -767,15 +768,47 @@ func (c *TORCHClient) checkFileAvailableWithRange(fileURL string) (bool, error) 
 	return resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPartialContent, nil
 }
 
-// makeAbsoluteURL converts relative URLs to absolute using the configured baseURL.
-// Absolute URLs are returned as-is.
-func (c *TORCHClient) makeAbsoluteURL(rawURL string) string {
-	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
-		absoluteURL := c.config.BaseURL + rawURL
-		c.logger.Debug("Converted relative URL", "raw", rawURL, "absolute", absoluteURL)
-		return absoluteURL
+// makeAbsoluteURL converts a TORCH-returned URL to absolute using baseURL.
+// Pure function (no client state) so it can be tested directly without an
+// HTTP server. It dispatches on the input shape: absolute URLs pass through,
+// path-relative URLs resolve against baseURL, and scheme-less host-prefixed
+// URLs (the TORCH misconfiguration) inherit baseURL's scheme.
+func makeAbsoluteURL(baseURL, rawURL string, logger *lib.Logger) string {
+	if strings.Contains(rawURL, "://") {
+		logger.Debug("Using absolute URL from TORCH", "url", rawURL)
+		return rawURL
 	}
 
-	c.logger.Debug("Using absolute URL from TORCH", "url", rawURL)
-	return rawURL
+	base, err := url.Parse(baseURL)
+	if err != nil || base.Scheme == "" {
+		logger.Warn("Cannot resolve TORCH URL: invalid BaseURL", "base", baseURL, "raw", rawURL)
+		return rawURL
+	}
+
+	if strings.HasPrefix(rawURL, "/") {
+		return resolvePathRelativeURL(base, rawURL, logger)
+	}
+	return prependBaseScheme(base, rawURL, logger)
+}
+
+// resolvePathRelativeURL resolves a path-relative URL ("/output/x.ndjson")
+// against base. ResolveReference also collapses an accidental double-slash
+// when base carries a trailing slash.
+func resolvePathRelativeURL(base *url.URL, rawURL string, logger *lib.Logger) string {
+	ref, err := url.Parse(rawURL)
+	if err != nil {
+		logger.Warn("Cannot parse path-relative TORCH URL, returning as-is", "raw", rawURL, "error", err)
+		return rawURL
+	}
+	resolved := base.ResolveReference(ref).String()
+	logger.Debug("Converted relative URL", "raw", rawURL, "absolute", resolved)
+	return resolved
+}
+
+// prependBaseScheme recovers a scheme-less host-prefixed URL
+// ("localhost:8080/output/x.ndjson") by prepending base's scheme.
+func prependBaseScheme(base *url.URL, rawURL string, logger *lib.Logger) string {
+	fixed := base.Scheme + "://" + rawURL
+	logger.Warn("TORCH returned scheme-less URL, prepending BaseURL scheme", "raw", rawURL, "fixed", fixed)
+	return fixed
 }

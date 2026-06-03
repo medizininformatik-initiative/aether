@@ -181,7 +181,7 @@ jobs/
     ├── validation/
     │   ├── Patient.validation.ndjson     # OperationOutcome reports
     │   └── Observation.validation.ndjson
-    ├── pseudonymized/
+    ├── dimp/
     │   ├── Patient.ndjson.zst    # De-identified data (zstd)
     │   └── Observation.ndjson.zst
     └── logs.txt                  # Execution logs

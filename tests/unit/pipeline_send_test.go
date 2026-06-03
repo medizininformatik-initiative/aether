@@ -1257,7 +1257,7 @@ func TestExecuteSendStep_FHIR_Success(t *testing.T) {
 	jobDir := filepath.Join(tmpDir, jobID)
 
 	// Create input directory with NDJSON file
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	// Write test NDJSON file with multiple resources
@@ -1328,7 +1328,7 @@ func TestExecuteSendStep_FHIR_CoreFilesFirst(t *testing.T) {
 	jobID := "test-fhir-core-order"
 	jobDir := filepath.Join(tmpDir, jobID)
 
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	// Write files in alphabetical order, but core.ndjson should be processed first
@@ -1368,7 +1368,7 @@ func TestExecuteSendStep_FHIR_CompressedFiles(t *testing.T) {
 	jobID := "test-fhir-compressed"
 	jobDir := filepath.Join(tmpDir, jobID)
 
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	// Write compressed NDJSON file
@@ -1403,7 +1403,7 @@ func TestExecuteSendStep_FHIR_NoFiles(t *testing.T) {
 	jobDir := filepath.Join(tmpDir, jobID)
 
 	// Create input directory but don't add any NDJSON files
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 	// Add a non-NDJSON file
 	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "data.csv"), []byte("data"), 0644))
@@ -1427,7 +1427,7 @@ func TestExecuteSendStep_FHIR_ServerError(t *testing.T) {
 	jobID := "test-fhir-server-error"
 	jobDir := filepath.Join(tmpDir, jobID)
 
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "Patient.ndjson"), []byte(`{"resourceType":"Patient","id":"1"}`+"\n"), 0644))
 
@@ -1464,7 +1464,7 @@ func TestExecuteSendStep_FHIR_BadRequest(t *testing.T) {
 	jobID := "test-fhir-bad-request"
 	jobDir := filepath.Join(tmpDir, jobID)
 
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "Patient.ndjson"), []byte(`{"resourceType":"Patient","id":"1"}`+"\n"), 0644))
 
@@ -1500,7 +1500,7 @@ func TestExecuteSendStep_FHIR_WithAuth(t *testing.T) {
 	jobID := "test-fhir-auth"
 	jobDir := filepath.Join(tmpDir, jobID)
 
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "Patient.ndjson"), []byte(`{"resourceType":"Patient","id":"1"}`+"\n"), 0644))
 
@@ -1599,7 +1599,7 @@ func TestExecuteSendStep_FHIR_CoreAndCompressed(t *testing.T) {
 	jobID := "test-fhir-core-compressed"
 	jobDir := filepath.Join(tmpDir, jobID)
 
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	// Write core.ndjson.zst (compressed core file)
@@ -1636,7 +1636,7 @@ func TestExecuteSendStep_S3_Success(t *testing.T) {
 	tmpDir := t.TempDir()
 	jobID := "test-s3-success"
 	jobDir := filepath.Join(tmpDir, jobID)
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "Patient.ndjson"), []byte(`{"resourceType":"Patient","id":"1"}`+"\n"), 0644))
@@ -1686,7 +1686,7 @@ func TestExecuteSendStep_S3_NoFiles(t *testing.T) {
 	tmpDir := t.TempDir()
 	jobID := "test-s3-empty"
 	jobDir := filepath.Join(tmpDir, jobID)
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 	// No files in directory
 
@@ -1710,7 +1710,7 @@ func TestExecuteSendStep_S3_UploadError(t *testing.T) {
 	tmpDir := t.TempDir()
 	jobID := "test-s3-upload-error"
 	jobDir := filepath.Join(tmpDir, jobID)
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte("data\n"), 0644))
 
@@ -1745,7 +1745,7 @@ func TestExecuteSendStep_S3_ManifestRetry(t *testing.T) {
 	tmpDir := t.TempDir()
 	jobID := "test-s3-manifest-retry"
 	jobDir := filepath.Join(tmpDir, jobID)
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	file1 := filepath.Join(inputDir, "Patient.ndjson")
@@ -1791,7 +1791,7 @@ func TestExecuteSendStep_S3_SubdirectoryFiles(t *testing.T) {
 	tmpDir := t.TempDir()
 	jobID := "test-s3-subdirs"
 	jobDir := filepath.Join(tmpDir, jobID)
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	subDir := filepath.Join(inputDir, "nested")
 	require.NoError(t, os.MkdirAll(subDir, 0755))
 
@@ -1863,7 +1863,7 @@ func TestExecuteSendStep_S3_TransientError(t *testing.T) {
 	tmpDir := t.TempDir()
 	jobID := "test-s3-transient"
 	jobDir := filepath.Join(tmpDir, jobID)
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte("data\n"), 0644))
 
@@ -2051,7 +2051,7 @@ func TestExecuteSendStep_FHIR_FileOpenError(t *testing.T) {
 	jobID := "test-fhir-file-open-error"
 	jobDir := filepath.Join(tmpDir, jobID)
 
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	// Create a file and make it unreadable
@@ -2102,7 +2102,7 @@ func TestExecuteSendStep_FHIR_CloseWarning(t *testing.T) {
 	jobID := "test-fhir-close-warning"
 	jobDir := filepath.Join(tmpDir, jobID)
 
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 
 	// Write a normal file - the close should work fine
@@ -2149,7 +2149,7 @@ func TestExecuteSendStep_S3_UploaderFactoryError(t *testing.T) {
 	tmpDir := t.TempDir()
 	jobID := "test-s3-factory-error"
 	jobDir := filepath.Join(tmpDir, jobID)
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte("data\n"), 0644))
 
@@ -2171,7 +2171,7 @@ func TestExecuteSendStep_S3_CorruptedManifest(t *testing.T) {
 	tmpDir := t.TempDir()
 	jobID := "test-s3-corrupted-manifest"
 	jobDir := filepath.Join(tmpDir, jobID)
-	inputDir := filepath.Join(jobDir, "pseudonymized")
+	inputDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(inputDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte("data\n"), 0644))
 

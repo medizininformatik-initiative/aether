@@ -145,15 +145,15 @@ verify_job() {
         success "Job ${job_id}: ${valid_files} valid NDJSON file(s) verified"
     fi
 
-    # Check for pseudonymized directory (if DIMP step was enabled)
-    local pseudo_dir="${job_dir}/pseudonymized"
-    if [[ -d "${pseudo_dir}" ]]; then
-        info "Job ${job_id}: pseudonymized directory exists"
-        local pseudo_count=$(find "${pseudo_dir}" \( -name "*.ndjson" -o -name "*.ndjson.zst" \) -type f | wc -l)
-        if [[ ${pseudo_count} -gt 0 ]]; then
-            success "Job ${job_id}: Found ${pseudo_count} pseudonymized file(s)"
+    # Check for dimp directory (if DIMP step was enabled)
+    local dimp_dir="${job_dir}/dimp"
+    if [[ -d "${dimp_dir}" ]]; then
+        info "Job ${job_id}: dimp directory exists"
+        local dimp_count=$(find "${dimp_dir}" \( -name "*.ndjson" -o -name "*.ndjson.zst" \) -type f | wc -l)
+        if [[ ${dimp_count} -gt 0 ]]; then
+            success "Job ${job_id}: Found ${dimp_count} pseudonymized file(s)"
         else
-            warn "Job ${job_id}: pseudonymized directory exists but contains no NDJSON files"
+            warn "Job ${job_id}: dimp directory exists but contains no NDJSON files"
         fi
     fi
 

@@ -84,7 +84,7 @@ func TestDIMPResumeAfterInterrupt(t *testing.T) {
 	require.NoError(t, pipeline.UpdateJob(jobsDir, advancedJob))
 
 	// Create output directory (simulating partial processing)
-	outputDir := filepath.Join(jobsDir, job.JobID, "pseudonymized")
+	outputDir := filepath.Join(jobsDir, job.JobID, "dimp")
 	require.NoError(t, os.MkdirAll(outputDir, 0755))
 
 	// SIMULATE INTERRUPTION: Process only the first file manually

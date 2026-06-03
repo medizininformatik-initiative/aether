@@ -40,4 +40,4 @@ Large FHIR Bundles are automatically split to prevent HTTP 413 errors:
 
 ## Output
 
-Pseudonymized files are saved to `jobs/<job-id>/pseudonymized/`
+Pseudonymized files are saved to `jobs/<job-id>/dimp/`

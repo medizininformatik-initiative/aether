@@ -46,6 +46,6 @@ aether pipeline continue aether.yaml <job-id>
 The wait directory is created empty. You must place your data files there before continuing:
 
 - After import step: `jobs/<job-id>/import_wait/`
-- After DIMP step: `jobs/<job-id>/pseudonymized_wait/`
+- After DIMP step: `jobs/<job-id>/dimp_wait/`
 
 The pipeline will only continue when files are present in the wait directory.

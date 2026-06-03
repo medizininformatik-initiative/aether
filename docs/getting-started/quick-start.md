@@ -38,7 +38,7 @@ Aether will:
 2. Wait for extraction to complete
 3. Download the FHIR data
 4. Pseudonymize it via DIMP
-5. Save results in `jobs/<job-id>/pseudonymized/`
+5. Save results in `jobs/<job-id>/dimp/`
 
 Output files use `.ndjson.zst` extension (zstd compressed).
 

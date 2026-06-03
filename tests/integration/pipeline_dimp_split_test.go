@@ -33,7 +33,7 @@ func TestDIMPStepWithLargeBundle(t *testing.T) {
 	jobID := "test-large-bundle-split"
 	jobDir := filepath.Join(tmpDir, "jobs", jobID)
 	importDir := filepath.Join(jobDir, "import")
-	pseudonymizedDir := filepath.Join(jobDir, "pseudonymized")
+	pseudonymizedDir := filepath.Join(jobDir, "dimp")
 
 	require.NoError(t, os.MkdirAll(importDir, 0755), "Failed to create import directory")
 	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755), "Failed to create pseudonymized directory")
@@ -142,7 +142,7 @@ func TestDIMPStepWithLargeBundleAndChunks(t *testing.T) {
 	jobID := "test-bundle-chunks"
 	jobDir := filepath.Join(tmpDir, "jobs", jobID)
 	importDir := filepath.Join(jobDir, "import")
-	pseudonymizedDir := filepath.Join(jobDir, "pseudonymized")
+	pseudonymizedDir := filepath.Join(jobDir, "dimp")
 
 	require.NoError(t, os.MkdirAll(importDir, 0755))
 	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
@@ -221,7 +221,7 @@ func TestDIMPStepWithSmallBundleNoSplit(t *testing.T) {
 	jobID := "test-small-bundle-nosplit"
 	jobDir := filepath.Join(tmpDir, "jobs", jobID)
 	importDir := filepath.Join(jobDir, "import")
-	pseudonymizedDir := filepath.Join(jobDir, "pseudonymized")
+	pseudonymizedDir := filepath.Join(jobDir, "dimp")
 
 	require.NoError(t, os.MkdirAll(importDir, 0755))
 	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
@@ -443,7 +443,7 @@ func TestDIMPStepWithOversizedResource(t *testing.T) {
 	jobID := "test-oversized-resource"
 	jobDir := filepath.Join(tmpDir, "jobs", jobID)
 	importDir := filepath.Join(jobDir, "import")
-	pseudonymizedDir := filepath.Join(jobDir, "pseudonymized")
+	pseudonymizedDir := filepath.Join(jobDir, "dimp")
 
 	require.NoError(t, os.MkdirAll(importDir, 0755), "Failed to create import directory")
 	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755), "Failed to create pseudonymized directory")
@@ -528,7 +528,7 @@ func TestDIMPStepWithCustomThreshold(t *testing.T) {
 		jobID := "test-threshold-5mb"
 		jobDir := filepath.Join(tmpDir, "jobs", jobID)
 		importDir := filepath.Join(jobDir, "import")
-		pseudonymizedDir := filepath.Join(jobDir, "pseudonymized")
+		pseudonymizedDir := filepath.Join(jobDir, "dimp")
 
 		require.NoError(t, os.MkdirAll(importDir, 0755))
 		require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
@@ -579,7 +579,7 @@ func TestDIMPStepWithCustomThreshold(t *testing.T) {
 		jobID := "test-threshold-20mb"
 		jobDir := filepath.Join(tmpDir, "jobs", jobID)
 		importDir := filepath.Join(jobDir, "import")
-		pseudonymizedDir := filepath.Join(jobDir, "pseudonymized")
+		pseudonymizedDir := filepath.Join(jobDir, "dimp")
 
 		require.NoError(t, os.MkdirAll(importDir, 0755))
 		require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
@@ -630,7 +630,7 @@ func TestDIMPStepWithCustomThreshold(t *testing.T) {
 		jobID := "test-threshold-1mb"
 		jobDir := filepath.Join(tmpDir, "jobs", jobID)
 		importDir := filepath.Join(jobDir, "import")
-		pseudonymizedDir := filepath.Join(jobDir, "pseudonymized")
+		pseudonymizedDir := filepath.Join(jobDir, "dimp")
 
 		require.NoError(t, os.MkdirAll(importDir, 0755))
 		require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))

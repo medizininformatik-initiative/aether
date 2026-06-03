@@ -141,7 +141,7 @@ func TestExecuteDIMPStep_FailedToCreateOutputDir(t *testing.T) {
 	logger := createDIMPTestLogger()
 
 	// Create a file where we need a directory
-	pseudonymizedPath := filepath.Join(tmpDir, "pseudonymized")
+	pseudonymizedPath := filepath.Join(tmpDir, "dimp")
 	f, cerr := os.Create(pseudonymizedPath)
 	require.NoError(t, cerr)
 	require.NoError(t, f.Close())
@@ -193,7 +193,7 @@ func TestExecuteDIMPStep_ProcessSimpleResources(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify output file was created
-	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_patients.ndjson")
+	outputFile := filepath.Join(tmpDir, "dimp", "dimped_patients.ndjson")
 	assert.FileExists(t, outputFile)
 
 	// Verify pseudonymized content
@@ -214,7 +214,7 @@ func TestExecuteDIMPStep_ResumeProcessing(t *testing.T) {
 
 	// Create import and pseudonymized directories
 	importDir := filepath.Join(tmpDir, "import")
-	pseudonymizedDir := filepath.Join(tmpDir, "pseudonymized")
+	pseudonymizedDir := filepath.Join(tmpDir, "dimp")
 	require.NoError(t, os.MkdirAll(importDir, 0755))
 	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
 
@@ -299,7 +299,7 @@ func TestExecuteDIMPStep_ProcessBundleWithoutSplit(t *testing.T) {
 	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
 	assert.NoError(t, err)
 
-	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_bundles.ndjson")
+	outputFile := filepath.Join(tmpDir, "dimp", "dimped_bundles.ndjson")
 	assert.FileExists(t, outputFile)
 }
 
@@ -324,7 +324,7 @@ func TestExecuteDIMPStep_ProcessBundleWithSplit(t *testing.T) {
 	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
 	assert.NoError(t, err)
 
-	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_bundles.ndjson")
+	outputFile := filepath.Join(tmpDir, "dimp", "dimped_bundles.ndjson")
 	assert.FileExists(t, outputFile)
 }
 
@@ -377,7 +377,7 @@ func TestExecuteDIMPStep_MultipleFiles(t *testing.T) {
 
 	// Verify all output files were created
 	for _, filename := range files {
-		outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_"+filename)
+		outputFile := filepath.Join(tmpDir, "dimp", "dimped_"+filename)
 		assert.FileExists(t, outputFile)
 	}
 }
@@ -438,7 +438,7 @@ func TestExecuteDIMPStep_EmptyLines(t *testing.T) {
 	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
 	assert.NoError(t, err)
 
-	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_sparse.ndjson")
+	outputFile := filepath.Join(tmpDir, "dimp", "dimped_sparse.ndjson")
 	resources := readDIMPNDJSON(t, outputFile)
 	assert.Len(t, resources, 2) // Should have 2 resources, skipping empty line
 }
@@ -537,7 +537,7 @@ func TestExecuteDIMPStep_DefaultBundleThreshold(t *testing.T) {
 	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
 	assert.NoError(t, err)
 
-	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_bundles.ndjson")
+	outputFile := filepath.Join(tmpDir, "dimp", "dimped_bundles.ndjson")
 	assert.FileExists(t, outputFile)
 }
 
@@ -613,7 +613,7 @@ func TestExecuteDIMPStep_AlreadyProcessedFileCountError(t *testing.T) {
 	logger := createDIMPTestLogger()
 
 	importDir := filepath.Join(tmpDir, "import")
-	pseudonymizedDir := filepath.Join(tmpDir, "pseudonymized")
+	pseudonymizedDir := filepath.Join(tmpDir, "dimp")
 	require.NoError(t, os.MkdirAll(importDir, 0755))
 	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
 
@@ -705,7 +705,7 @@ func TestExecuteDIMPStep_VeryLargeBundle(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify output file was created
-	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_large_bundle.ndjson")
+	outputFile := filepath.Join(tmpDir, "dimp", "dimped_large_bundle.ndjson")
 	assert.FileExists(t, outputFile)
 }
 
@@ -734,7 +734,7 @@ func TestExecuteDIMPStep_MixedResourceTypes(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify output file exists and has all resources
-	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_mixed.ndjson")
+	outputFile := filepath.Join(tmpDir, "dimp", "dimped_mixed.ndjson")
 	assert.FileExists(t, outputFile)
 
 	outputResources := readDIMPNDJSON(t, outputFile)
@@ -780,7 +780,7 @@ func TestExecuteDIMPStep_BundleWithError(t *testing.T) {
 	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
 	assert.NoError(t, err)
 
-	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_bundles.ndjson")
+	outputFile := filepath.Join(tmpDir, "dimp", "dimped_bundles.ndjson")
 	assert.FileExists(t, outputFile)
 
 	// Verify the output is a valid Bundle
@@ -814,7 +814,7 @@ func TestExecuteDIMPStep_LargeNumberOfFiles(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify all files were processed
-	pseudonymizedDir := filepath.Join(tmpDir, "pseudonymized")
+	pseudonymizedDir := filepath.Join(tmpDir, "dimp")
 	files, err := filepath.Glob(filepath.Join(pseudonymizedDir, "dimped_*.ndjson"))
 	require.NoError(t, err)
 	assert.Len(t, files, fileCount)
@@ -842,7 +842,7 @@ func TestExecuteDIMPStep_SpecialCharactersInFilenames(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify output file exists
-	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_test_data-2025-01-01.ndjson")
+	outputFile := filepath.Join(tmpDir, "dimp", "dimped_test_data-2025-01-01.ndjson")
 	assert.FileExists(t, outputFile)
 }
 
@@ -877,7 +877,7 @@ func TestExecuteDIMPStep_WithCompression(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify output file was created with compression extension
-	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_patients.ndjson.zst")
+	outputFile := filepath.Join(tmpDir, "dimp", "dimped_patients.ndjson.zst")
 	assert.FileExists(t, outputFile)
 
 	// Verify content is readable as compressed
@@ -925,7 +925,7 @@ func TestExecuteDIMPStep_CompressedInput(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify output file was created (uncompressed)
-	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_patients.ndjson")
+	outputFile := filepath.Join(tmpDir, "dimp", "dimped_patients.ndjson")
 	assert.FileExists(t, outputFile)
 
 	resources := readDIMPNDJSON(t, outputFile)
@@ -968,7 +968,7 @@ func TestExecuteDIMPStep_CompressedInputToCompressedOutput(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify output file was created with compression extension
-	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_patients.ndjson.zst")
+	outputFile := filepath.Join(tmpDir, "dimp", "dimped_patients.ndjson.zst")
 	assert.FileExists(t, outputFile)
 
 	// Verify content
@@ -1011,7 +1011,7 @@ func TestExecuteDIMPStep_MixedInputFiles(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify both output files were created with compression
-	outputDir := filepath.Join(tmpDir, "pseudonymized")
+	outputDir := filepath.Join(tmpDir, "dimp")
 	assert.FileExists(t, filepath.Join(outputDir, "dimped_patients.ndjson.zst"))
 	assert.FileExists(t, filepath.Join(outputDir, "dimped_observations.ndjson.zst"))
 }
@@ -1041,7 +1041,7 @@ func TestExecuteDIMPStep_CompressionAllLevels(t *testing.T) {
 			err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
 			assert.NoError(t, err, "DIMP should succeed with compression level: %s", level)
 
-			outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_patients.ndjson.zst")
+			outputFile := filepath.Join(tmpDir, "dimp", "dimped_patients.ndjson.zst")
 			assert.FileExists(t, outputFile)
 		})
 	}
@@ -1088,7 +1088,7 @@ func TestExecuteDIMPStep_ResumeWithCompressedOutput(t *testing.T) {
 	logger := createDIMPTestLogger()
 
 	importDir := filepath.Join(tmpDir, "import")
-	pseudonymizedDir := filepath.Join(tmpDir, "pseudonymized")
+	pseudonymizedDir := filepath.Join(tmpDir, "dimp")
 	require.NoError(t, os.MkdirAll(importDir, 0755))
 	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
 
@@ -1138,7 +1138,7 @@ func TestExecuteDIMPStep_StalePartFileRemovalError(t *testing.T) {
 	logger := createDIMPTestLogger()
 
 	importDir := filepath.Join(tmpDir, "import")
-	pseudonymizedDir := filepath.Join(tmpDir, "pseudonymized")
+	pseudonymizedDir := filepath.Join(tmpDir, "dimp")
 	require.NoError(t, os.MkdirAll(importDir, 0755))
 	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
 
@@ -1178,7 +1178,7 @@ func TestExecuteDIMPStep_CountResourcesError(t *testing.T) {
 	logger := createDIMPTestLogger()
 
 	importDir := filepath.Join(tmpDir, "import")
-	pseudonymizedDir := filepath.Join(tmpDir, "pseudonymized")
+	pseudonymizedDir := filepath.Join(tmpDir, "dimp")
 	require.NoError(t, os.MkdirAll(importDir, 0755))
 	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
 
@@ -1269,7 +1269,7 @@ func TestExecuteDIMPStep_LongLine(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify output file was created
-	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_long.ndjson")
+	outputFile := filepath.Join(tmpDir, "dimp", "dimped_long.ndjson")
 	assert.FileExists(t, outputFile)
 }
 
@@ -1283,7 +1283,7 @@ func TestExecuteDIMPStep_StalePartFileRemoval(t *testing.T) {
 	logger := createDIMPTestLogger()
 
 	importDir := filepath.Join(tmpDir, "import")
-	pseudonymizedDir := filepath.Join(tmpDir, "pseudonymized")
+	pseudonymizedDir := filepath.Join(tmpDir, "dimp")
 	require.NoError(t, os.MkdirAll(importDir, 0755))
 	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
 
@@ -1304,7 +1304,7 @@ func TestExecuteDIMPStep_StalePartFileRemoval(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr), ".part file should be removed")
 
 	// Verify output file exists
-	outputFile := filepath.Join(tmpDir, "pseudonymized", "dimped_patients.ndjson")
+	outputFile := filepath.Join(tmpDir, "dimp", "dimped_patients.ndjson")
 	assert.FileExists(t, outputFile)
 }
 

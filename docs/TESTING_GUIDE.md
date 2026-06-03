@@ -161,7 +161,7 @@ ls -la jobs/<job-id>/
 jobs/<job-id>/
 ├── state.json          # Job state (status, steps, retry counts)
 ├── import/             # Imported FHIR files (13 files)
-├── pseudonymized/      # DIMP output (when implemented)
+├── dimp/              # DIMP output (when implemented)
 ├── csv/                # CSV output (when implemented)
 └── parquet/            # Parquet output (when implemented)
 ```

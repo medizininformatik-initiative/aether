@@ -1220,7 +1220,7 @@ func TestExecuteFlatteningStep_ProvenanceInPseudonymizedDir(t *testing.T) {
 	tempDir := t.TempDir()
 	jobID := "test-provenance-pseudonymized"
 	jobDir := filepath.Join(tempDir, "jobs", jobID)
-	pseudonymizedDir := filepath.Join(jobDir, "pseudonymized")
+	pseudonymizedDir := filepath.Join(jobDir, "dimp")
 	require.NoError(t, os.MkdirAll(pseudonymizedDir, 0755))
 
 	groupID := "group-patient"

@@ -49,7 +49,7 @@ func TestPipelineWithWaitStep_PausesExecution(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelInfo)
 
 	// Create and start job
-	job, err := pipeline.CreateJob(sourceDir, "", config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), sourceDir, "", config, logger)
 	require.NoError(t, err)
 
 	startedJob := pipeline.StartJob(job)
@@ -114,7 +114,7 @@ func TestPipelineWithWaitStep_DirectoryCreated(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelInfo)
 
 	// Create, start, and execute import
-	job, err := pipeline.CreateJob(sourceDir, "", config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), sourceDir, "", config, logger)
 	require.NoError(t, err)
 
 	startedJob := pipeline.StartJob(job)
@@ -172,7 +172,7 @@ func TestPipelineWithWaitStep_EmptyDirectory(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelInfo)
 
 	// Run through pipeline to wait step
-	job, _ := pipeline.CreateJob(sourceDir, "", config, logger)
+	job, _ := pipeline.CreateJob(models.GenerateJobID(), sourceDir, "", config, logger)
 	startedJob := pipeline.StartJob(job)
 	_ = pipeline.UpdateJob(jobsDir, startedJob)
 
@@ -226,7 +226,7 @@ func TestPipelineWithWaitStep_ContinuesAfterCommand(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelInfo)
 
 	// Run through import and wait steps
-	job, _ := pipeline.CreateJob(sourceDir, "", config, logger)
+	job, _ := pipeline.CreateJob(models.GenerateJobID(), sourceDir, "", config, logger)
 	startedJob := pipeline.StartJob(job)
 	_ = pipeline.UpdateJob(jobsDir, startedJob)
 
@@ -306,7 +306,7 @@ func TestWaitStep_ContinueWithFilesPresent(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelInfo)
 
 	// Create, start, and execute import step
-	job, _ := pipeline.CreateJob(sourceDir, "", config, logger)
+	job, _ := pipeline.CreateJob(models.GenerateJobID(), sourceDir, "", config, logger)
 	startedJob := pipeline.StartJob(job)
 	_ = pipeline.UpdateJob(jobsDir, startedJob)
 
@@ -393,7 +393,7 @@ func TestWaitStep_ContinueWithEmptyDirectory(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelInfo)
 
 	// Run through import to wait step
-	job, _ := pipeline.CreateJob(sourceDir, "", config, logger)
+	job, _ := pipeline.CreateJob(models.GenerateJobID(), sourceDir, "", config, logger)
 	startedJob := pipeline.StartJob(job)
 	_ = pipeline.UpdateJob(jobsDir, startedJob)
 

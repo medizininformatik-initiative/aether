@@ -55,7 +55,7 @@ func TestPipelineResume_AfterImportComplete(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelInfo)
 
 	// Phase 1: Create and start job (SESSION 1 simulation)
-	job, err := pipeline.CreateJob(sourceDir, "", config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), sourceDir, "", config, logger)
 	require.NoError(t, err, "CreateJob should succeed")
 	require.NotNil(t, job, "Job should be created")
 
@@ -269,7 +269,7 @@ func createCompletedImportJob(t *testing.T, jobsDir string, fileCount int) *mode
 
 	logger := lib.NewLogger(lib.LogLevelInfo)
 	// Create job
-	job, err := pipeline.CreateJob(tempSourceDir, "", config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), tempSourceDir, "", config, logger)
 	require.NoError(t, err)
 
 	// Start job and complete import

@@ -56,7 +56,7 @@ func TestPipelineImportURL_EndToEnd(t *testing.T) {
 
 	// Step 1: Create job with HTTP URL input
 	url := server.URL + "/Patient.ndjson"
-	job, err := pipeline.CreateJob(url, "", config, logger)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), url, "", config, logger)
 	require.NoError(t, err, "Job creation should succeed")
 	assert.Equal(t, models.InputTypeHTTP, job.InputType, "Input type should be HTTP")
 	assert.Equal(t, url, job.InputSource, "Input source should be the URL")
@@ -138,7 +138,7 @@ func TestPipelineImportURL_WithRetry(t *testing.T) {
 	httpClient := services.NewHTTPClient(5*time.Second, config.Retry, models.TLSConfig{}, logger)
 
 	// Create and execute job
-	job, _ := pipeline.CreateJob(server.URL+"/test.ndjson", "", config, logger)
+	job, _ := pipeline.CreateJob(models.GenerateJobID(), server.URL+"/test.ndjson", "", config, logger)
 	startedJob := pipeline.StartJob(job)
 	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
 
@@ -186,7 +186,7 @@ func TestPipelineImportURL_LargeFile(t *testing.T) {
 	httpClient := services.DefaultHTTPClient()
 
 	// Execute import with progress
-	job, _ := pipeline.CreateJob(server.URL+"/large.ndjson", "", config, logger)
+	job, _ := pipeline.CreateJob(models.GenerateJobID(), server.URL+"/large.ndjson", "", config, logger)
 	startedJob := pipeline.StartJob(job)
 	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, true)
 
@@ -240,7 +240,7 @@ func TestPipelineImportURL_ProgressDisplay(t *testing.T) {
 	httpClient := services.DefaultHTTPClient()
 
 	// Execute with progress display enabled
-	job, _ := pipeline.CreateJob(server.URL+"/data.ndjson", "", config, logger)
+	job, _ := pipeline.CreateJob(models.GenerateJobID(), server.URL+"/data.ndjson", "", config, logger)
 	startedJob := pipeline.StartJob(job)
 
 	// This should use progress bar/spinner internally (progress indicator requirementsc, Progress indicators must update at least every 2 seconds)
@@ -289,7 +289,7 @@ func TestPipelineImportURL_MultipleURLs(t *testing.T) {
 	// Download from each URL as separate jobs
 	var jobs []*models.PipelineJob
 	for _, url := range urls {
-		job, _ := pipeline.CreateJob(url, "", config, logger)
+		job, _ := pipeline.CreateJob(models.GenerateJobID(), url, "", config, logger)
 		startedJob := pipeline.StartJob(job)
 		importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
 		require.NoError(t, err, "Import should succeed for URL %s", url)
@@ -364,7 +364,7 @@ func TestPipelineImportURL_FilenameFromURL(t *testing.T) {
 
 			// Execute import
 			url := server.URL + tt.urlPath
-			job, _ := pipeline.CreateJob(url, "", config, logger)
+			job, _ := pipeline.CreateJob(models.GenerateJobID(), url, "", config, logger)
 			startedJob := pipeline.StartJob(job)
 			_, _ = pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
 
@@ -407,8 +407,8 @@ func TestPipelineImportURL_ConcurrentDownloads(t *testing.T) {
 	httpClient := services.DefaultHTTPClient()
 
 	// Execute two downloads "concurrently" (sequentially in test, but verify isolation)
-	job1, _ := pipeline.CreateJob(server.URL+"/data1.ndjson", "", config, logger)
-	job2, _ := pipeline.CreateJob(server.URL+"/data2.ndjson", "", config, logger)
+	job1, _ := pipeline.CreateJob(models.GenerateJobID(), server.URL+"/data1.ndjson", "", config, logger)
+	job2, _ := pipeline.CreateJob(models.GenerateJobID(), server.URL+"/data2.ndjson", "", config, logger)
 
 	startedJob1 := pipeline.StartJob(job1)
 	startedJob2 := pipeline.StartJob(job2)

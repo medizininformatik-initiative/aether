@@ -104,7 +104,7 @@ jobs:
           cache-dependency-path: 'docs/package-lock.json'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
         working-directory: docs
 
       - name: Build documentation
@@ -118,9 +118,6 @@ jobs:
 
       - name: Checkout gh-pages branch
         run: |
-          # `npm install` may refresh docs/package-lock.json (integrity hashes,
-          # metadata). Discard that mutation so the branch switch doesn't abort.
-          git checkout -- docs/package-lock.json
           git fetch origin gh-pages:gh-pages 2>/dev/null || true
           if git rev-parse --verify gh-pages >/dev/null 2>&1; then
             git checkout gh-pages

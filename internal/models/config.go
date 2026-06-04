@@ -8,12 +8,12 @@ import (
 
 // ProjectConfig is the top-level configuration for the Aether pipeline
 type ProjectConfig struct {
-	Services    ServiceConfig     `yaml:"services" json:"services"`
-	Pipeline    PipelineConfig    `yaml:"pipeline" json:"pipeline"`
-	Retry       RetryConfig       `yaml:"retry" json:"retry"`
-	Compression CompressionConfig `yaml:"compression" json:"compression"`
+	Services    ServiceConfig     `yaml:"services" json:"services" mapstructure:"services"`
+	Pipeline    PipelineConfig    `yaml:"pipeline" json:"pipeline" mapstructure:"pipeline"`
+	Retry       RetryConfig       `yaml:"retry" json:"retry" mapstructure:"retry"`
+	Compression CompressionConfig `yaml:"compression" json:"compression" mapstructure:"compression"`
 	TLS         TLSConfig         `yaml:"tls" json:"tls" mapstructure:"tls"`
-	JobsDir     string            `yaml:"jobs_dir" json:"jobs_dir"`
+	JobsDir     string            `yaml:"jobs_dir" json:"jobs_dir" mapstructure:"jobs_dir"`
 }
 
 // TLSConfig holds TLS settings for outgoing HTTP connections.
@@ -25,8 +25,8 @@ type TLSConfig struct {
 
 // CompressionConfig holds compression settings for pipeline output files.
 type CompressionConfig struct {
-	Enabled bool   `yaml:"enabled" json:"enabled"`
-	Level   string `yaml:"level" json:"level"`
+	Enabled bool   `yaml:"enabled" json:"enabled" mapstructure:"enabled"`
+	Level   string `yaml:"level" json:"level" mapstructure:"level"`
 }
 
 // DefaultCompressionConfig returns the default compression configuration.
@@ -40,11 +40,11 @@ func DefaultCompressionConfig() CompressionConfig {
 
 // ServiceConfig contains connection details for external HTTP services
 type ServiceConfig struct {
-	DIMP               DIMPConfig               `yaml:"dimp" json:"dimp"`
-	TORCH              TORCHConfig              `yaml:"torch" json:"torch"`
-	Flattening         FlatteningConfig         `yaml:"flattening" json:"flattening"`
+	DIMP               DIMPConfig               `yaml:"dimp" json:"dimp" mapstructure:"dimp"`
+	TORCH              TORCHConfig              `yaml:"torch" json:"torch" mapstructure:"torch"`
+	Flattening         FlatteningConfig         `yaml:"flattening" json:"flattening" mapstructure:"flattening"`
 	CRTDLPreprocessing CRTDLPreprocessingConfig `yaml:"crtdl_preprocessing" json:"crtdl_preprocessing" mapstructure:"crtdl_preprocessing"`
-	Send               SendConfig               `yaml:"send" json:"send"`
+	Send               SendConfig               `yaml:"send" json:"send" mapstructure:"send"`
 	LocalImport        LocalImportConfig        `yaml:"local_import" json:"local_import" mapstructure:"local_import"`
 	Validation         ValidationConfig         `yaml:"validation" json:"validation" mapstructure:"validation"`
 }
@@ -64,8 +64,8 @@ type LocalImportConfig struct {
 
 // DIMPConfig contains DIMP pseudonymization service settings
 type DIMPConfig struct {
-	URL                    string `yaml:"url" json:"url"`
-	BundleSplitThresholdMB int    `yaml:"bundle_split_threshold_mb" json:"bundle_split_threshold_mb"` // Default 10MB - threshold for splitting large Bundles to prevent HTTP 413 errors
+	URL                    string `yaml:"url" json:"url" mapstructure:"url"`
+	BundleSplitThresholdMB int    `yaml:"bundle_split_threshold_mb" json:"bundle_split_threshold_mb" mapstructure:"bundle_split_threshold_mb"` // Default 10MB - threshold for splitting large Bundles to prevent HTTP 413 errors
 }
 
 // TORCHConfig contains TORCH server connection and extraction behavior settings
@@ -218,6 +218,11 @@ func (c *SendConfig) validateS3Upload() error {
 	if c.S3.SecretAccessKey == "" {
 		return fmt.Errorf("send s3 secret_access_key is required for s3_upload mode")
 	}
+	// Timeout defaults to 30m, but an explicit zero or negative value yields an
+	// already-expired context.WithTimeout at upload time, so reject it here.
+	if c.S3.Timeout <= 0 {
+		return fmt.Errorf("send s3 timeout must be > 0 for s3_upload mode")
+	}
 
 	// Validate endpoint URL scheme if provided
 	if c.S3.Endpoint != "" {
@@ -308,18 +313,22 @@ func (c *SendConfig) GetBatchSize() int {
 
 // PipelineConfig defines which steps are enabled and their execution order
 type PipelineConfig struct {
-	EnabledSteps []StepName `yaml:"enabled_steps" json:"enabled_steps"`
+	EnabledSteps []StepName `yaml:"enabled_steps" json:"enabled_steps" mapstructure:"enabled_steps"`
 }
 
 // RetryConfig controls retry behavior for transient errors
 type RetryConfig struct {
-	MaxAttempts      int   `yaml:"max_attempts" json:"max_attempts"`
-	InitialBackoffMs int64 `yaml:"initial_backoff_ms" json:"initial_backoff_ms"`
-	MaxBackoffMs     int64 `yaml:"max_backoff_ms" json:"max_backoff_ms"`
+	MaxAttempts      int   `yaml:"max_attempts" json:"max_attempts" mapstructure:"max_attempts"`
+	InitialBackoffMs int64 `yaml:"initial_backoff_ms" json:"initial_backoff_ms" mapstructure:"initial_backoff_ms"`
+	MaxBackoffMs     int64 `yaml:"max_backoff_ms" json:"max_backoff_ms" mapstructure:"max_backoff_ms"`
 }
 
-// DefaultConfig returns a sensible default configuration
+// DefaultConfig returns a sensible default configuration.
+// It is the single source of truth for default values: config loading starts
+// from this and overlays only the fields present in the YAML file, so a field
+// omitted from YAML resolves to the default declared here.
 func DefaultConfig() ProjectConfig {
+	failOnError := true
 	return ProjectConfig{
 		Services: ServiceConfig{
 			DIMP: DIMPConfig{
@@ -338,6 +347,17 @@ func DefaultConfig() ProjectConfig {
 			},
 			Flattening:         DefaultFlatteningConfig(),
 			CRTDLPreprocessing: DefaultCRTDLPreprocessingConfig(),
+			Validation: ValidationConfig{
+				MaxConcurrentRequests: 4,
+				BundleChunkSizeMB:     10,
+				FailOnError:           &failOnError,
+			},
+			Send: SendConfig{
+				BatchSize: 100,
+				S3: S3Config{
+					Timeout: 30 * time.Minute,
+				},
+			},
 		},
 		Pipeline: PipelineConfig{
 			EnabledSteps: []StepName{StepLocalImport, StepHttpImport},

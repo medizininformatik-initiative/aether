@@ -59,21 +59,18 @@ jobs_dir: "` + jobsDir + `"
 	assert.Equal(t, 45*time.Minute, config.Services.Send.S3.Timeout)
 }
 
-func TestSendConfigLoading_S3_Defaults(t *testing.T) {
-	tmpDir := t.TempDir()
-	configFile := filepath.Join(tmpDir, "config.yaml")
-	jobsDir := filepath.Join(tmpDir, "jobs")
-	require.NoError(t, os.MkdirAll(jobsDir, 0755))
-
-	// Omit region and timeout to test defaults
+// region and timeout are intentionally not defaulted for s3_upload: there is no
+// sensible region for every deployment, and a zero timeout produces an
+// already-expired upload context. Both must be set explicitly and fail fast.
+func writeS3Config(t *testing.T, jobsDir, s3Body string) string {
+	t.Helper()
+	configFile := filepath.Join(t.TempDir(), "config.yaml")
 	configContent := `
 services:
   send:
     send_as: "s3_upload"
     s3:
-      bucket: "my-bucket"
-      access_key_id: "KEY"
-      secret_access_key: "SECRET"
+` + s3Body + `
 
 pipeline:
   enabled_steps:
@@ -88,12 +85,53 @@ retry:
 jobs_dir: "` + jobsDir + `"
 `
 	require.NoError(t, os.WriteFile(configFile, []byte(configContent), 0644))
+	return configFile
+}
+
+func TestSendConfigLoading_S3_MissingRegionFailsFast(t *testing.T) {
+	jobsDir := filepath.Join(t.TempDir(), "jobs")
+	require.NoError(t, os.MkdirAll(jobsDir, 0755))
+
+	configFile := writeS3Config(t, jobsDir, `      bucket: "my-bucket"
+      access_key_id: "KEY"
+      secret_access_key: "SECRET"
+      timeout: 30m`)
+
+	_, err := services.LoadConfig(configFile)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "region is required")
+}
+
+func TestSendConfigLoading_S3_ZeroTimeoutFailsFast(t *testing.T) {
+	jobsDir := filepath.Join(t.TempDir(), "jobs")
+	require.NoError(t, os.MkdirAll(jobsDir, 0755))
+
+	// Omitting timeout yields the 30m default; an explicit zero must be rejected
+	// because it produces an already-expired upload context.
+	configFile := writeS3Config(t, jobsDir, `      region: "eu-central-1"
+      bucket: "my-bucket"
+      access_key_id: "KEY"
+      secret_access_key: "SECRET"
+      timeout: 0s`)
+
+	_, err := services.LoadConfig(configFile)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "timeout must be > 0")
+}
+
+func TestSendConfigLoading_S3_Defaults(t *testing.T) {
+	jobsDir := filepath.Join(t.TempDir(), "jobs")
+	require.NoError(t, os.MkdirAll(jobsDir, 0755))
+
+	// Omit timeout and use_path_style to exercise their defaults. region is
+	// required and has no default, so it must be supplied.
+	configFile := writeS3Config(t, jobsDir, `      region: "eu-central-1"
+      bucket: "my-bucket"
+      access_key_id: "KEY"
+      secret_access_key: "SECRET"`)
 
 	config, err := services.LoadConfig(configFile)
 	require.NoError(t, err)
-
-	// Defaults should be applied
-	assert.Equal(t, "eu-central-1", config.Services.Send.S3.Region)
 	assert.Equal(t, 30*time.Minute, config.Services.Send.S3.Timeout)
 	assert.False(t, config.Services.Send.S3.UsePathStyle)
 }
@@ -114,9 +152,11 @@ services:
   send:
     send_as: "s3_upload"
     s3:
+      region: "eu-central-1"
       bucket: "${TEST_S3_BUCKET}"
       access_key_id: "${TEST_S3_KEY}"
       secret_access_key: "${TEST_S3_SECRET}"
+      timeout: 30m
 
 pipeline:
   enabled_steps:

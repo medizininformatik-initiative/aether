@@ -2319,3 +2319,83 @@ jobs_dir: "` + jobsDir + `"
 		assert.Equal(t, 500, config.Services.Flattening.BatchSizeMB)
 	})
 }
+
+// TestConfigLoading_OmittedFieldsUseStructDefaults verifies the struct-driven
+// loader: fields absent from YAML resolve to the defaults declared in
+// models.DefaultConfig() across every value kind (duration, int, int64, string,
+// bool, *bool, slice). The config supplies only the required pipeline step and
+// jobs_dir; everything else — including the entire retry block — is omitted.
+func TestConfigLoading_OmittedFieldsUseStructDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	require.NoError(t, os.MkdirAll(jobsDir, 0755))
+
+	configContent := `
+pipeline:
+  enabled_steps:
+    - local_import
+
+jobs_dir: "` + jobsDir + `"
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(configContent), 0644))
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err)
+
+	defaults := models.DefaultConfig()
+
+	// Duration default
+	assert.Equal(t, 5*time.Second, config.Services.TORCH.PollingInterval)
+	// int default
+	assert.Equal(t, defaults.Services.DIMP.BundleSplitThresholdMB, config.Services.DIMP.BundleSplitThresholdMB)
+	// int64 defaults: the whole retry block was omitted yet still resolves
+	assert.Equal(t, defaults.Retry, config.Retry)
+	// string default
+	assert.Equal(t, "default", config.Compression.Level)
+	// bool default (true)
+	assert.True(t, config.Compression.Enabled)
+	// *bool default (true)
+	require.NotNil(t, config.Services.Validation.FailOnError)
+	assert.True(t, *config.Services.Validation.FailOnError)
+	// slice default
+	assert.Equal(t, []string{"csv"}, config.Services.Flattening.Formats)
+	// nested send defaults: region is intentionally not defaulted so that
+	// validateS3Upload fails fast when an s3_upload config omits it.
+	assert.Empty(t, config.Services.Send.S3.Region)
+	assert.Equal(t, 100, config.Services.Send.BatchSize)
+}
+
+// TestConfigLoading_DecodeError verifies LoadConfig surfaces a decode error when
+// a duration field holds a string that is neither ISO 8601 nor Go format. The
+// stringToDurationHookFunc fails to parse it, so viper.Unmarshal returns an error.
+func TestConfigLoading_DecodeError(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  torch:
+    base_url: "http://localhost:8080"
+    extraction_timeout: "not-a-duration"
+
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(configContent), 0644))
+
+	config, err := services.LoadConfig(configFile)
+	assert.Error(t, err, "Unparseable duration should fail decoding")
+	assert.Nil(t, config)
+	assert.Contains(t, err.Error(), "failed to decode configuration")
+}

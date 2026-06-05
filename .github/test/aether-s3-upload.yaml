@@ -1,5 +1,5 @@
 # Aether E2E Test Configuration for S3 Upload
-# Uses a simple torch -> send pipeline to upload files to MinIO (S3-compatible)
+# Uses a simple torch -> send pipeline to upload files to SeaweedFS (S3-compatible)
 
 services:
   torch:
@@ -19,15 +19,15 @@ services:
     # Maximum polling interval (exponential backoff cap, in seconds)
     max_polling_interval: PT30S
 
-  # Send step configuration - S3 upload to MinIO
+  # Send step configuration - S3 upload to SeaweedFS
   send:
     send_as: "s3_upload"
     s3:
-      endpoint: "http://minio:9000"
+      endpoint: "http://seaweedfs:8333"
       region: "us-east-1"
       bucket: "aether-test"
-      access_key_id: "minioadmin"
-      secret_access_key: "minioadmin"
+      access_key_id: "aetheradmin"
+      secret_access_key: "aetheradmin"
       use_path_style: true
       timeout: 10m
 

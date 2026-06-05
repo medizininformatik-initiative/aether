@@ -9,7 +9,7 @@ include:
   - flattener/compose.yaml
   - blaze/compose.yaml
   - validator/compose.yaml
-  - minio/compose.yaml
+  - seaweedfs/compose.yaml
 
 services:
   # E2E test runner - runs aether inside the Docker network
@@ -36,4 +36,4 @@ services:
       - fhir-flattener
       - fhir-validator
       - blaze-fhir
-      - minio
+      - seaweedfs

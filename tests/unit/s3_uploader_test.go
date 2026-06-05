@@ -148,8 +148,8 @@ func TestNewAWSS3Uploader_WithEndpointAndPathStyle(t *testing.T) {
 		Endpoint:        "http://localhost:9000",
 		Region:          "us-east-1",
 		Bucket:          "my-bucket",
-		AccessKeyID:     "minioadmin",
-		SecretAccessKey: "minioadmin",
+		AccessKeyID:     "aetheradmin",
+		SecretAccessKey: "aetheradmin",
 		UsePathStyle:    true,
 	}
 

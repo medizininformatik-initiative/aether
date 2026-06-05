@@ -24,7 +24,7 @@ services:
   send:
     send_as: "s3_upload"
     s3:
-      endpoint: "http://minio:9000"
+      endpoint: "http://seaweedfs:8333"
       region: "us-west-2"
       bucket: "pipeline-data"
       access_key_id: "TESTKEY"
@@ -50,7 +50,7 @@ jobs_dir: "` + jobsDir + `"
 	require.NoError(t, err)
 
 	assert.Equal(t, models.SendModeS3Upload, config.Services.Send.SendAs)
-	assert.Equal(t, "http://minio:9000", config.Services.Send.S3.Endpoint)
+	assert.Equal(t, "http://seaweedfs:8333", config.Services.Send.S3.Endpoint)
 	assert.Equal(t, "us-west-2", config.Services.Send.S3.Region)
 	assert.Equal(t, "pipeline-data", config.Services.Send.S3.Bucket)
 	assert.Equal(t, "TESTKEY", config.Services.Send.S3.AccessKeyID)

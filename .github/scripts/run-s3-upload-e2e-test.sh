@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # E2E test script for S3 upload mode
-# Tests torch → send pipeline that uploads files to MinIO (S3-compatible)
+# Tests torch → send pipeline that uploads files to SeaweedFS (S3-compatible)
 
 echo "Copying aether binary into container..."
 docker compose cp ../../bin/aether aether-runner:/app/aether
@@ -11,7 +11,7 @@ docker compose exec -T aether-runner chmod +x /app/aether
 echo ""
 echo "Running aether E2E test (s3_upload) inside Docker network..."
 echo "  TORCH: http://torch-proxy:80 (internal)"
-echo "  MinIO: http://minio:9000 (internal)"
+echo "  SeaweedFS: http://seaweedfs:8333 (internal)"
 echo "  Bucket: aether-test"
 echo ""
 echo "Pipeline: torch → send (s3_upload)"
@@ -57,23 +57,21 @@ if ! echo "$OUTPUT" | grep -q "Pipeline completed successfully"; then
 fi
 
 echo ""
-echo "Verifying S3 upload: checking MinIO bucket for uploaded files..."
+echo "Verifying S3 upload: checking SeaweedFS bucket for uploaded files..."
 
-# Verify files were uploaded to MinIO
+# Verify files were uploaded to SeaweedFS
 S3_VERIFY=$(docker compose exec -T aether-runner sh -c '
     # Install curl if not present (debian minimal image)
     apt-get update -qq && apt-get install -y -qq curl jq >/dev/null 2>&1 || true
 
     echo "=== S3 Upload Verification ==="
 
-    # List objects in the bucket using the S3 ListObjectsV2 API
-    # MinIO supports the standard S3 API
+    # List objects in the bucket using the S3 ListObjectsV2 API.
+    # No signing needed: s3.json grants anonymous read/list on this test bucket.
     RESPONSE=$(curl --silent --show-error \
-        "http://minio:9000/aether-test?list-type=2" \
-        -H "Host: minio:9000" \
-        --user minioadmin:minioadmin \
+        "http://seaweedfs:8333/aether-test?list-type=2" \
         2>&1) || {
-        echo "FAIL: Could not connect to MinIO"
+        echo "FAIL: Could not connect to SeaweedFS"
         exit 1
     }
 

@@ -1,0 +1,26 @@
+name: seaweedfs
+
+services:
+  # SeaweedFS S3-compatible object store for S3 upload E2E testing.
+  # The all-in-one "mini" mode runs master, volume, filer and the S3 gateway
+  # in one process and pre-creates the test bucket via -bucket on startup.
+  # s3.json defines the credentials aether uploads with, plus an anonymous
+  # read/list grant on the test bucket so the E2E verification can list
+  # objects with a plain unsigned GET (writes still require the credentials).
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.31@sha256:e14ad400e28c811fe8426dc08abf248ec722b9f017713290a9b84a54557f45c2
+    ports: [ ":8333" ]
+    networks: [ "aether" ]
+    command:
+      - mini
+      - -s3.config=/etc/seaweedfs/s3.json
+      - -bucket=aether-test
+    volumes:
+      - ./s3.json:/etc/seaweedfs/s3.json:ro
+    healthcheck:
+      # Ready once the S3 gateway is up and the bucket exists and is readable.
+      test: [ "CMD", "curl", "-sf", "http://localhost:8333/aether-test?list-type=2" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

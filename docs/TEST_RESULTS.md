@@ -99,7 +99,7 @@ Total: 2 jobs
 
 **Features**:
 - ✅ Version flag: `--version` → `Aether version 0.1.0`
-- ✅ Global flags: `--config`, `--verbose`
+- ✅ Global flags: `--verbose`
 - ✅ Command hierarchy: `pipeline`, `job`
 - ✅ Examples and usage text
 

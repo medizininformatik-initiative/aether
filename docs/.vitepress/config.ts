@@ -53,7 +53,8 @@ export default defineConfig({
           items: [
             { text: 'Installation', link: '/getting-started/installation' },
             { text: 'Quick Start', link: '/getting-started/quick-start' },
-            { text: 'Configuration', link: '/getting-started/configuration' }
+            { text: 'Configuration', link: '/getting-started/configuration' },
+            { text: 'Migration Guide', link: '/getting-started/migration' }
           ]
         },
         {

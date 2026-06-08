@@ -1,4 +1,4 @@
-# Upgrade Guide
+# Migration Guide
 
 Breaking changes and migration steps between releases. Read the section for the
 version you are upgrading to before updating your scripts and existing jobs.

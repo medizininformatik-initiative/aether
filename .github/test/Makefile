@@ -107,7 +107,7 @@ torch-test:
 		exit 1; \
 	fi
 	@echo "Executing CRTDL query..."
-	@cd .. && ./scripts/execute-crtdl.sh
+	@../scripts/execute-crtdl.sh
 	@echo "✓ TORCH extraction test complete"
 
 ## dimp-up: Start DIMP test service
@@ -189,28 +189,22 @@ validator-logs:
 	cd validator && docker compose logs -f
 
 ## dimp-test: Run integration tests with DIMP service
-dimp-test:
+dimp-test: dimp-up
 	@echo "Running integration tests with DIMP service..."
-	@echo "Starting DIMP service..."
-	@cd dimp && docker compose up -d
 	@echo "Waiting for service to be ready..."
 	@sleep 3
 	@echo "Running tests..."
 	@cd ../.. && go test -v ./tests/integration/pipeline_dimp_test.go ./tests/integration/pipeline_dimp_resume_test.go
-	@echo "Stopping DIMP service..."
-	@cd dimp && docker compose down
+	@$(MAKE) dimp-down
 	@echo "✓ DIMP tests complete"
 
 ## test-with-services: Run all tests with required services
-test-with-services:
-	@echo "Starting all test services..."
-	@cd dimp && docker compose up -d
+test-with-services: dimp-up
 	@echo "Waiting for services to be ready..."
 	@sleep 3
 	@echo "Running full test suite..."
 	@cd ../.. && go test -v ./tests/integration/...
-	@echo "Stopping test services..."
-	@cd dimp && docker compose down
+	@$(MAKE) dimp-down
 	@echo "✓ All tests complete"
 
 ## download-testdata: Download test data (only if not present)
@@ -235,14 +229,7 @@ upload-testdata: download-testdata
 	@echo "✓ Test data uploaded to TORCH"
 
 ## e2e-test: Run end-to-end test (downloads, uploads, runs pipeline)
-e2e-test: download-testdata
-	@echo "Running end-to-end test..."
-	@if ! docker compose ps | grep -q "Up"; then \
-		echo "Starting all services..."; \
-		docker compose up --wait; \
-	fi
-	@echo "Uploading test data..."
-	@cd .. && ./scripts/upload-testdata.sh
+e2e-test: start download-testdata upload-testdata
 	@echo "Running E2E test script..."
 	../scripts/run-e2e-test.sh
 	@echo "✓ End-to-end test complete"
@@ -286,27 +273,13 @@ seaweedfs-logs:
 	cd seaweedfs && docker compose logs -f
 
 ## e2e-test-direct-load: Run direct resource load E2E test (torch → send)
-e2e-test-direct-load: download-testdata
-	@echo "Running direct resource load E2E test..."
-	@if ! docker compose ps | grep -q "Up"; then \
-		echo "Starting all services..."; \
-		docker compose up --wait; \
-	fi
-	@echo "Uploading test data..."
-	@cd .. && ./scripts/upload-testdata.sh
+e2e-test-direct-load: start download-testdata upload-testdata
 	@echo "Running direct load E2E test script..."
 	../scripts/run-direct-load-e2e-test.sh
 	@echo "✓ Direct resource load E2E test complete"
 
 ## e2e-test-s3-upload: Run S3 upload E2E test (torch → send via SeaweedFS)
-e2e-test-s3-upload: download-testdata
-	@echo "Running S3 upload E2E test..."
-	@if ! docker compose ps | grep -q "Up"; then \
-		echo "Starting all services..."; \
-		docker compose up --wait; \
-	fi
-	@echo "Uploading test data..."
-	@cd .. && ./scripts/upload-testdata.sh
+e2e-test-s3-upload: start download-testdata upload-testdata
 	@echo "Running S3 upload E2E test script..."
 	../scripts/run-s3-upload-e2e-test.sh
 	@echo "✓ S3 upload E2E test complete"

@@ -135,7 +135,7 @@ func IsCRTDLFileWithHint(path string) (bool, string) {
 	}
 
 	// FHIR Parameters format is not supported
-	if resourceType, ok := crtdl["resourceType"].(string); ok && resourceType == "Parameters" {
+	if ResourceType(crtdl) == "Parameters" {
 		return false, "file uses FHIR Parameters format - please convert to flat CRTDL structure (see example-crtdl.json)"
 	}
 
@@ -172,7 +172,7 @@ func ValidateCRTDLSyntax(crtdlPath string) error {
 		return fmt.Errorf("CRTDL file '%s' contains invalid JSON: %w\n\nPlease ensure the file is valid JSON format", crtdlPath, err)
 	}
 
-	if resourceType, ok := crtdl["resourceType"].(string); ok && resourceType == "Parameters" {
+	if ResourceType(crtdl) == "Parameters" {
 		return fmt.Errorf("CRTDL file '%s' uses FHIR Parameters format\n\nThis format is not supported. Please convert to flat CRTDL structure:\n{\n  \"cohortDefinition\": { \"inclusionCriteria\": [...] },\n  \"dataExtraction\": { \"attributeGroups\": [...] }\n}\n\nSee .github/test/torch/queries/example-crtdl.json for reference", crtdlPath)
 	}
 
@@ -242,7 +242,7 @@ func ValidateSplitConfig(thresholdMB int) error {
 // Returns OversizedResourceError if the resource is too large, nil otherwise
 func DetectOversizedResource(resource map[string]any, thresholdBytes int) *models.OversizedResourceError {
 	// Bundle resources are handled by the splitting logic, not this function
-	if resourceType, ok := resource["resourceType"].(string); ok && resourceType == "Bundle" {
+	if IsBundle(resource) {
 		return nil // Bundles are handled separately
 	}
 
@@ -257,10 +257,10 @@ func DetectOversizedResource(resource map[string]any, thresholdBytes int) *model
 		resourceType := "Unknown"
 		resourceID := "unknown"
 
-		if rt, ok := resource["resourceType"].(string); ok {
+		if rt := ResourceType(resource); rt != "" {
 			resourceType = rt
 		}
-		if id, ok := resource["id"].(string); ok {
+		if id := ResourceID(resource); id != "" {
 			resourceID = id
 		}
 

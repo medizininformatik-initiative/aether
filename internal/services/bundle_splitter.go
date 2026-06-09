@@ -48,6 +48,7 @@ package services
 import (
 	"fmt"
 
+	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
@@ -115,11 +116,11 @@ func PartitionEntries(entries []map[string]any, thresholdBytes int) ([][]map[str
 			resourceType := "Unknown"
 			resourceID := "unknown"
 
-			if resource, ok := entry["resource"].(map[string]any); ok {
-				if rt, ok := resource["resourceType"].(string); ok {
+			if resource, ok := lib.EntryResource(entry); ok {
+				if rt := lib.ResourceType(resource); rt != "" {
 					resourceType = rt
 				}
-				if id, ok := resource["id"].(string); ok {
+				if id := lib.ResourceID(resource); id != "" {
 					resourceID = id
 				}
 			}
@@ -187,7 +188,7 @@ func PartitionEntries(entries []map[string]any, thresholdBytes int) ([][]map[str
 // WHY: Returns immutable result structure (functional programming principle)
 func SplitBundle(bundle map[string]any, thresholdBytes int) (models.SplitResult, error) {
 	// Extract metadata first (validates Bundle structure)
-	metadata, err := models.ExtractBundleMetadata(bundle)
+	metadata, err := lib.ExtractBundleMetadata(bundle)
 	if err != nil {
 		return models.SplitResult{}, fmt.Errorf("invalid Bundle structure: %w", err)
 	}
@@ -201,7 +202,7 @@ func SplitBundle(bundle map[string]any, thresholdBytes int) (models.SplitResult,
 	// Check if splitting needed
 	if !ShouldSplit(bundleSize, thresholdBytes) {
 		// Bundle is small enough - return as single chunk
-		entries, err := models.ExtractEntriesFromBundle(bundle)
+		entries, err := lib.ExtractEntriesFromBundle(bundle)
 		if err != nil {
 			return models.SplitResult{}, fmt.Errorf("failed to extract entries: %w", err)
 		}
@@ -221,7 +222,7 @@ func SplitBundle(bundle map[string]any, thresholdBytes int) (models.SplitResult,
 	}
 
 	// Bundle needs splitting - extract entries
-	entries, err := models.ExtractEntriesFromBundle(bundle)
+	entries, err := lib.ExtractEntriesFromBundle(bundle)
 	if err != nil {
 		return models.SplitResult{}, fmt.Errorf("failed to extract entries: %w", err)
 	}
@@ -284,7 +285,7 @@ func ReassembleBundle(metadata models.BundleMetadata, pseudonymizedChunks []map[
 	firstChunk := pseudonymizedChunks[0]
 
 	// Validate first chunk structure
-	if resourceType, ok := firstChunk["resourceType"].(string); !ok || resourceType != "Bundle" {
+	if !lib.IsBundle(firstChunk) {
 		return models.ReassembledBundle{}, fmt.Errorf("first chunk is not a Bundle")
 	}
 
@@ -295,7 +296,7 @@ func ReassembleBundle(metadata models.BundleMetadata, pseudonymizedChunks []map[
 	}
 
 	// Extract entries from first chunk
-	firstChunkEntries, err := models.ExtractEntriesFromBundle(firstChunk)
+	firstChunkEntries, err := lib.ExtractEntriesFromBundle(firstChunk)
 	if err != nil {
 		return models.ReassembledBundle{}, fmt.Errorf("failed to extract entries from first chunk: %w", err)
 	}
@@ -306,12 +307,12 @@ func ReassembleBundle(metadata models.BundleMetadata, pseudonymizedChunks []map[
 		chunk := pseudonymizedChunks[i]
 
 		// Validate chunk structure
-		if resourceType, ok := chunk["resourceType"].(string); !ok || resourceType != "Bundle" {
+		if !lib.IsBundle(chunk) {
 			return models.ReassembledBundle{}, fmt.Errorf("chunk %d is not a Bundle", i)
 		}
 
 		// Extract entries from chunk
-		chunkEntries, err := models.ExtractEntriesFromBundle(chunk)
+		chunkEntries, err := lib.ExtractEntriesFromBundle(chunk)
 		if err != nil {
 			return models.ReassembledBundle{}, fmt.Errorf("failed to extract entries from chunk %d: %w", i, err)
 		}

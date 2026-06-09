@@ -228,7 +228,7 @@ func scanProvenanceIndex(files []string) (models.ProvenanceIndex, error) {
 
 	for _, filePath := range files {
 		_, err := lib.ReadNDJSONFile(filePath, func(resource lib.FHIRResource) error {
-			if rt, ok := resource["resourceType"].(string); ok && rt == "Bundle" {
+			if lib.IsBundle(resource) {
 				_, bundleIndex := extractBundleResources(resource)
 				for k, v := range bundleIndex {
 					mergedIndex[k] = append(mergedIndex[k], v...)
@@ -298,7 +298,7 @@ func streamAndFlattenResources(
 				resourceSize := int(dec.InputOffset() - startOffset)
 
 				// If resource is a Bundle, extract clinical entries (skip Provenance)
-				if resourceType, ok := resource["resourceType"].(string); ok && resourceType == "Bundle" {
+				if lib.IsBundle(resource) {
 					clinicalResources, _ := extractBundleResources(resource)
 					for _, entryResource := range clinicalResources {
 						entryBytes, marshalErr := json.Marshal(entryResource)
@@ -353,7 +353,7 @@ func streamAndFlattenResources(
 // routeResourceToGroups determines which groups a resource belongs to based on
 // the provenance index. Returns the group indices for all matching groups.
 func routeResourceToGroups(resource map[string]any, provenanceIndex models.ProvenanceIndex, groupIDToIndex map[string]int, viewDefs []*models.ViewDefinition) []int {
-	ref := ResourceReference(resource)
+	ref := lib.ResourceReference(resource)
 	if ref == "" {
 		return nil
 	}
@@ -414,25 +414,11 @@ func flushGroupBatch(
 // extractBundleResources separates Bundle entries into clinical resources and a provenance index.
 // Provenance resources are used to build the index and excluded from the returned resources.
 func extractBundleResources(bundle map[string]any) ([]map[string]any, models.ProvenanceIndex) {
-	entries, ok := bundle["entry"].([]any)
-	if !ok {
-		return nil, nil
-	}
-
 	var resources []map[string]any
 	var provenances []map[string]any
 
-	for _, entry := range entries {
-		entryMap, ok := entry.(map[string]any)
-		if !ok {
-			continue
-		}
-		entryResource, ok := entryMap["resource"].(map[string]any)
-		if !ok {
-			continue
-		}
-
-		if rt, ok := entryResource["resourceType"].(string); ok && rt == "Provenance" {
+	for _, entryResource := range lib.BundleResources(bundle) {
+		if lib.IsProvenance(entryResource) {
 			provenances = append(provenances, entryResource)
 		} else {
 			resources = append(resources, entryResource)
@@ -516,7 +502,7 @@ func FilterResourcesByProvenance(resources []map[string]any, index models.Proven
 	var matching []map[string]any
 
 	for _, resource := range resources {
-		ref := ResourceReference(resource)
+		ref := lib.ResourceReference(resource)
 		if ref == "" {
 			continue
 		}
@@ -529,16 +515,6 @@ func FilterResourcesByProvenance(resources []map[string]any, index models.Proven
 	}
 
 	return matching
-}
-
-// ResourceReference builds a "ResourceType/id" reference string from a FHIR resource.
-func ResourceReference(resource map[string]any) string {
-	rt, _ := resource["resourceType"].(string)
-	id, _ := resource["id"].(string)
-	if rt == "" || id == "" {
-		return ""
-	}
-	return rt + "/" + id
 }
 
 // IsFlatteningErrorRetryable checks if a flattening error should be retried

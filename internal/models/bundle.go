@@ -76,36 +76,6 @@ func (e *OversizedResourceError) Error() string {
 	)
 }
 
-// ExtractBundleMetadata extracts metadata from a FHIR Bundle JSON object
-// Returns BundleMetadata or error if Bundle structure is invalid
-func ExtractBundleMetadata(bundle map[string]any) (BundleMetadata, error) {
-	metadata := BundleMetadata{}
-
-	// Extract ID
-	if id, ok := bundle["id"].(string); ok {
-		metadata.ID = id
-	} else {
-		return metadata, fmt.Errorf("bundle.id must be present and a string")
-	}
-
-	// Extract type
-	if bundleType, ok := bundle["type"].(string); ok {
-		metadata.Type = bundleType
-	} else {
-		return metadata, fmt.Errorf("bundle.type must be present and a string")
-	}
-
-	// Extract timestamp if present
-	if timestamp, ok := bundle["timestamp"].(string); ok {
-		if parsed, err := time.Parse(time.RFC3339, timestamp); err == nil {
-			metadata.Timestamp = parsed
-		}
-		// If timestamp parsing fails, silently ignore (optional field)
-	}
-
-	return metadata, nil
-}
-
 // CalculateJSONSize returns the serialized byte count of a JSON object
 // This is used to determine if a Bundle exceeds the split threshold
 func CalculateJSONSize(obj map[string]any) (int, error) {
@@ -186,24 +156,4 @@ func ConvertChunkToBundle(chunk BundleChunk) map[string]any {
 	}
 
 	return bundle
-}
-
-// ExtractEntriesFromBundle extracts the entry array from a FHIR Bundle JSON object
-// Returns entries array or error if structure is invalid
-func ExtractEntriesFromBundle(bundle map[string]any) ([]map[string]any, error) {
-	entries, ok := bundle["entry"].([]any)
-	if !ok {
-		return nil, fmt.Errorf("bundle.entry must be an array")
-	}
-
-	result := make([]map[string]any, 0, len(entries))
-	for i, entry := range entries {
-		entryObj, ok := entry.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("bundle.entry[%d] must be an object", i)
-		}
-		result = append(result, entryObj)
-	}
-
-	return result, nil
 }

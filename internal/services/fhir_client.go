@@ -217,22 +217,13 @@ func (c *FHIRClient) createTransactionBundle(resources []json.RawMessage) map[st
 			continue
 		}
 
-		resourceType, _ := resource["resourceType"].(string)
-
 		// Unwrap collection/searchset/transaction Bundles - extract entries as individual resources
 		// Transaction bundles from TORCH should be unwrapped since we create our own transaction
-		if resourceType == "Bundle" {
+		if lib.IsBundle(resource) {
 			bundleType, _ := resource["type"].(string)
 			if bundleType == "collection" || bundleType == "searchset" || bundleType == "transaction" {
-				// Extract entries from the Bundle
-				if bundleEntries, ok := resource["entry"].([]any); ok {
-					for _, entryAny := range bundleEntries {
-						if entry, ok := entryAny.(map[string]any); ok {
-							if entryResource, ok := entry["resource"].(map[string]any); ok {
-								entries = append(entries, c.createEntryFromResource(entryResource))
-							}
-						}
-					}
+				for _, entryResource := range lib.BundleResources(resource) {
+					entries = append(entries, c.createEntryFromResource(entryResource))
 				}
 				// Don't add the Bundle itself - we've extracted its resources
 				continue
@@ -257,8 +248,8 @@ func (c *FHIRClient) createTransactionBundle(resources []json.RawMessage) map[st
 
 // createEntryFromResource creates a transaction Bundle entry from a parsed resource
 func (c *FHIRClient) createEntryFromResource(resource map[string]any) map[string]any {
-	resourceType, _ := resource["resourceType"].(string)
-	id, hasID := resource["id"].(string)
+	resourceType := lib.ResourceType(resource)
+	id := lib.ResourceID(resource)
 
 	// Re-marshal the resource to JSON
 	resourceJSON, err := json.Marshal(resource)
@@ -273,7 +264,7 @@ func (c *FHIRClient) createEntryFromResource(resource map[string]any) map[string
 	}
 
 	var request map[string]any
-	if hasID && id != "" {
+	if id != "" {
 		// Use PUT to create/update with known ID
 		request = map[string]any{
 			"method": "PUT",

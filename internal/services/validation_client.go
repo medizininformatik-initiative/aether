@@ -55,8 +55,8 @@ func (r *ValidationResult) HasErrors() bool {
 // ValidateResource sends a FHIR resource to the validation service and returns the OperationOutcome.
 // Per contract: POST /validateResource with Content-Type: application/fhir+json
 func (c *ValidationClient) ValidateResource(resource map[string]any) (*ValidationResult, error) {
-	resourceType, _ := resource["resourceType"].(string)
-	resourceID, _ := resource["id"].(string)
+	resourceType := lib.ResourceType(resource)
+	resourceID := lib.ResourceID(resource)
 
 	c.logger.Debug("Sending resource to validator",
 		"resourceType", resourceType,

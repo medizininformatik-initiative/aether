@@ -31,8 +31,8 @@ func NewDIMPClient(baseURL string, httpClient *HTTPClient, logger *lib.Logger) *
 // Per contract: POST /fhir/$de-identify with single FHIR resource
 func (c *DIMPClient) Pseudonymize(resource map[string]any) (map[string]any, error) {
 	// Extract resource info for logging
-	resourceType, _ := resource["resourceType"].(string)
-	resourceID, _ := resource["id"].(string)
+	resourceType := lib.ResourceType(resource)
+	resourceID := lib.ResourceID(resource)
 
 	// Endpoint per dimp-service contract; baseURL is the server root and
 	// the /fhir prefix is appended here (see issue #283).
@@ -107,8 +107,8 @@ func (c *DIMPClient) Pseudonymize(resource map[string]any) (map[string]any, erro
 	}
 
 	// Log what changed
-	originalID, _ := resource["id"].(string)
-	newID, _ := pseudonymized["id"].(string)
+	originalID := lib.ResourceID(resource)
+	newID := lib.ResourceID(pseudonymized)
 	if originalID != newID {
 		c.logger.Debug("Resource ID pseudonymized",
 			"resourceType", resourceType,

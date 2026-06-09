@@ -350,11 +350,8 @@ const validationBaseURL = "http://aether.local/fhir/"
 // validationEntryFullURL builds a synthetic fullUrl for a resource wrapped as a collection
 // Bundle entry. Uses the same base URL as inner Bundle entries so cross-references resolve.
 func validationEntryFullURL(resource map[string]any, index int) string {
-	resourceType, _ := resource["resourceType"].(string)
-	id, _ := resource["id"].(string)
-
-	if resourceType != "" && id != "" {
-		return validationBaseURL + resourceType + "/" + id
+	if ref := lib.ResourceReference(resource); ref != "" {
+		return validationBaseURL + ref
 	}
 
 	return validationBaseURL + fmt.Sprintf("Resource/%d", index)
@@ -365,22 +362,11 @@ func validationEntryFullURL(resource map[string]any, index int) string {
 // validator needs fullUrl to resolve inter-entry references; without it, it constructs
 // URLs from its own base and warns about mismatches.
 func injectInnerBundleFullURLs(resource map[string]any) {
-	if rt, _ := resource["resourceType"].(string); rt != "Bundle" {
+	if !lib.IsBundle(resource) {
 		return
 	}
 
-	// After JSON unmarshaling, entries are []any (not []map[string]any)
-	entries, ok := resource["entry"].([]any)
-	if !ok {
-		return
-	}
-
-	for _, entryAny := range entries {
-		entry, ok := entryAny.(map[string]any)
-		if !ok {
-			continue
-		}
-
+	for _, entry := range lib.BundleEntries(resource) {
 		if _, hasFullURL := entry["fullUrl"]; hasFullURL {
 			continue
 		}
@@ -393,11 +379,9 @@ func injectInnerBundleFullURLs(resource map[string]any) {
 			}
 		}
 
-		if res, ok := entry["resource"].(map[string]any); ok {
-			resType, _ := res["resourceType"].(string)
-			resID, _ := res["id"].(string)
-			if resType != "" && resID != "" {
-				entry["fullUrl"] = validationBaseURL + resType + "/" + resID
+		if res, ok := lib.EntryResource(entry); ok {
+			if ref := lib.ResourceReference(res); ref != "" {
+				entry["fullUrl"] = validationBaseURL + ref
 			}
 		}
 	}
@@ -471,8 +455,8 @@ func chunkResourcesWithOversized(entries []map[string]any, thresholdBytes int, l
 			partitions = append(partitions, []map[string]any{entry})
 
 			resourceType := "Unknown"
-			if resource, ok := entry["resource"].(map[string]any); ok {
-				if rt, ok := resource["resourceType"].(string); ok {
+			if resource, ok := lib.EntryResource(entry); ok {
+				if rt := lib.ResourceType(resource); rt != "" {
 					resourceType = rt
 				}
 			}

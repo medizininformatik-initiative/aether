@@ -126,11 +126,7 @@ func ExecuteSendStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 func executeTransferLoadSend(job *models.PipelineJob, jobDir string, step *models.PipelineStep, logger *lib.Logger) error {
 	stepName := models.StepSend
 
-	// Resolve input directory from previous step
-	jobsBaseDir := filepath.Dir(jobDir)
-	jobID := filepath.Base(jobDir)
-	stepIndex := getStepIndexInEnabledSteps(job.Config.Pipeline.EnabledSteps, stepName)
-	inputDir := services.GetStepInputDir(jobsBaseDir, jobID, job.Config.Pipeline.EnabledSteps, stepIndex)
+	inputDir := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps).InputDir(stepName)
 
 	files, err := findAllFilesRecursive(inputDir)
 	if err != nil {
@@ -218,11 +214,7 @@ func executeTransferLoadSend(job *models.PipelineJob, jobDir string, step *model
 func executeDirectResourceLoadSend(job *models.PipelineJob, jobDir string, step *models.PipelineStep, logger *lib.Logger) error {
 	stepName := models.StepSend
 
-	// Resolve input directory from previous step
-	jobsBaseDir := filepath.Dir(jobDir)
-	jobID := filepath.Base(jobDir)
-	stepIndex := getStepIndexInEnabledSteps(job.Config.Pipeline.EnabledSteps, stepName)
-	inputDir := services.GetStepInputDir(jobsBaseDir, jobID, job.Config.Pipeline.EnabledSteps, stepIndex)
+	inputDir := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps).InputDir(stepName)
 
 	// Find NDJSON files
 	files, err := findNDJSONFiles(inputDir)
@@ -578,11 +570,7 @@ func findAllFilesRecursive(dir string) ([]string, error) {
 func executeS3UploadSend(job *models.PipelineJob, jobDir string, step *models.PipelineStep, logger *lib.Logger) error {
 	stepName := models.StepSend
 
-	// Resolve input directory from previous step
-	jobsBaseDir := filepath.Dir(jobDir)
-	jobID := filepath.Base(jobDir)
-	stepIndex := getStepIndexInEnabledSteps(job.Config.Pipeline.EnabledSteps, stepName)
-	inputDir := services.GetStepInputDir(jobsBaseDir, jobID, job.Config.Pipeline.EnabledSteps, stepIndex)
+	inputDir := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps).InputDir(stepName)
 
 	files, err := findAllFilesRecursive(inputDir)
 	if err != nil {
@@ -640,7 +628,7 @@ func executeS3UploadSend(job *models.PipelineJob, jobDir string, step *models.Pi
 		if err != nil {
 			relPath = filepath.Base(filePath)
 		}
-		s3Key := jobID + "/" + relPath
+		s3Key := job.JobID + "/" + relPath
 
 		// Get file size for logging
 		info, err := os.Stat(filePath)

@@ -25,21 +25,6 @@ func (d defaultFileOps) MkdirAll(path string, perm os.FileMode) error {
 // FileOpsProvider allows tests to inject mock file operations
 var FileOpsProvider FileOps = defaultFileOps{}
 
-// GetPreviousStepForWait finds the non-wait step that precedes the current wait step
-func GetPreviousStepForWait(enabledSteps []models.StepName, waitStepIndex int) (models.StepName, error) {
-	if waitStepIndex <= 0 {
-		return "", fmt.Errorf("wait step cannot be first in pipeline")
-	}
-
-	for i := waitStepIndex - 1; i >= 0; i-- {
-		if enabledSteps[i] != models.StepWait {
-			return enabledSteps[i], nil
-		}
-	}
-
-	return "", fmt.Errorf("no non-wait step found before wait step at index %d", waitStepIndex)
-}
-
 // FindWaitStepIndex finds the index of a wait step in the job's enabled steps
 // waitStepPosition is the 0-based position among all wait steps (e.g., 0 for first wait, 1 for second)
 func FindWaitStepIndex(job *models.PipelineJob, waitStepPosition int) (int, error) {
@@ -68,26 +53,22 @@ func GetCurrentWaitStepIndex(job *models.PipelineJob) (int, error) {
 // ExecuteWaitStep creates an empty wait directory for manual data inspection
 // Returns nil on success, the job should then be saved with status "waiting"
 func ExecuteWaitStep(job *models.PipelineJob, jobsBaseDir string, waitStepIndex int) error {
-	enabledSteps := job.Config.Pipeline.EnabledSteps
-
-	prevStep, err := GetPreviousStepForWait(enabledSteps, waitStepIndex)
+	layout := services.NewJobLayout(jobsBaseDir, job.JobID, job.Config.Pipeline.EnabledSteps)
+	waitDir, err := layout.WaitDir(waitStepIndex)
 	if err != nil {
 		return fmt.Errorf("failed to find previous step: %w", err)
 	}
 
-	sourceDir := services.GetJobOutputDir(jobsBaseDir, job.JobID, prevStep)
-	waitDir := services.GetWaitStepDir(jobsBaseDir, job.JobID, prevStep)
-
-	if err := CreateWaitDirectory(sourceDir, waitDir); err != nil {
+	if err := CreateWaitDirectory(waitDir); err != nil {
 		return fmt.Errorf("failed to create wait directory: %w", err)
 	}
 
 	return nil
 }
 
-// CreateWaitDirectory creates an empty wait directory for manual data inspection
-// The directory is intentionally empty - users must copy/place their modified data here
-func CreateWaitDirectory(sourceDir, waitDir string) error {
+// CreateWaitDirectory creates an empty wait directory for manual data inspection.
+// The directory is intentionally empty - users must place their modified data here.
+func CreateWaitDirectory(waitDir string) error {
 	if err := FileOpsProvider.MkdirAll(waitDir, 0755); err != nil {
 		return fmt.Errorf("failed to create wait directory %s: %w", waitDir, err)
 	}

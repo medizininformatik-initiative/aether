@@ -52,12 +52,9 @@ func ExecuteValidationStep(job *models.PipelineJob, jobDir string, logger *lib.L
 	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
 	validationClient := services.NewValidationClient(job.Config.Services.Validation.URL, httpClient, logger)
 
-	// Resolve input directory (skipping transparent steps like wait)
-	jobsBaseDir := filepath.Dir(jobDir)
-	jobID := filepath.Base(jobDir)
-	stepIndex := getStepIndexInEnabledSteps(job.Config.Pipeline.EnabledSteps, stepName)
-	inputDir := services.GetStepInputDir(jobsBaseDir, jobID, job.Config.Pipeline.EnabledSteps, stepIndex)
-	outputDir := filepath.Join(jobDir, "validation")
+	layout := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps)
+	inputDir := layout.InputDir(stepName)
+	outputDir := layout.OutputDir(stepName)
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)

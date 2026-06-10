@@ -318,15 +318,10 @@ func executeStep(job *models.PipelineJob, stepName models.StepName, config *mode
 			return fmt.Errorf("failed to save job state: %w", err)
 		}
 
-		// Get previous step name for wait directory path
-		var prevStepName models.StepName
-		for i := stepIndex - 1; i >= 0; i-- {
-			if job.Config.Pipeline.EnabledSteps[i] != models.StepWait {
-				prevStepName = job.Config.Pipeline.EnabledSteps[i]
-				break
-			}
+		waitDir, err := services.NewJobLayout(config.JobsDir, job.JobID, job.Config.Pipeline.EnabledSteps).WaitDir(stepIndex)
+		if err != nil {
+			return fmt.Errorf("failed to resolve wait directory: %w", err)
 		}
-		waitDir := services.GetWaitStepDir(config.JobsDir, job.JobID, prevStepName)
 		fmt.Printf("\n⏸ Pipeline paused at wait step\n")
 		fmt.Printf("  Wait directory: %s\n", waitDir)
 		fmt.Printf("  The directory is EMPTY - place your modified data there\n")
@@ -648,13 +643,10 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("wait step not found in enabled steps")
 		}
 
-		// Get previous step name to determine wait directory
-		prevStepName, err := pipeline.GetPreviousStepForWait(job.Config.Pipeline.EnabledSteps, waitStepIndex)
+		waitDir, err := services.NewJobLayout(config.JobsDir, job.JobID, job.Config.Pipeline.EnabledSteps).WaitDir(waitStepIndex)
 		if err != nil {
-			return fmt.Errorf("failed to find previous step for wait: %w", err)
+			return fmt.Errorf("failed to resolve wait directory: %w", err)
 		}
-
-		waitDir := services.GetWaitStepDir(config.JobsDir, job.JobID, prevStepName)
 		fileCount, err := pipeline.CountFilesInDir(waitDir)
 		if err != nil {
 			return fmt.Errorf("failed to check wait directory: %w", err)

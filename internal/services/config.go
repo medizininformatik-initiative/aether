@@ -52,6 +52,37 @@ func ExpandEnvVars(s string) string {
 	return expanded
 }
 
+// bindEnvOverrides registers an AETHER_* environment binding for every leaf
+// field of the config struct, walking nested structs via their mapstructure
+// tags. Binding is required because viper's AutomaticEnv only consults keys it
+// already knows; an unbound nested key absent from the YAML file is never looked
+// up. Binding an unset variable is safe: viper returns no value, so the field
+// keeps the default from models.DefaultConfig().
+func bindEnvOverrides(t reflect.Type, prefix string) {
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		name, _, _ := strings.Cut(field.Tag.Get("mapstructure"), ",")
+		if name == "" || name == "-" {
+			continue
+		}
+		key := name
+		if prefix != "" {
+			key = prefix + "." + name
+		}
+		fieldType := field.Type
+		for fieldType.Kind() == reflect.Pointer {
+			fieldType = fieldType.Elem()
+		}
+		// Recurse into nested config structs; everything else (time.Duration,
+		// slices, maps, scalars) is a bindable leaf.
+		if fieldType.Kind() == reflect.Struct {
+			bindEnvOverrides(fieldType, key)
+			continue
+		}
+		_ = viper.BindEnv(key)
+	}
+}
+
 // LoadConfig loads configuration from the given file and merges with CLI flags.
 // The config file path is required; auto-discovery of ./aether.yaml or
 // ~/.config/aether/aether.yaml is intentionally not performed.
@@ -64,16 +95,23 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 	if configFile == "" {
 		return nil, fmt.Errorf("config file is required: pass aether.yaml as the first positional argument (e.g. `aether pipeline start aether.yaml crtdl.json`)")
 	}
+	// Start from a clean singleton so repeated loads don't accumulate stale
+	// config or env bindings from a previous call.
+	viper.Reset()
 	viper.SetConfigFile(configFile)
 
-	// Enable environment variable override with AETHER_ prefix
+	// Enable AETHER_ environment overrides. The key replacer maps nested config
+	// keys to env names, e.g. services.torch.base_url -> AETHER_SERVICES_TORCH_BASE_URL.
 	viper.SetEnvPrefix("AETHER")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
-	// viper.Unmarshal only sees keys present in the file/defaults, so an
-	// AutomaticEnv override of a key absent from the file would be dropped.
-	// Registering jobs_dir's default keeps AETHER_JOBS_DIR honoured regardless.
-	viper.SetDefault("jobs_dir", "./jobs")
+	// AutomaticEnv only consults keys viper already knows (keys present in the
+	// file plus bound keys), so a nested key absent from the file would never be
+	// looked up. Binding every config key makes all of them overridable via env,
+	// including keys omitted from the YAML file. BindEnv relies on the prefix set
+	// just above to form the AETHER_* variable name.
+	bindEnvOverrides(reflect.TypeOf(models.ProjectConfig{}), "")
 
 	if err := viper.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("failed to read config file %q: %w", configFile, err)

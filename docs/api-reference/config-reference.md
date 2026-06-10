@@ -446,7 +446,11 @@ Directory for job state and data files.
 
 ## Environment Variables
 
-All string values support environment variable substitution:
+aether exposes two independent environment-variable mechanisms.
+
+### In-file substitution (`${VAR}`)
+
+All string values support `${VAR}` substitution, expanded when the file is read:
 
 ```yaml
 services:
@@ -456,6 +460,22 @@ services:
   send:
     url: "${FHIR_SERVER_URL}"
 ```
+
+### Overrides (`AETHER_*`)
+
+Every configuration key can be overridden with an `AETHER_`-prefixed variable,
+including keys omitted from the YAML file. The name is the full config path,
+uppercased, with `.` replaced by `_`:
+
+```bash
+export AETHER_SERVICES_TORCH_BASE_URL="http://torch.internal:8080"
+export AETHER_SERVICES_DIMP_URL="http://dimp.internal:8080/fhir"
+export AETHER_RETRY_MAX_ATTEMPTS=8
+```
+
+Scope is **all** keys (nested service blocks, durations, integers, booleans).
+Precedence: CLI flags → `AETHER_*` env → config file → built-in defaults. An unset
+variable leaves the key at its file value or default.
 
 ## Example Configurations
 

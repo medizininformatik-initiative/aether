@@ -210,7 +210,13 @@ services:
 
 ## Environment Variables
 
-Use environment variables for sensitive data:
+aether supports two independent environment-variable mechanisms.
+
+### In-file substitution: `${VAR}`
+
+Any string value in the YAML file may reference an environment variable with
+`${VAR}`. The reference is expanded when the file is read — useful for keeping
+secrets out of the file:
 
 ```yaml
 services:
@@ -223,6 +229,30 @@ services:
 export TORCH_USERNAME="researcher"
 export TORCH_PASSWORD="secret"
 ```
+
+### Overrides: `AETHER_*`
+
+Any configuration key can be overridden with an `AETHER_`-prefixed environment
+variable, **even when the key is absent from the YAML file**. The variable name
+is the full config path, uppercased, with dots replaced by underscores:
+
+| Config key                          | Environment variable                       |
+| ----------------------------------- | ------------------------------------------ |
+| `jobs_dir`                          | `AETHER_JOBS_DIR`                          |
+| `services.torch.base_url`           | `AETHER_SERVICES_TORCH_BASE_URL`          |
+| `services.dimp.url`                 | `AETHER_SERVICES_DIMP_URL`                |
+| `retry.max_attempts`                | `AETHER_RETRY_MAX_ATTEMPTS`               |
+| `services.send.s3.bucket`           | `AETHER_SERVICES_SEND_S3_BUCKET`          |
+
+```bash
+export AETHER_SERVICES_TORCH_BASE_URL="http://torch.internal:8080"
+```
+
+Scope: **all** keys are overridable, including nested service blocks, durations
+(`AETHER_SERVICES_TORCH_EXTRACTION_TIMEOUT=PT45M`), integers, and booleans.
+Precedence is CLI flags → `AETHER_*` env → config file → built-in defaults, so an
+override wins over a value set in the file. Keys whose variable is unset keep
+their default.
 
 ## Next Steps
 

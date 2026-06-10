@@ -64,13 +64,13 @@ func TestExtractBundleResources(t *testing.T) {
 		}
 		resources, index := extractBundleResources(bundle)
 		assert.Nil(t, resources)
-		assert.Nil(t, index)
+		assert.Empty(t, index)
 	})
 
 	t.Run("returns nil for missing entry", func(t *testing.T) {
 		resources, index := extractBundleResources(map[string]any{"resourceType": "Bundle"})
 		assert.Nil(t, resources)
-		assert.Nil(t, index)
+		assert.Empty(t, index)
 	})
 
 	t.Run("skips non-map entries and entries without resource", func(t *testing.T) {

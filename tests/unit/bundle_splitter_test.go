@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
@@ -120,7 +121,7 @@ func TestExtractBundleMetadata(t *testing.T) {
 	t.Run("Extract from valid Bundle", func(t *testing.T) {
 		bundle := CreateTestBundle(10, 1)
 
-		metadata, err := models.ExtractBundleMetadata(bundle)
+		metadata, err := lib.ExtractBundleMetadata(bundle)
 		require.NoError(t, err)
 
 		assert.NotEmpty(t, metadata.ID, "Bundle ID should be present")
@@ -134,7 +135,7 @@ func TestExtractBundleMetadata(t *testing.T) {
 			"type": "collection",
 		}
 
-		_, err := models.ExtractBundleMetadata(bundle)
+		_, err := lib.ExtractBundleMetadata(bundle)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "id")
 	})
@@ -144,7 +145,7 @@ func TestExtractBundleMetadata(t *testing.T) {
 			"id": "test-bundle",
 		}
 
-		_, err := models.ExtractBundleMetadata(bundle)
+		_, err := lib.ExtractBundleMetadata(bundle)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "type")
 	})
@@ -236,7 +237,7 @@ func TestConvertChunkToBundle(t *testing.T) {
 func TestExtractEntriesFromBundle(t *testing.T) {
 	bundle := CreateTestBundle(5, 1)
 
-	entries, err := models.ExtractEntriesFromBundle(bundle)
+	entries, err := lib.ExtractEntriesFromBundle(bundle)
 	require.NoError(t, err)
 
 	assert.Equal(t, 5, len(entries))
@@ -252,7 +253,7 @@ func TestExtractEntriesFromBundle(t *testing.T) {
 func TestPartitionEntriesGreedyAlgorithm(t *testing.T) {
 	// Create Bundle with 100 entries of ~100KB each
 	bundle := CreateTestBundle(100, 100)
-	entries, err := models.ExtractEntriesFromBundle(bundle)
+	entries, err := lib.ExtractEntriesFromBundle(bundle)
 	require.NoError(t, err)
 
 	// With 100KB entries and 10MB threshold, expect roughly 100 chunks
@@ -302,11 +303,11 @@ func TestPartitionEntriesGreedyAlgorithm(t *testing.T) {
 func TestBundleMetadataRoundTrip(t *testing.T) {
 	// Create original Bundle
 	original := CreateTestBundle(50, 10)
-	originalMetadata, err := models.ExtractBundleMetadata(original)
+	originalMetadata, err := lib.ExtractBundleMetadata(original)
 	require.NoError(t, err)
 
 	// Create chunk from metadata
-	entries, _ := models.ExtractEntriesFromBundle(original)
+	entries, _ := lib.ExtractEntriesFromBundle(original)
 	chunk, err := models.CreateBundleChunk(originalMetadata, entries[:10], 0, 3)
 	require.NoError(t, err)
 
@@ -369,11 +370,11 @@ func TestEdgeCase_MixedResourceTypes(t *testing.T) {
 	require.NoError(t, err)
 
 	// Extract and verify
-	metadata, err := models.ExtractBundleMetadata(bundle)
+	metadata, err := lib.ExtractBundleMetadata(bundle)
 	require.NoError(t, err)
 	assert.Equal(t, "mixed-types-bundle", metadata.ID)
 
-	extractedEntries, err := models.ExtractEntriesFromBundle(bundle)
+	extractedEntries, err := lib.ExtractEntriesFromBundle(bundle)
 	require.NoError(t, err)
 	assert.Len(t, extractedEntries, 3, "Should have 3 entries of different types")
 
@@ -391,11 +392,11 @@ func TestEdgeCase_EmptyBundle(t *testing.T) {
 		"entry":        []any{},
 	}
 
-	metadata, err := models.ExtractBundleMetadata(bundle)
+	metadata, err := lib.ExtractBundleMetadata(bundle)
 	require.NoError(t, err)
 	assert.Equal(t, "empty-bundle", metadata.ID)
 
-	entries, err := models.ExtractEntriesFromBundle(bundle)
+	entries, err := lib.ExtractEntriesFromBundle(bundle)
 	require.NoError(t, err)
 	assert.Empty(t, entries, "Empty bundle should have no entries")
 
@@ -431,10 +432,10 @@ func TestEdgeCase_SingleOversizedEntry(t *testing.T) {
 		"entry":        entries,
 	}
 
-	metadata, err := models.ExtractBundleMetadata(bundle)
+	metadata, err := lib.ExtractBundleMetadata(bundle)
 	require.NoError(t, err)
 
-	extractedEntries, err := models.ExtractEntriesFromBundle(bundle)
+	extractedEntries, err := lib.ExtractEntriesFromBundle(bundle)
 	require.NoError(t, err)
 	require.Len(t, extractedEntries, 1)
 
@@ -486,7 +487,7 @@ func TestEdgeCase_BundleWithFullUrlReferences(t *testing.T) {
 		"entry":        entries,
 	}
 
-	extractedEntries, err := models.ExtractEntriesFromBundle(bundle)
+	extractedEntries, err := lib.ExtractEntriesFromBundle(bundle)
 	require.NoError(t, err)
 	assert.Len(t, extractedEntries, 2)
 

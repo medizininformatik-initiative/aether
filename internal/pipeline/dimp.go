@@ -190,8 +190,8 @@ func processDIMPFile(inputFile, outputFile string, dimpClient *services.DIMPClie
 			return processor.GetResourceCount(), fmt.Errorf("failed to parse resource %d: %w", processor.GetResourceCount()+1, err)
 		}
 
-		resourceType, _ := resource["resourceType"].(string)
-		resourceID, _ := resource["id"].(string)
+		resourceType := lib.ResourceType(resource)
+		resourceID := lib.ResourceID(resource)
 
 		logger.Debug("Processing FHIR resource",
 			"file", filepath.Base(inputFile),

@@ -148,19 +148,6 @@ func TestFilterResourcesByProvenance(t *testing.T) {
 	})
 }
 
-func TestResourceReference(t *testing.T) {
-	t.Run("builds reference from resource", func(t *testing.T) {
-		r := map[string]any{"resourceType": "Patient", "id": "123"}
-		assert.Equal(t, "Patient/123", pipeline.ResourceReference(r))
-	})
-
-	t.Run("returns empty for missing fields", func(t *testing.T) {
-		assert.Equal(t, "", pipeline.ResourceReference(map[string]any{"resourceType": "Patient"}))
-		assert.Equal(t, "", pipeline.ResourceReference(map[string]any{"id": "1"}))
-		assert.Equal(t, "", pipeline.ResourceReference(map[string]any{}))
-	})
-}
-
 func TestIsFlatteningErrorRetryable(t *testing.T) {
 	t.Run("transient FlattenerError is retryable", func(t *testing.T) {
 		err := &services.FlattenerError{

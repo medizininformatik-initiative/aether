@@ -13,9 +13,11 @@ services:
     username: "test"
     password: "test"
 
-    # Maximum time to wait for extraction completion
-    # Accepts ISO 8601 (e.g. PT30M) or Go format (e.g. 30m)
-    # Default: PT30M (30 minutes, reasonable for typical cohort sizes)
+    # Liveness window: max time to wait WITHOUT a response from TORCH, not a
+    # total cap. Reset on every status response (200/202), so a long-running
+    # extraction that keeps responding never trips it — aether only gives up
+    # when TORCH goes silent for this long. See docs/adr/0001-extraction-timeout-liveness.md.
+    # Accepts ISO 8601 (e.g. PT30M) or Go format (e.g. 30m). Default: PT30M.
     extraction_timeout: PT30M
 
     # Initial polling interval when checking extraction status

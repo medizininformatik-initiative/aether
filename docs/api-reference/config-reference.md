@@ -109,7 +109,7 @@ services:
 | `base_url` | string | - | TORCH server URL (required if torch step enabled) |
 | `username` | string | - | Authentication username |
 | `password` | string | - | Authentication password |
-| `extraction_timeout` | duration | PT30M | Max wait time for extraction. Also serves as the safety net for transient polling errors — polling retries until this timeout is exceeded. |
+| `extraction_timeout` | duration | PT30M | Liveness window, not a total cap: max time to wait without a response from TORCH. Reset on every status response (200/202), so a long but responsive extraction never trips it. See [ADR 0001](../adr/0001-extraction-timeout-liveness.md). |
 | `polling_interval` | duration | PT5S | Initial status check interval |
 | `max_polling_interval` | duration | PT30S | Max interval (exponential backoff cap) |
 | `file_ready_retries` | int | 10 | Number of retries for file availability check |

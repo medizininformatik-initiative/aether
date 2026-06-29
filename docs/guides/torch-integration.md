@@ -54,17 +54,15 @@ services:
     polling_interval: PT10S      # Default is PT5S
 ```
 
-For extractions that may take several days (e.g., large patient cohorts), set `extraction_timeout_minutes` accordingly:
-
-```yaml
-services:
-  torch:
-    extraction_timeout_minutes: 4320  # 3 days
-```
+`extraction_timeout` is a **liveness window**, not a total cap: it bounds how long aether waits *without a response from TORCH*, and it resets on every status response (`200`/`202`). A multi-hour extraction that keeps responding never trips it, so you no longer need to size the timeout to the whole extraction — the default `PT30M` means "give up after 30 minutes of TORCH silence". See [ADR 0001](../adr/0001-extraction-timeout-liveness.md).
 
 ### Polling Resilience
 
-During status polling, transient HTTP errors (timeouts, connection resets) are treated as recoverable. If TORCH is temporarily unable to respond to status requests — for example, because it is saturated with CPU-intensive FHIR operations — aether logs a warning and continues polling with exponential backoff rather than failing the entire extraction. The `extraction_timeout_minutes` setting acts as the safety net: polling only stops when this overall timeout is exceeded.
+During status polling, transient HTTP errors (timeouts, connection resets) and transient TORCH responses (`503`/`429`/`408`) are treated as recoverable: aether logs a warning and keeps polling with exponential backoff rather than failing the extraction. A `500` is a terminal job failure and fails fast. Because the timeout is a liveness window (reset on every `200`/`202`), polling only stops when TORCH stays silent for longer than `extraction_timeout`.
+
+### Resuming an Interrupted Extraction
+
+When aether submits an extraction it persists the TORCH **job handle** (job ID + status URL) to disk *before* the long poll. If aether is interrupted (process killed, connection lost, timeout), `aether pipeline continue <job-id>` **re-attaches** to the same in-flight TORCH job and resumes polling — it does not re-submit the CRTDL, so the source FHIR server is not extracted twice. If the handle is no longer valid on TORCH (`404`/`410`, i.e. the job was cancelled or deleted), aether logs a warning, clears the stale handle, and submits a fresh extraction.
 
 ### Direct TORCH URL Import
 

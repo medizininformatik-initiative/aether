@@ -13,6 +13,11 @@ services:
       JAVA_TOOL_OPTIONS: "-Xmx1g"
       VALIDATOR_ENABLED: "true"
       FHIR_VERSION: "4.0"
+      # Disable the external terminology server (tx.fhir.org). Without this the
+      # validator hangs on the first real validation doing terminology lookups,
+      # blowing past aether's HTTP timeout. The E2E assertions only need
+      # structural/internal-binding validation, which works with -tx n/a.
+      TX_SERVER: "n/a"
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8080/validateResource", "-X", "POST", "-H", "Content-Type: application/fhir+json", "-d", "{\"resourceType\":\"Patient\"}"]
       interval: 15s

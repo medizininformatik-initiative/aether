@@ -25,16 +25,18 @@
       "matchDatasources": ["docker"],
       "matchPackageNames": [
         "ghcr.io/medizininformatik-initiative/torch",
-        "ghcr.io/medizininformatik-initiative/fhir-flattener"
+        "ghcr.io/medizininformatik-initiative/fhir-flattener",
+        "ghcr.io/medizininformatik-initiative/mii-fhir-validator"
       ],
       "versioning": "semver",
       "ignoreUnstable": false
     },
     {
-      "description": "Only allow stable releases and alpha/beta pre-releases for torch (exclude test/dev tags)",
+      "description": "Only allow stable releases and alpha/beta pre-releases for MII pre-release images (exclude test/dev tags)",
       "matchDatasources": ["docker"],
       "matchPackageNames": [
-        "ghcr.io/medizininformatik-initiative/torch"
+        "ghcr.io/medizininformatik-initiative/torch",
+        "ghcr.io/medizininformatik-initiative/mii-fhir-validator"
       ],
       "allowedVersions": "/^\\d+\\.\\d+\\.\\d+(-(alpha|beta)\\.\\d+)?$/"
     }

@@ -412,7 +412,7 @@ jobs:
       - name: Capture service logs on failure
         if: failure()
         run: |
-          docker compose -f .github/test/validator/compose.yaml logs > docker-logs-validation.txt
+          docker compose -f .github/test/compose.yaml logs fhir-validator > docker-logs-validation.txt
 
       - name: Upload service logs
         if: failure()

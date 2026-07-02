@@ -46,13 +46,6 @@ func ClearOAuth2TokenCacheForTesting() {
 	services.ClearOAuth2TokenCache()
 }
 
-// buildBasicAuthHeader returns the Authorization header value for Basic auth.
-func buildBasicAuthHeader(username, password string) string {
-	credentials := username + ":" + password
-	encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
-	return "Basic " + encoded
-}
-
 // putWithAuth performs an authenticated HTTP PUT request based on the SendConfig authentication settings.
 func putWithAuth(targetURL, contentType string, body []byte, config models.SendConfig, httpClient *services.HTTPClient) (*http.Response, error) {
 	req, err := http.NewRequest("PUT", targetURL, bytes.NewReader(body))
@@ -61,15 +54,8 @@ func putWithAuth(targetURL, contentType string, body []byte, config models.SendC
 	}
 	req.Header.Set("Content-Type", contentType)
 
-	// Add authentication header based on config
-	if config.Auth.Username != "" && config.Auth.Password != "" {
-		req.Header.Set("Authorization", buildBasicAuthHeader(config.Auth.Username, config.Auth.Password))
-	} else if config.Auth.OAuthIssuerURI != "" && config.Auth.OAuthClientID != "" && config.Auth.OAuthClientSecret != "" {
-		token, err := services.FetchOAuth2Token(config.Auth.OAuthIssuerURI, config.Auth.OAuthClientID, config.Auth.OAuthClientSecret, httpClient)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get OAuth2 token: %w", err)
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
+	if err := httpClient.ApplyAuth(req, config.Auth); err != nil {
+		return nil, fmt.Errorf("failed to add auth header: %w", err)
 	}
 
 	return httpClient.Do(req)

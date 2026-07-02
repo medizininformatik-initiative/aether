@@ -119,6 +119,46 @@ func NewTORCHClient(config models.TORCHConfig, httpClient *HTTPClient, logger *l
 	}
 }
 
+// Extractor is the seam the TORCH client satisfies so the import step can be
+// tested against a fake adapter.
+type Extractor interface {
+	SubmitExtraction(crtdlPath string) (string, error)
+	PollExtractionStatus(extractionURL string, showProgress bool) ([]string, error)
+	DownloadExtractionFiles(fileURLs []string, destinationDir string, showProgress, compress bool, compressionLevel string) ([]models.FHIRDataFile, error)
+}
+
+var _ Extractor = (*TORCHClient)(nil)
+
+// MockExtractor is a test double for Extractor. Unset funcs return zero values.
+type MockExtractor struct {
+	SubmitFunc   func(crtdlPath string) (string, error)
+	PollFunc     func(extractionURL string, showProgress bool) ([]string, error)
+	DownloadFunc func(fileURLs []string, destinationDir string, showProgress, compress bool, compressionLevel string) ([]models.FHIRDataFile, error)
+}
+
+var _ Extractor = (*MockExtractor)(nil)
+
+func (m *MockExtractor) SubmitExtraction(crtdlPath string) (string, error) {
+	if m.SubmitFunc != nil {
+		return m.SubmitFunc(crtdlPath)
+	}
+	return "", nil
+}
+
+func (m *MockExtractor) PollExtractionStatus(extractionURL string, showProgress bool) ([]string, error) {
+	if m.PollFunc != nil {
+		return m.PollFunc(extractionURL, showProgress)
+	}
+	return nil, nil
+}
+
+func (m *MockExtractor) DownloadExtractionFiles(fileURLs []string, destinationDir string, showProgress, compress bool, compressionLevel string) ([]models.FHIRDataFile, error) {
+	if m.DownloadFunc != nil {
+		return m.DownloadFunc(fileURLs, destinationDir, showProgress, compress, compressionLevel)
+	}
+	return nil, nil
+}
+
 // SubmitExtraction submits a CRTDL file for extraction to TORCH server
 // Returns the Content-Location URL for polling extraction status
 // Per TORCH API: POST /fhir/$extract-data with base64-encoded CRTDL
@@ -159,10 +199,13 @@ func (c *TORCHClient) SubmitExtraction(crtdlPath string) (string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/fhir+json")
-	req.Header.Set("Authorization", c.buildBasicAuthHeader())
+	if err := c.httpClient.ApplyAuth(req, c.authConfig()); err != nil {
+		return "", fmt.Errorf("failed to add auth header: %w", err)
+	}
 
-	// Send request
-	resp, err := c.httpClient.client.Do(req)
+	// Send request without retry: $extract-data is a non-idempotent job
+	// creation, so a retried timeout could spawn a duplicate extraction.
+	resp, err := c.httpClient.DoOnce(req)
 	if err != nil {
 		c.logger.Error("TORCH submission failed", "error", err)
 		return "", &TORCHError{
@@ -277,10 +320,13 @@ func (c *TORCHClient) SubmitExtractionWithContent(crtdlContent []byte) (string, 
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", c.buildBasicAuthHeader())
+	if err := c.httpClient.ApplyAuth(req, c.authConfig()); err != nil {
+		return "", fmt.Errorf("failed to add auth header: %w", err)
+	}
 
-	// Send request
-	resp, err := c.httpClient.client.Do(req)
+	// Send request without retry: $extract-data is a non-idempotent job
+	// creation, so a retried timeout could spawn a duplicate extraction.
+	resp, err := c.httpClient.DoOnce(req)
 	if err != nil {
 		c.logger.Error("TORCH submission failed", "error", err)
 		return "", &TORCHError{
@@ -374,8 +420,8 @@ func (c *TORCHClient) PollExtractionStatus(extractionURL string, showProgress bo
 			return nil, fmt.Errorf("failed to create poll request: %w", reqErr)
 		}
 
-		// Send request
-		resp, doErr := c.httpClient.client.Do(req)
+		// Send request (single attempt; the poll loop owns the retry cadence)
+		resp, doErr := c.httpClient.DoOnce(req)
 		if doErr != nil {
 			// Treat transient HTTP errors (timeouts, connection resets) as recoverable
 			// during polling — the extraction may still be running on the server.
@@ -507,10 +553,12 @@ func (c *TORCHClient) downloadFile(fileURL, destPath string, compress bool, comp
 		return models.FHIRDataFile{}, fmt.Errorf("failed to create download request: %w", err)
 	}
 
-	req.Header.Set("Authorization", c.buildBasicAuthHeader())
+	if err := c.httpClient.ApplyAuth(req, c.authConfig()); err != nil {
+		return models.FHIRDataFile{}, fmt.Errorf("failed to add auth header: %w", err)
+	}
 	req.Header.Set("Accept", "application/fhir+ndjson")
 
-	resp, err := c.httpClient.client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return models.FHIRDataFile{}, &TORCHError{
 			Operation:  "download",
@@ -597,9 +645,11 @@ func (c *TORCHClient) Ping() error {
 		return fmt.Errorf("failed to create ping request: %w", err)
 	}
 
-	req.Header.Set("Authorization", c.buildBasicAuthHeader())
+	if err := c.httpClient.ApplyAuth(req, c.authConfig()); err != nil {
+		return fmt.Errorf("failed to add auth header: %w", err)
+	}
 
-	resp, err := c.httpClient.client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		c.logger.Error("TORCH ping failed", "error", err)
 		return fmt.Errorf("TORCH server unreachable: %w", err)
@@ -739,11 +789,10 @@ func (c *TORCHClient) extractURLsFromFHIRFormat(result TORCHExtractionResult) []
 	return fileURLs
 }
 
-// buildBasicAuthHeader creates Basic authentication header
-func (c *TORCHClient) buildBasicAuthHeader() string {
-	credentials := c.config.Username + ":" + c.config.Password
-	encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
-	return "Basic " + encoded
+// authConfig returns the TORCH server's Basic-auth credentials for the shared
+// auth mechanism (HTTPClient.applyAuth).
+func (c *TORCHClient) authConfig() models.AuthConfig {
+	return models.AuthConfig{Username: c.config.Username, Password: c.config.Password}
 }
 
 // waitForFileAvailability waits until a file URL is available for download.
@@ -781,9 +830,11 @@ func (c *TORCHClient) checkFileAvailable(fileURL string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("failed to create HEAD request: %w", err)
 	}
-	req.Header.Set("Authorization", c.buildBasicAuthHeader())
+	if err := c.httpClient.ApplyAuth(req, c.authConfig()); err != nil {
+		return false, fmt.Errorf("failed to add auth header: %w", err)
+	}
 
-	resp, err := c.httpClient.client.Do(req)
+	resp, err := c.httpClient.DoOnce(req)
 	if err != nil {
 		return false, err
 	}
@@ -807,10 +858,12 @@ func (c *TORCHClient) checkFileAvailableWithRange(fileURL string) (bool, error) 
 	if err != nil {
 		return false, fmt.Errorf("failed to create Range GET request: %w", err)
 	}
-	req.Header.Set("Authorization", c.buildBasicAuthHeader())
+	if err := c.httpClient.ApplyAuth(req, c.authConfig()); err != nil {
+		return false, fmt.Errorf("failed to add auth header: %w", err)
+	}
 	req.Header.Set("Range", "bytes=0-0")
 
-	resp, err := c.httpClient.client.Do(req)
+	resp, err := c.httpClient.DoOnce(req)
 	if err != nil {
 		return false, err
 	}

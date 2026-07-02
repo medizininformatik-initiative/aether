@@ -175,9 +175,10 @@ func TestFlattenerClient_HealthCheck(t *testing.T) {
 	})
 }
 
-func TestFlattenerError_Error(t *testing.T) {
+func TestFlattenerServiceError_Error(t *testing.T) {
 	t.Run("basic error message", func(t *testing.T) {
-		err := &services.FlattenerError{
+		err := &services.ServiceError{
+			Service:    "Flattener",
 			StatusCode: 400,
 			Status:     "Bad Request",
 		}
@@ -187,7 +188,8 @@ func TestFlattenerError_Error(t *testing.T) {
 	})
 
 	t.Run("error with body", func(t *testing.T) {
-		err := &services.FlattenerError{
+		err := &services.ServiceError{
+			Service:    "Flattener",
 			StatusCode: 400,
 			Status:     "Bad Request",
 			Body:       `{"error": "Invalid ViewDefinition"}`,
@@ -197,7 +199,8 @@ func TestFlattenerError_Error(t *testing.T) {
 	})
 
 	t.Run("400 error includes helpful context", func(t *testing.T) {
-		err := &services.FlattenerError{
+		err := &services.ServiceError{
+			Service:    "Flattener",
 			StatusCode: 400,
 			Status:     "Bad Request",
 		}
@@ -207,32 +210,14 @@ func TestFlattenerError_Error(t *testing.T) {
 	})
 
 	t.Run("500 error includes helpful context", func(t *testing.T) {
-		err := &services.FlattenerError{
+		err := &services.ServiceError{
+			Service:    "Flattener",
 			StatusCode: 500,
 			Status:     "Internal Server Error",
 		}
 		msg := err.Error()
 		assert.Contains(t, msg, "Possible causes")
 	})
-}
-
-func TestFlattenerError_IsRetryable(t *testing.T) {
-	tests := []struct {
-		errorType models.ErrorType
-		expected  bool
-	}{
-		{models.ErrorTypeTransient, true},
-		{models.ErrorTypeNonTransient, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(string(tt.errorType), func(t *testing.T) {
-			err := &services.FlattenerError{
-				ErrorType: tt.errorType,
-			}
-			assert.Equal(t, tt.expected, err.IsRetryable())
-		})
-	}
 }
 
 func TestFlattenerClient_InvalidURL(t *testing.T) {
@@ -279,8 +264,8 @@ func TestFlattenerClient_HTTPErrors(t *testing.T) {
 			_, err := client.Flatten(newTestViewDefinition("TestView", "Patient"), newTestResources("1"))
 
 			require.Error(t, err)
-			var flattenerErr *services.FlattenerError
-			require.True(t, errors.As(err, &flattenerErr), "expected FlattenerError in chain")
+			var flattenerErr *services.ServiceError
+			require.True(t, errors.As(err, &flattenerErr), "expected *ServiceError in chain")
 			assert.Equal(t, tt.statusCode, flattenerErr.StatusCode)
 			assert.Equal(t, tt.isRetryable, flattenerErr.IsRetryable())
 		})
@@ -363,7 +348,7 @@ func TestFlattenerClient_Flatten_NoRetryOnNonTransient(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, int32(1), attempts.Load(), "should not retry non-transient errors")
 
-	var flattenerErr *services.FlattenerError
+	var flattenerErr *services.ServiceError
 	require.True(t, errors.As(err, &flattenerErr))
 	assert.Equal(t, http.StatusBadRequest, flattenerErr.StatusCode)
 }

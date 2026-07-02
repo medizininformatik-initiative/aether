@@ -12,7 +12,7 @@ import (
 // ResourceProcessor handles pseudonymization of FHIR resources
 // Encapsulates Bundle splitting logic and oversized resource detection
 type ResourceProcessor struct {
-	dimpClient         *services.DIMPClient
+	dimpClient         services.Pseudonymizer
 	logger             *lib.Logger
 	thresholdBytes     int
 	inputFile          string
@@ -20,7 +20,7 @@ type ResourceProcessor struct {
 }
 
 // NewResourceProcessor creates a new resource processor
-func NewResourceProcessor(dimpClient *services.DIMPClient, logger *lib.Logger, thresholdBytes int, inputFile string) *ResourceProcessor {
+func NewResourceProcessor(dimpClient services.Pseudonymizer, logger *lib.Logger, thresholdBytes int, inputFile string) *ResourceProcessor {
 	return &ResourceProcessor{
 		dimpClient:         dimpClient,
 		logger:             logger,

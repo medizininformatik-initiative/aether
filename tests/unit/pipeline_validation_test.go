@@ -708,7 +708,7 @@ func TestExecuteValidationStep_OversizedResource(t *testing.T) {
 }
 
 // TestExecuteValidationStep_ConnectionRefused verifies that a network error (connection refused)
-// is classified as transient via classifyValidationError and isValidationErrorRetryable.
+// is classified as transient via classifyServiceError and isServiceErrorRetryable.
 func TestExecuteValidationStep_ConnectionRefused(t *testing.T) {
 	tmpDir := t.TempDir()
 	// Port 59999 should have no listener, causing connection refused
@@ -729,7 +729,7 @@ func TestExecuteValidationStep_ConnectionRefused(t *testing.T) {
 
 // TestExecuteValidationStep_ValidationServiceReturns400 verifies that a non-retryable
 // HTTP error (4xx) from the validation service is classified correctly.
-// Exercises isValidationErrorRetryable and classifyValidationError with *ValidationError.
+// Exercises isServiceErrorRetryable and classifyServiceError with *services.ServiceError.
 func TestExecuteValidationStep_ValidationServiceReturns400(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)

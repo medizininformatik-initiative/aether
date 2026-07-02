@@ -10,6 +10,24 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
+// defaultExtractorFactory is the production TORCH client constructor.
+var defaultExtractorFactory = func(config models.TORCHConfig, httpClient *services.HTTPClient, logger *lib.Logger) services.Extractor {
+	return services.NewTORCHClient(config, httpClient, logger)
+}
+
+// extractorFactory creates an Extractor. Overridable in tests.
+var extractorFactory = defaultExtractorFactory
+
+// SetExtractorFactoryForTesting replaces the TORCH client factory for tests.
+func SetExtractorFactoryForTesting(factory func(models.TORCHConfig, *services.HTTPClient, *lib.Logger) services.Extractor) {
+	extractorFactory = factory
+}
+
+// ResetExtractorFactory restores the default TORCH client factory.
+func ResetExtractorFactory() {
+	extractorFactory = defaultExtractorFactory
+}
+
 // ExecuteImportStep performs the import step of the pipeline
 // Uses the current step (from job.CurrentStep) to determine import method
 // For local_import: uses config.Services.LocalImport.Dir or job.InputSource
@@ -143,7 +161,7 @@ func failImportStep(job *models.PipelineJob, err error, errorType models.ErrorTy
 // files. PrepareCRTDL ensures job.CRTDLPath points at the effective CRTDL
 // shared by every downstream pipeline step.
 func executeTORCHExtraction(job *models.PipelineJob, importDir string, httpClient *services.HTTPClient, logger *lib.Logger, showProgress bool, compress bool, compressionLevel string) ([]models.FHIRDataFile, error) {
-	torchClient := services.NewTORCHClient(job.Config.Services.TORCH, httpClient, logger)
+	torchClient := extractorFactory(job.Config.Services.TORCH, httpClient, logger)
 
 	if job.TORCHJobID != "" {
 		logger.Info("Re-attaching to in-flight TORCH extraction", "job_id", job.TORCHJobID, "url", job.TORCHExtractionURL)
@@ -180,7 +198,7 @@ func executeTORCHExtraction(job *models.PipelineJob, importDir string, httpClien
 // submitAndPersistTORCHHandle submits the CRTDL for extraction, then persists
 // the resulting job handle (TORCHJobID + URL) to disk before any long poll, so
 // a crash mid-extraction leaves a recoverable handle to re-attach to.
-func submitAndPersistTORCHHandle(job *models.PipelineJob, torchClient *services.TORCHClient, logger *lib.Logger) error {
+func submitAndPersistTORCHHandle(job *models.PipelineJob, torchClient services.Extractor, logger *lib.Logger) error {
 	extractionURL, err := torchClient.SubmitExtraction(job.CRTDLPath)
 	if err != nil {
 		return fmt.Errorf("failed to submit TORCH extraction: %w", err)
@@ -200,7 +218,7 @@ func submitAndPersistTORCHHandle(job *models.PipelineJob, torchClient *services.
 // This bypasses extraction submission and directly downloads from an existing result
 func executeTORCHDownload(job *models.PipelineJob, importDir string, httpClient *services.HTTPClient, logger *lib.Logger, showProgress bool, compress bool, compressionLevel string) ([]models.FHIRDataFile, error) {
 	// Create TORCH client
-	torchClient := services.NewTORCHClient(job.Config.Services.TORCH, httpClient, logger)
+	torchClient := extractorFactory(job.Config.Services.TORCH, httpClient, logger)
 
 	// Poll the URL directly (it should return 200 immediately if extraction is complete)
 	fileURLs, err := torchClient.PollExtractionStatus(job.InputSource, showProgress)

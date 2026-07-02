@@ -1,12 +1,7 @@
 package services
 
 import (
-	"encoding/json"
-	"fmt"
-	"io"
-
 	"github.com/medizininformatik-initiative/aether/internal/lib"
-	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 const fhirJSONContentType = "application/fhir+json"
@@ -57,87 +52,53 @@ func (r *ValidationResult) HasErrors() bool {
 func (c *ValidationClient) ValidateResource(resource map[string]any) (*ValidationResult, error) {
 	resourceType := lib.ResourceType(resource)
 	resourceID := lib.ResourceID(resource)
+	url := c.baseURL + "/validateResource"
 
 	c.logger.Debug("Sending resource to validator",
 		"resourceType", resourceType,
 		"id", resourceID,
-		"url", c.baseURL+"/validateResource")
-
-	jsonBody, err := json.Marshal(resource)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal resource: %w", err)
-	}
-
-	url := c.baseURL + "/validateResource"
-
-	resp, err := c.httpClient.Post(url, fhirJSONContentType, jsonBody)
-	if err != nil {
-		c.logger.Error("Validation HTTP request failed",
-			"resourceType", resourceType,
-			"id", resourceID,
-			"error", err)
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			c.logger.Error("Failed to close response body", "error", err)
-		}
-	}()
-
-	if resp.StatusCode >= 400 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		errorType := lib.ClassifyHTTPError(resp.StatusCode)
-
-		c.logger.Error("Validation service returned error",
-			"status_code", resp.StatusCode,
-			"status", resp.Status,
-			"resourceType", resourceType,
-			"id", resourceID,
-			"error_body", string(bodyBytes),
-			"retryable", errorType == models.ErrorTypeTransient)
-
-		return nil, &ValidationError{
-			StatusCode: resp.StatusCode,
-			Status:     resp.Status,
-			ErrorType:  errorType,
-			Body:       string(bodyBytes),
-		}
-	}
-
-	c.logger.Debug("Validation service responded successfully",
-		"status_code", resp.StatusCode,
-		"resourceType", resourceType,
-		"id", resourceID)
+		"url", url)
 
 	var outcome map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&outcome); err != nil {
-		c.logger.Error("Failed to decode validation response",
+	err := c.httpClient.DoFHIRJSON(FHIRRequest{
+		Method:      "POST",
+		URL:         url,
+		ContentType: fhirJSONContentType,
+		Body:        resource,
+		Service:     "validation",
+	}, &outcome)
+	if err != nil {
+		c.logger.Error("Validation request failed",
 			"resourceType", resourceType,
 			"id", resourceID,
 			"error", err)
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, err
 	}
 
 	return &ValidationResult{OperationOutcome: outcome}, nil
 }
 
-// ValidationError represents an error response from the validation service
-type ValidationError struct {
-	StatusCode int
-	Status     string
-	ErrorType  models.ErrorType
-	Body       string
+// ResourceValidator is the seam the validation client satisfies so pipeline
+// steps can be tested against a fake adapter.
+type ResourceValidator interface {
+	ValidateResource(resource map[string]any) (*ValidationResult, error)
 }
 
-func (e *ValidationError) Error() string {
-	msg := fmt.Sprintf("validation service error: HTTP %d: %s", e.StatusCode, e.Status)
-	if e.Body != "" {
-		msg += fmt.Sprintf("\nResponse: %s", e.Body)
+var _ ResourceValidator = (*ValidationClient)(nil)
+
+// MockResourceValidator is a test double for ResourceValidator. It records
+// calls and, when ValidateFunc is unset, returns an issue-free OperationOutcome.
+type MockResourceValidator struct {
+	ValidateFunc func(map[string]any) (*ValidationResult, error)
+	Calls        []map[string]any
+}
+
+var _ ResourceValidator = (*MockResourceValidator)(nil)
+
+func (m *MockResourceValidator) ValidateResource(resource map[string]any) (*ValidationResult, error) {
+	m.Calls = append(m.Calls, resource)
+	if m.ValidateFunc != nil {
+		return m.ValidateFunc(resource)
 	}
-	return msg
-}
-
-// IsRetryable returns true if this error should be retried
-func (e *ValidationError) IsRetryable() bool {
-	return e.ErrorType == models.ErrorTypeTransient
+	return &ValidationResult{OperationOutcome: map[string]any{"resourceType": "OperationOutcome"}}, nil
 }

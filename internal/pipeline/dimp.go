@@ -43,12 +43,9 @@ func ExecuteDIMPStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
 	dimpClient := services.NewDIMPClient(job.Config.Services.DIMP.URL, httpClient, logger)
 
-	// Setup directories - use GetStepInputDir to handle wait step correctly
-	jobsBaseDir := filepath.Dir(jobDir)
-	jobID := filepath.Base(jobDir)
-	stepIndex := getStepIndexInEnabledSteps(job.Config.Pipeline.EnabledSteps, stepName)
-	importDir := services.GetStepInputDir(jobsBaseDir, jobID, job.Config.Pipeline.EnabledSteps, stepIndex)
-	outputDir := filepath.Join(jobDir, "dimp")
+	layout := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps)
+	importDir := layout.InputDir(stepName)
+	outputDir := layout.OutputDir(stepName)
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
@@ -326,14 +323,4 @@ func recordStepError(step *models.PipelineStep, err error, errorType models.Erro
 		Message:   err.Error(),
 		Timestamp: time.Now(),
 	}
-}
-
-// getStepIndexInEnabledSteps finds the index of a step in the enabled steps list
-func getStepIndexInEnabledSteps(steps []models.StepName, target models.StepName) int {
-	for i, step := range steps {
-		if step == target {
-			return i
-		}
-	}
-	return -1
 }

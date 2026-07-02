@@ -140,7 +140,7 @@ func TestGetPreviousStepForWait(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			step, err := pipeline.GetPreviousStepForWait(tc.enabledSteps, tc.waitIndex)
+			step, err := services.WaitSourceStep(tc.enabledSteps, tc.waitIndex)
 			if tc.expectError {
 				assert.Error(t, err)
 			} else {
@@ -184,7 +184,7 @@ func TestCreateWaitDirectory_CreatesEmptyDirectory(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(sourceDir, name), []byte(content), 0644))
 	}
 
-	require.NoError(t, pipeline.CreateWaitDirectory(sourceDir, waitDir))
+	require.NoError(t, pipeline.CreateWaitDirectory(waitDir))
 
 	// Verify wait directory exists but is empty
 	entries, err := os.ReadDir(waitDir)
@@ -192,28 +192,11 @@ func TestCreateWaitDirectory_CreatesEmptyDirectory(t *testing.T) {
 	assert.Empty(t, entries, "Wait directory should be empty - files should NOT be copied")
 }
 
-func TestCreateWaitDirectory_EmptySource(t *testing.T) {
-	tmpDir := t.TempDir()
-	sourceDir := filepath.Join(tmpDir, "import")
-	waitDir := filepath.Join(tmpDir, "import_wait")
-
-	require.NoError(t, os.MkdirAll(sourceDir, 0755))
-	require.NoError(t, pipeline.CreateWaitDirectory(sourceDir, waitDir))
-
-	_, err := os.Stat(waitDir)
-	assert.NoError(t, err)
-
-	entries, err := os.ReadDir(waitDir)
-	require.NoError(t, err)
-	assert.Empty(t, entries)
-}
-
 func TestCreateWaitDirectory_NonExistentSource(t *testing.T) {
 	tmpDir := t.TempDir()
-	sourceDir := filepath.Join(tmpDir, "nonexistent")
 	waitDir := filepath.Join(tmpDir, "import_wait")
 
-	require.NoError(t, pipeline.CreateWaitDirectory(sourceDir, waitDir))
+	require.NoError(t, pipeline.CreateWaitDirectory(waitDir))
 
 	_, err := os.Stat(waitDir)
 	assert.NoError(t, err)
@@ -408,7 +391,7 @@ func TestCreateWaitDirectory_IgnoresSourceContent(t *testing.T) {
 	require.NoError(t, os.MkdirAll(subDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(subDir, "nested.txt"), []byte("nested"), 0644))
 
-	err := pipeline.CreateWaitDirectory(sourceDir, waitDir)
+	err := pipeline.CreateWaitDirectory(waitDir)
 	require.NoError(t, err)
 
 	// Wait directory should be empty
@@ -444,7 +427,7 @@ func TestGetPreviousStepForWait_AllWaitsBeforeIndex(t *testing.T) {
 	// but tests the fallback path
 	steps := []models.StepName{models.StepWait, models.StepWait, models.StepDIMP}
 
-	_, err := pipeline.GetPreviousStepForWait(steps, 1)
+	_, err := services.WaitSourceStep(steps, 1)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no non-wait step found")
 }
@@ -476,10 +459,9 @@ func TestGetStepInputDir_AllWaitsFallback(t *testing.T) {
 
 // TestCreateWaitDirectory_ErrorCreatingDir verifies error when wait directory cannot be created
 func TestCreateWaitDirectory_ErrorCreatingDir(t *testing.T) {
-	sourceDir := t.TempDir()
 	waitDir := "/proc/invalid/path/that/cannot/be/created"
 
-	err := pipeline.CreateWaitDirectory(sourceDir, waitDir)
+	err := pipeline.CreateWaitDirectory(waitDir)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to create wait directory")
 }

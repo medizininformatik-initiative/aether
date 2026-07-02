@@ -83,13 +83,10 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 		return fmt.Errorf("invalid lookup tables: %w", err)
 	}
 
-	// Setup directories
-	jobsBaseDir := filepath.Dir(jobDir)
-	jobID := filepath.Base(jobDir)
-	stepIndex := getStepIndexInEnabledSteps(job.Config.Pipeline.EnabledSteps, stepName)
-	inputDir := services.GetStepInputDir(jobsBaseDir, jobID, job.Config.Pipeline.EnabledSteps, stepIndex)
-	outputDir := filepath.Join(jobDir, "csv")
-	viewDefDir := filepath.Join(jobDir, "viewdefinitions")
+	layout := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps)
+	inputDir := layout.InputDir(stepName)
+	outputDir := layout.OutputDir(stepName)
+	viewDefDir := layout.ViewDefinitionsDir()
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)

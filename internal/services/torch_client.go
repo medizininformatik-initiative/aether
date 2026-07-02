@@ -789,10 +789,17 @@ func (c *TORCHClient) extractURLsFromFHIRFormat(result TORCHExtractionResult) []
 	return fileURLs
 }
 
-// authConfig returns the TORCH server's Basic-auth credentials for the shared
-// auth mechanism (HTTPClient.applyAuth).
+// authConfig returns the TORCH server's credentials for the shared auth
+// mechanism (HTTPClient.ApplyAuth). Basic auth takes precedence; OAuth2
+// client-credentials is used when configured instead.
 func (c *TORCHClient) authConfig() models.AuthConfig {
-	return models.AuthConfig{Username: c.config.Username, Password: c.config.Password}
+	return models.AuthConfig{
+		Username:          c.config.Username,
+		Password:          c.config.Password,
+		OAuthIssuerURI:    c.config.OAuthIssuerURI,
+		OAuthClientID:     c.config.OAuthClientID,
+		OAuthClientSecret: c.config.OAuthClientSecret,
+	}
 }
 
 // waitForFileAvailability waits until a file URL is available for download.

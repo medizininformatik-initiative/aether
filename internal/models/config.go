@@ -73,6 +73,9 @@ type TORCHConfig struct {
 	BaseURL            string        `yaml:"base_url" json:"base_url" mapstructure:"base_url"`
 	Username           string        `yaml:"username" json:"username" mapstructure:"username"`
 	Password           string        `yaml:"password" json:"password" mapstructure:"password"`
+	OAuthIssuerURI     string        `yaml:"oauth_issuer_uri" json:"oauth_issuer_uri" mapstructure:"oauth_issuer_uri"`
+	OAuthClientID      string        `yaml:"oauth_client_id" json:"oauth_client_id" mapstructure:"oauth_client_id"`
+	OAuthClientSecret  string        `yaml:"oauth_client_secret" json:"oauth_client_secret" mapstructure:"oauth_client_secret"`
 	ExtractionTimeout  time.Duration `yaml:"extraction_timeout" json:"extraction_timeout" mapstructure:"extraction_timeout"`
 	PollingInterval    time.Duration `yaml:"polling_interval" json:"polling_interval" mapstructure:"polling_interval"`
 	MaxPollingInterval time.Duration `yaml:"max_polling_interval" json:"max_polling_interval" mapstructure:"max_polling_interval"`

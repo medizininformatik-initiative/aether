@@ -63,6 +63,11 @@ For more information:
   Documentation: https://github.com/medizininformatik-initiative/aether
   Report issues: https://github.com/medizininformatik-initiative/aether/issues`,
 	Version: version,
+
+	// A runtime failure already surfaces a single user-facing error via Execute;
+	// let Cobra neither reprint it nor dump the usage/flags block on error.
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 // SetVersion sets the version displayed by --version. Call before Execute.

@@ -266,7 +266,7 @@ func runJobRun(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Executing step: %s\n\n", stepName)
 
 	// Validate prerequisites
-	canRun, prerequisite := lib.CanRunStep(*job, stepName)
+	canRun, prerequisite := models.CanRunStep(*job, stepName)
 	if !canRun {
 		return fmt.Errorf("cannot run step '%s': prerequisite step '%s' must be completed first", stepName, prerequisite)
 	}

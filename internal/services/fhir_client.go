@@ -2,7 +2,6 @@ package services
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -152,7 +151,7 @@ func (c *FHIRClient) sendBatch(resources []json.RawMessage) error {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("HTTP request failed: %w", err)
+		return fmt.Errorf("request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -172,28 +171,10 @@ func (c *FHIRClient) sendBatch(resources []json.RawMessage) error {
 	return nil
 }
 
-// addAuthHeader adds the appropriate Authorization header based on auth config
+// addAuthHeader adds the appropriate Authorization header based on auth config,
+// delegating to the shared auth mechanism owned by HTTPClient.
 func (c *FHIRClient) addAuthHeader(req *http.Request) error {
-	// Basic auth takes precedence
-	if c.auth.Username != "" && c.auth.Password != "" {
-		credentials := c.auth.Username + ":" + c.auth.Password
-		encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
-		req.Header.Set("Authorization", "Basic "+encoded)
-		return nil
-	}
-
-	// OAuth2 client credentials
-	if c.auth.OAuthIssuerURI != "" && c.auth.OAuthClientID != "" && c.auth.OAuthClientSecret != "" {
-		token, err := FetchOAuth2Token(c.auth.OAuthIssuerURI, c.auth.OAuthClientID, c.auth.OAuthClientSecret, c.httpClient)
-		if err != nil {
-			return fmt.Errorf("failed to get OAuth2 token: %w", err)
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-		return nil
-	}
-
-	// No auth configured
-	return nil
+	return c.httpClient.ApplyAuth(req, c.auth)
 }
 
 // createTransactionBundle creates a FHIR transaction Bundle from raw resources.

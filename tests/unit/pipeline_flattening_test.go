@@ -150,7 +150,7 @@ func TestFilterResourcesByProvenance(t *testing.T) {
 
 func TestIsFlatteningErrorRetryable(t *testing.T) {
 	t.Run("transient FlattenerError is retryable", func(t *testing.T) {
-		err := &services.FlattenerError{
+		err := &services.ServiceError{
 			StatusCode: 500,
 			Status:     "Internal Server Error",
 			ErrorType:  models.ErrorTypeTransient,
@@ -160,7 +160,7 @@ func TestIsFlatteningErrorRetryable(t *testing.T) {
 	})
 
 	t.Run("non-transient FlattenerError is not retryable", func(t *testing.T) {
-		err := &services.FlattenerError{
+		err := &services.ServiceError{
 			StatusCode: 400,
 			Status:     "Bad Request",
 			ErrorType:  models.ErrorTypeNonTransient,
@@ -186,7 +186,7 @@ func TestIsFlatteningErrorRetryable(t *testing.T) {
 
 func TestClassifyFlatteningError(t *testing.T) {
 	t.Run("classifies transient FlattenerError correctly", func(t *testing.T) {
-		transientErr := &services.FlattenerError{
+		transientErr := &services.ServiceError{
 			StatusCode: 500,
 			Status:     "Internal Server Error",
 			ErrorType:  models.ErrorTypeTransient,
@@ -196,7 +196,7 @@ func TestClassifyFlatteningError(t *testing.T) {
 	})
 
 	t.Run("classifies non-transient FlattenerError correctly", func(t *testing.T) {
-		nonTransientErr := &services.FlattenerError{
+		nonTransientErr := &services.ServiceError{
 			StatusCode: 400,
 			Status:     "Bad Request",
 			ErrorType:  models.ErrorTypeNonTransient,

@@ -2,6 +2,7 @@ package unit
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -159,8 +160,8 @@ func TestValidationClient_ValidateResource_FatalSeverity(t *testing.T) {
 }
 
 func TestValidationClient_ValidateResource_HTTPError500_Retries(t *testing.T) {
-	// 500 errors are retried by the shared HTTPClient. After all retries are exhausted,
-	// the error is wrapped by HTTPClient and not a *ValidationError.
+	// 500 errors are retried by the shared HTTPClient. After all retries are
+	// exhausted, the final response is classified into a retryable *ServiceError.
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
@@ -184,7 +185,10 @@ func TestValidationClient_ValidateResource_HTTPError500_Retries(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Greater(t, callCount, 1, "should retry 500 errors")
-	assert.Contains(t, err.Error(), "request failed")
+	var svcErr *services.ServiceError
+	require.True(t, errors.As(err, &svcErr), "exhausted retries should still yield a *ServiceError")
+	assert.Equal(t, 500, svcErr.StatusCode)
+	assert.True(t, svcErr.IsRetryable(), "500 is transient")
 }
 
 func TestValidationClient_ValidateResource_HTTPError400(t *testing.T) {
@@ -202,8 +206,8 @@ func TestValidationClient_ValidateResource_HTTPError400(t *testing.T) {
 	_, err := client.ValidateResource(resource)
 
 	require.Error(t, err)
-	valErr, ok := err.(*services.ValidationError)
-	require.True(t, ok, "expected ValidationError")
+	var valErr *services.ServiceError
+	require.True(t, errors.As(err, &valErr), "expected *ServiceError")
 	assert.Equal(t, 400, valErr.StatusCode)
 	assert.False(t, valErr.IsRetryable())
 	assert.Equal(t, models.ErrorTypeNonTransient, valErr.ErrorType)
@@ -266,10 +270,12 @@ func TestValidationResult_HasErrors_NonMapIssue(t *testing.T) {
 	assert.False(t, result.HasErrors())
 }
 
-// TestValidationError_Error verifies the Error() string formatting
-func TestValidationError_Error(t *testing.T) {
+// TestValidationServiceError_Error verifies the Error() string formatting for
+// a validation-labeled ServiceError.
+func TestValidationServiceError_Error(t *testing.T) {
 	t.Run("With body", func(t *testing.T) {
-		err := &services.ValidationError{
+		err := &services.ServiceError{
+			Service:    "validation",
 			StatusCode: 422,
 			Status:     "422 Unprocessable Entity",
 			ErrorType:  models.ErrorTypeNonTransient,
@@ -282,7 +288,8 @@ func TestValidationError_Error(t *testing.T) {
 	})
 
 	t.Run("Without body", func(t *testing.T) {
-		err := &services.ValidationError{
+		err := &services.ServiceError{
+			Service:    "validation",
 			StatusCode: 503,
 			Status:     "503 Service Unavailable",
 			ErrorType:  models.ErrorTypeTransient,
@@ -292,15 +299,6 @@ func TestValidationError_Error(t *testing.T) {
 		assert.Contains(t, msg, "HTTP 503")
 		assert.NotContains(t, msg, "Response:")
 	})
-}
-
-// TestValidationError_IsRetryable verifies retryability classification
-func TestValidationError_IsRetryable(t *testing.T) {
-	transient := &services.ValidationError{ErrorType: models.ErrorTypeTransient}
-	assert.True(t, transient.IsRetryable())
-
-	nonTransient := &services.ValidationError{ErrorType: models.ErrorTypeNonTransient}
-	assert.False(t, nonTransient.IsRetryable())
 }
 
 // TestValidationClient_ValidateResource_InvalidResponseJSON verifies handling of invalid JSON response

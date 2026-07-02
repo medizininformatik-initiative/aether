@@ -175,9 +175,10 @@ func TestFlattenerClient_HealthCheck(t *testing.T) {
 	})
 }
 
-func TestFlattenerError_Error(t *testing.T) {
+func TestFlattenerServiceError_Error(t *testing.T) {
 	t.Run("basic error message", func(t *testing.T) {
-		err := &services.FlattenerError{
+		err := &services.ServiceError{
+			Service:    "Flattener",
 			StatusCode: 400,
 			Status:     "Bad Request",
 		}
@@ -187,7 +188,8 @@ func TestFlattenerError_Error(t *testing.T) {
 	})
 
 	t.Run("error with body", func(t *testing.T) {
-		err := &services.FlattenerError{
+		err := &services.ServiceError{
+			Service:    "Flattener",
 			StatusCode: 400,
 			Status:     "Bad Request",
 			Body:       `{"error": "Invalid ViewDefinition"}`,
@@ -197,7 +199,8 @@ func TestFlattenerError_Error(t *testing.T) {
 	})
 
 	t.Run("400 error includes helpful context", func(t *testing.T) {
-		err := &services.FlattenerError{
+		err := &services.ServiceError{
+			Service:    "Flattener",
 			StatusCode: 400,
 			Status:     "Bad Request",
 		}
@@ -207,32 +210,14 @@ func TestFlattenerError_Error(t *testing.T) {
 	})
 
 	t.Run("500 error includes helpful context", func(t *testing.T) {
-		err := &services.FlattenerError{
+		err := &services.ServiceError{
+			Service:    "Flattener",
 			StatusCode: 500,
 			Status:     "Internal Server Error",
 		}
 		msg := err.Error()
 		assert.Contains(t, msg, "Possible causes")
 	})
-}
-
-func TestFlattenerError_IsRetryable(t *testing.T) {
-	tests := []struct {
-		errorType models.ErrorType
-		expected  bool
-	}{
-		{models.ErrorTypeTransient, true},
-		{models.ErrorTypeNonTransient, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(string(tt.errorType), func(t *testing.T) {
-			err := &services.FlattenerError{
-				ErrorType: tt.errorType,
-			}
-			assert.Equal(t, tt.expected, err.IsRetryable())
-		})
-	}
 }
 
 func TestFlattenerClient_InvalidURL(t *testing.T) {
@@ -279,8 +264,8 @@ func TestFlattenerClient_HTTPErrors(t *testing.T) {
 			_, err := client.Flatten(newTestViewDefinition("TestView", "Patient"), newTestResources("1"))
 
 			require.Error(t, err)
-			var flattenerErr *services.FlattenerError
-			require.True(t, errors.As(err, &flattenerErr), "expected FlattenerError in chain")
+			var flattenerErr *services.ServiceError
+			require.True(t, errors.As(err, &flattenerErr), "expected *ServiceError in chain")
 			assert.Equal(t, tt.statusCode, flattenerErr.StatusCode)
 			assert.Equal(t, tt.isRetryable, flattenerErr.IsRetryable())
 		})
@@ -363,7 +348,7 @@ func TestFlattenerClient_Flatten_NoRetryOnNonTransient(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, int32(1), attempts.Load(), "should not retry non-transient errors")
 
-	var flattenerErr *services.FlattenerError
+	var flattenerErr *services.ServiceError
 	require.True(t, errors.As(err, &flattenerErr))
 	assert.Equal(t, http.StatusBadRequest, flattenerErr.StatusCode)
 }
@@ -441,4 +426,40 @@ func TestFlattenerClient_HealthCheck_RetriesOnTransientHTTP(t *testing.T) {
 	err := client.HealthCheck()
 	require.NoError(t, err)
 	assert.Equal(t, int32(2), attempts.Load())
+}
+
+// TestFlattenerClient_ReadResponseBodyError exercises the response-body read
+// failure branch: the server promises more bytes than it sends, then closes the
+// connection, so the client's body read fails with an unexpected EOF.
+func TestFlattenerClient_ReadResponseBodyError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Error("expected an http.Hijacker")
+			return
+		}
+		conn, buf, err := hj.Hijack()
+		if err != nil {
+			return
+		}
+		_, _ = buf.WriteString("HTTP/1.1 200 OK\r\nContent-Length: 100\r\nContent-Type: text/csv\r\n\r\nshort")
+		_ = buf.Flush()
+		_ = conn.Close()
+	}))
+	defer server.Close()
+
+	client := services.NewFlattenerClient(
+		models.FlatteningConfig{ServiceURL: server.URL, Timeout: 5 * time.Second},
+		models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 1, MaxBackoffMs: 1},
+		nil,
+		lib.NewLogger(lib.LogLevelError),
+	)
+
+	_, err := client.Flatten(
+		models.ViewDefinition{Name: "V", Resource: "Patient"},
+		[]map[string]any{{"resourceType": "Patient"}},
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to read response")
 }

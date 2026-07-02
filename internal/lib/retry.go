@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"fmt"
 	"math"
 	"time"
 
@@ -59,41 +58,6 @@ func NewRetryConfigFromModel(config models.RetryConfig) RetryConfig {
 		InitialBackoffMs: config.InitialBackoffMs,
 		MaxBackoffMs:     config.MaxBackoffMs,
 	}
-}
-
-// RetryableOperation represents an operation that can be retried
-type RetryableOperation func() error
-
-// ExecuteWithRetry executes an operation with exponential backoff retry logic
-// Returns nil if operation succeeds, or the last error if all retries are exhausted
-func ExecuteWithRetry(operation RetryableOperation, config RetryConfig, shouldRetry func(error) bool) error {
-	var lastErr error
-
-	for attempt := 0; attempt < config.MaxAttempts; attempt++ {
-		// Execute the operation
-		err := operation()
-		if err == nil {
-			return nil // Success
-		}
-
-		lastErr = err
-
-		// Check if we should retry
-		if !shouldRetry(err) {
-			return fmt.Errorf("non-retryable error: %w", err)
-		}
-
-		// Last attempt - don't wait
-		if attempt == config.MaxAttempts-1 {
-			break
-		}
-
-		// Calculate backoff and wait
-		backoff := CalculateBackoff(attempt, config.InitialBackoffMs, config.MaxBackoffMs)
-		time.Sleep(backoff)
-	}
-
-	return fmt.Errorf("operation failed after %d attempts: %w", config.MaxAttempts, lastErr)
 }
 
 // IsNetworkError checks if an error is likely a network-related issue

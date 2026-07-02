@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -13,6 +14,24 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
+
+// defaultFlattenerFactory is the production flattener client constructor.
+var defaultFlattenerFactory = func(config models.FlatteningConfig, retryConfig models.RetryConfig, transport *http.Transport, logger *lib.Logger) services.Flattener {
+	return services.NewFlattenerClient(config, retryConfig, transport, logger)
+}
+
+// flattenerFactory creates a Flattener. Overridable in tests.
+var flattenerFactory = defaultFlattenerFactory
+
+// SetFlattenerFactoryForTesting replaces the flattener client factory for tests.
+func SetFlattenerFactoryForTesting(factory func(models.FlatteningConfig, models.RetryConfig, *http.Transport, *lib.Logger) services.Flattener) {
+	flattenerFactory = factory
+}
+
+// ResetFlattenerFactory restores the default flattener client factory.
+func ResetFlattenerFactory() {
+	flattenerFactory = defaultFlattenerFactory
+}
 
 // groupBatch accumulates resources for a single attribute group until the batch
 // size threshold is reached, at which point it is flushed to the flattener service.
@@ -129,7 +148,7 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 
 	// Create clients
 	flattenerTransport, _ := services.BuildTLSTransport(job.Config.TLS, logger)
-	flattenerClient := services.NewFlattenerClient(job.Config.Services.Flattening, job.Config.Retry, flattenerTransport, logger)
+	flattenerClient := flattenerFactory(job.Config.Services.Flattening, job.Config.Retry, flattenerTransport, logger)
 	viewDefBuilder := services.NewViewDefinitionBuilder(lookupTables)
 	csvWriter := services.NewCSVWriter(outputDir)
 	viewDefWriter := services.NewViewDefinitionWriter(viewDefDir)
@@ -252,7 +271,7 @@ func streamAndFlattenResources(
 	viewDefs []*models.ViewDefinition,
 	headers [][]string,
 	filenames []string,
-	flattenerClient *services.FlattenerClient,
+	flattenerClient services.Flattener,
 	csvWriter *services.CSVWriter,
 	logger *lib.Logger,
 	batchSizeBytes int,
@@ -381,7 +400,7 @@ func flushGroupBatch(
 	viewDef *models.ViewDefinition,
 	header []string,
 	filename string,
-	flattenerClient *services.FlattenerClient,
+	flattenerClient services.Flattener,
 	csvWriter *services.CSVWriter,
 	logger *lib.Logger,
 	groupName string,
@@ -514,23 +533,12 @@ func FilterResourcesByProvenance(resources []map[string]any, index models.Proven
 	return matching
 }
 
-// IsFlatteningErrorRetryable checks if a flattening error should be retried
+// IsFlatteningErrorRetryable checks if a flattening error should be retried.
 func IsFlatteningErrorRetryable(err error) bool {
-	var flattenerErr *services.FlattenerError
-	if errors.As(err, &flattenerErr) {
-		return flattenerErr.IsRetryable()
-	}
-	return lib.IsNetworkError(err)
+	return isServiceErrorRetryable(err)
 }
 
-// ClassifyFlatteningError classifies a flattening error as transient or non-transient
+// ClassifyFlatteningError classifies a flattening error as transient or non-transient.
 func ClassifyFlatteningError(err error) models.ErrorType {
-	var flattenerErr *services.FlattenerError
-	if errors.As(err, &flattenerErr) {
-		return flattenerErr.ErrorType
-	}
-	if lib.IsNetworkError(err) {
-		return models.ErrorTypeTransient
-	}
-	return models.ErrorTypeNonTransient
+	return classifyServiceError(err)
 }

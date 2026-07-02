@@ -185,7 +185,7 @@ func AdvanceToNextStep(job *models.PipelineJob) (*models.PipelineJob, error) {
 	// Validate prerequisites before advancing
 	// Note: This is a safety check. Normal execution should already ensure prerequisites.
 	// This catches cases where user manually tries to run a step out of order.
-	canRun, prerequisite := lib.CanRunStep(*job, nextStepName)
+	canRun, prerequisite := models.CanRunStep(*job, nextStepName)
 	if !canRun {
 		return nil, lib.ErrStepPrerequisiteNotMet(nextStepName, prerequisite)
 	}

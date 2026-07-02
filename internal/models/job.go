@@ -55,24 +55,3 @@ func IsValidJobStatus(s JobStatus) bool {
 		return false
 	}
 }
-
-// CanTransitionTo checks if state transition is valid
-// Valid transitions:
-//
-//	pending -> in_progress
-//	in_progress -> completed | failed
-//	failed -> in_progress (manual retry)
-func (s JobStatus) CanTransitionTo(next JobStatus) bool {
-	switch s {
-	case JobStatusPending:
-		return next == JobStatusInProgress
-	case JobStatusInProgress:
-		return next == JobStatusCompleted || next == JobStatusFailed
-	case JobStatusFailed:
-		return next == JobStatusInProgress // Allow retry
-	case JobStatusCompleted:
-		return false // Terminal state
-	default:
-		return false
-	}
-}

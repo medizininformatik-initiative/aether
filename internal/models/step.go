@@ -85,30 +85,6 @@ func IsValidStepStatus(s StepStatus) bool {
 	}
 }
 
-// CanTransitionTo checks if step status transition is valid
-// Valid transitions:
-//
-//	pending -> in_progress
-//	in_progress -> completed | failed | waiting (for wait step)
-//	waiting -> completed (when user runs 'pipeline continue')
-//	failed -> in_progress (retry if transient error)
-func (s StepStatus) CanTransitionTo(next StepStatus) bool {
-	switch s {
-	case StepStatusPending:
-		return next == StepStatusInProgress
-	case StepStatusInProgress:
-		return next == StepStatusCompleted || next == StepStatusFailed || next == StepStatusWaiting
-	case StepStatusWaiting:
-		return next == StepStatusCompleted // User continued the pipeline
-	case StepStatusFailed:
-		return next == StepStatusInProgress
-	case StepStatusCompleted:
-		return false
-	default:
-		return false
-	}
-}
-
 // IsTransientHTTPStatus classifies HTTP status codes for retry logic
 func IsTransientHTTPStatus(status int) bool {
 	// 5xx server errors are transient (service might recover)

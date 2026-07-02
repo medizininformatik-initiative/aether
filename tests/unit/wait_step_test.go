@@ -151,23 +151,6 @@ func TestGetPreviousStepForWait(t *testing.T) {
 	}
 }
 
-// TestStatusTransition_InProgressToWaiting verifies status transition to waiting
-func TestStatusTransition_InProgressToWaiting(t *testing.T) {
-	assert.True(t, models.StepStatusInProgress.CanTransitionTo(models.StepStatusWaiting))
-}
-
-// TestStatusTransition_WaitingToCompleted verifies waiting to completed transition
-func TestStatusTransition_WaitingToCompleted(t *testing.T) {
-	assert.True(t, models.StepStatusWaiting.CanTransitionTo(models.StepStatusCompleted))
-}
-
-// TestStatusTransition_WaitingToOther verifies waiting cannot transition to other states
-func TestStatusTransition_WaitingToOther(t *testing.T) {
-	assert.False(t, models.StepStatusWaiting.CanTransitionTo(models.StepStatusInProgress))
-	assert.False(t, models.StepStatusWaiting.CanTransitionTo(models.StepStatusFailed))
-	assert.False(t, models.StepStatusWaiting.CanTransitionTo(models.StepStatusPending))
-}
-
 func TestCreateWaitDirectory_CreatesEmptyDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
 	sourceDir := filepath.Join(tmpDir, "import")

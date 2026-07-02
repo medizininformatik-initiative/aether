@@ -39,3 +39,24 @@ func TestMakeAbsoluteURL(t *testing.T) {
 		})
 	}
 }
+
+func TestJobIDFromStatusURL(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "status url", in: "http://torch:8080/fhir/__status/abc-123", want: "abc-123"},
+		{name: "trailing slash", in: "http://torch:8080/fhir/__status/abc-123/", want: "abc-123"},
+		{name: "query string ignored", in: "http://torch:8080/fhir/__status/abc-123?x=1", want: "abc-123"},
+		{name: "https", in: "https://torch.example/fhir/__status/uuid", want: "uuid"},
+		{name: "bare id", in: "abc-123", want: "abc-123"},
+		{name: "empty", in: "", want: ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, JobIDFromStatusURL(tc.in))
+		})
+	}
+}

@@ -1229,6 +1229,182 @@ func TestPipeline_TORCHExtraction_JobResumption(t *testing.T) {
 	t.Logf("Job resumption test passed: extraction completed successfully after simulated restart")
 }
 
+// TestPipeline_TORCHExtraction_ReattachViaImportStep verifies that when a job
+// already carries a TORCH handle (TORCHJobID + URL) from a prior session,
+// ExecuteImportStep re-attaches by polling the existing extraction and never
+// re-submits a fresh one. Exercises the re-attach branch of
+// executeTORCHExtraction through the exported pipeline entry point.
+func TestPipeline_TORCHExtraction_ReattachViaImportStep(t *testing.T) {
+	tempDir := t.TempDir()
+	jobsDir := filepath.Join(tempDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	crtdlPath := filepath.Join(tempDir, "reattach.json")
+	crtdlJSON, _ := json.Marshal(map[string]any{
+		"cohortDefinition": map[string]any{"version": "1.0.0", "inclusionCriteria": []any{}},
+		"dataExtraction":   map[string]any{"attributeGroups": []any{}},
+	})
+	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
+
+	submitCount := 0
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/fhir/$extract-data" {
+			submitCount++
+			w.Header().Set("Content-Location", server.URL+"/fhir/extraction/should-not-submit")
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		if r.Method == "GET" && r.URL.Path == "/fhir/extraction/existing-job" {
+			result := map[string]any{
+				"resourceType": "Parameters",
+				"parameter": []map[string]any{
+					{"name": "output", "part": []map[string]any{
+						{"name": "url", "valueUrl": server.URL + "/output/reattached.ndjson"},
+					}},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(result)
+			return
+		}
+		if r.Method == "GET" && r.URL.Path == "/output/reattached.ndjson" {
+			w.Header().Set("Content-Type", "application/fhir+ndjson")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"resourceType":"Patient","id":"reattached-1"}` + "\n"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			TORCH: models.TORCHConfig{
+				BaseURL:            server.URL,
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 1 * time.Second,
+			},
+		},
+		Pipeline: models.PipelineConfig{EnabledSteps: []models.StepName{models.StepTorchImport}},
+		Retry:    models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000},
+		JobsDir:  jobsDir,
+	}
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", crtdlPath, config, logger)
+	require.NoError(t, err)
+
+	// Simulate an in-flight extraction handle persisted from a prior session.
+	job.TORCHJobID = "existing-job"
+	job.TORCHExtractionURL = server.URL + "/fhir/extraction/existing-job"
+
+	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
+	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, submitCount, "re-attach must not POST $extract-data")
+	assert.Equal(t, "existing-job", updatedJob.TORCHJobID, "handle preserved on re-attach")
+
+	importStep, found := models.GetStepByName(*updatedJob, models.StepTorchImport)
+	require.True(t, found)
+	assert.Equal(t, models.StepStatusCompleted, importStep.Status)
+	assert.Greater(t, updatedJob.TotalFiles, 0)
+}
+
+// TestPipeline_TORCHExtraction_DeadHandleResubmitsViaImportStep verifies that a
+// stale handle whose status endpoint returns 410 Gone is cleared and a fresh
+// extraction is submitted. Exercises the ErrHandleDead re-submit branch of
+// executeTORCHExtraction through the exported pipeline entry point.
+func TestPipeline_TORCHExtraction_DeadHandleResubmitsViaImportStep(t *testing.T) {
+	tempDir := t.TempDir()
+	jobsDir := filepath.Join(tempDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	crtdlPath := filepath.Join(tempDir, "deadhandle.json")
+	crtdlJSON, _ := json.Marshal(map[string]any{
+		"cohortDefinition": map[string]any{"version": "1.0.0", "inclusionCriteria": []any{}},
+		"dataExtraction":   map[string]any{"attributeGroups": []any{}},
+	})
+	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
+
+	const newJobPath = "/fhir/extraction/fresh-after-410"
+	submitCount := 0
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Stale handle is dead.
+		if r.Method == "GET" && r.URL.Path == "/fhir/extraction/stale-job" {
+			w.WriteHeader(http.StatusGone)
+			return
+		}
+		if r.Method == "POST" && r.URL.Path == "/fhir/$extract-data" {
+			submitCount++
+			w.Header().Set("Content-Location", server.URL+newJobPath)
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		if r.Method == "GET" && r.URL.Path == newJobPath {
+			result := map[string]any{
+				"resourceType": "Parameters",
+				"parameter": []map[string]any{
+					{"name": "output", "part": []map[string]any{
+						{"name": "url", "valueUrl": server.URL + "/output/fresh.ndjson"},
+					}},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(result)
+			return
+		}
+		if r.Method == "GET" && r.URL.Path == "/output/fresh.ndjson" {
+			w.Header().Set("Content-Type", "application/fhir+ndjson")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"resourceType":"Patient","id":"fresh-1"}` + "\n"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			TORCH: models.TORCHConfig{
+				BaseURL:            server.URL,
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 1 * time.Second,
+			},
+		},
+		Pipeline: models.PipelineConfig{EnabledSteps: []models.StepName{models.StepTorchImport}},
+		Retry:    models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000},
+		JobsDir:  jobsDir,
+	}
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", crtdlPath, config, logger)
+	require.NoError(t, err)
+
+	// Simulate a stale handle from a prior session that TORCH no longer knows about.
+	job.TORCHJobID = "stale-job"
+	job.TORCHExtractionURL = server.URL + "/fhir/extraction/stale-job"
+
+	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
+	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, submitCount, "dead handle must trigger exactly one re-submit")
+	assert.Equal(t, services.JobIDFromStatusURL(server.URL+newJobPath), updatedJob.TORCHJobID,
+		"handle replaced with the fresh job ID")
+
+	importStep, found := models.GetStepByName(*updatedJob, models.StepTorchImport)
+	require.True(t, found)
+	assert.Equal(t, models.StepStatusCompleted, importStep.Status)
+	assert.Greater(t, updatedJob.TotalFiles, 0)
+}
+
 // Integration test - verify error handling when CRTDL preprocessing fails
 // Covers error paths in internal/pipeline/import.go (preprocessCRTDL function)
 

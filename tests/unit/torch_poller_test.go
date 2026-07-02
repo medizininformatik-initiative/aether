@@ -32,12 +32,12 @@ func TestNewPollConfig(t *testing.T) {
 	assert.Equal(t, 2*time.Second, config.PollInterval)
 	assert.Equal(t, 30*time.Second, config.MaxPollInterval)
 	assert.Equal(t, 0, config.PollCount)
-	assert.True(t, time.Since(config.StartTime) < 1*time.Second)
+	assert.True(t, time.Since(config.LastContact) < 1*time.Second)
 }
 
 func TestPollConfig_CheckTimeout_NotExceeded(t *testing.T) {
 	config := services.NewPollConfig(newTestTORCHConfig(10*time.Minute, 1*time.Second, 30*time.Second))
-	config.StartTime = time.Now()
+	config.LastContact = time.Now()
 
 	// Should not timeout immediately
 	assert.False(t, config.CheckTimeout())
@@ -45,7 +45,7 @@ func TestPollConfig_CheckTimeout_NotExceeded(t *testing.T) {
 
 func TestPollConfig_CheckTimeout_Exceeded(t *testing.T) {
 	config := services.NewPollConfig(newTestTORCHConfig(1*time.Minute, 1*time.Second, 30*time.Second))
-	config.StartTime = time.Now().Add(-2 * time.Minute)
+	config.LastContact = time.Now().Add(-2 * time.Minute)
 
 	// Should timeout
 	assert.True(t, config.CheckTimeout())
@@ -53,7 +53,7 @@ func TestPollConfig_CheckTimeout_Exceeded(t *testing.T) {
 
 func TestPollConfig_GetElapsedTime(t *testing.T) {
 	config := services.NewPollConfig(newTestTORCHConfig(10*time.Minute, 1*time.Second, 30*time.Second))
-	config.StartTime = time.Now().Add(-5 * time.Second)
+	config.PollStart = time.Now().Add(-5 * time.Second)
 
 	elapsed := config.GetElapsedTime()
 	// Should be approximately 5 seconds (allow some slack)
@@ -122,7 +122,7 @@ func TestCalculateNextPollInterval(t *testing.T) {
 func TestPollConfig_StateProgression(t *testing.T) {
 	config := services.NewPollConfig(newTestTORCHConfig(5*time.Minute, 1*time.Second, 10*time.Second))
 	startTime := time.Now()
-	config.StartTime = startTime
+	config.LastContact = startTime
 
 	// Initial state
 	assert.Equal(t, 0, config.PollCount)
@@ -176,7 +176,7 @@ func TestHandlePollResponse_Error(t *testing.T) {
 
 func TestPollConfig_MultipleTimeouts(t *testing.T) {
 	config := services.NewPollConfig(newTestTORCHConfig(1*time.Minute, 1*time.Second, 30*time.Second))
-	config.StartTime = time.Now().Add(-10 * time.Minute)
+	config.LastContact = time.Now().Add(-10 * time.Minute)
 
 	// Should timeout regardless of how many times we check
 	assert.True(t, config.CheckTimeout())

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -100,6 +101,11 @@ func (e *TORCHError) IsRetryable() bool {
 
 // ErrExtractionTimeout is returned when extraction polling exceeds configured timeout
 var ErrExtractionTimeout = fmt.Errorf("TORCH extraction timeout exceeded")
+
+// ErrHandleDead is returned from polling when the status endpoint reports the
+// job handle no longer exists (404 Not Found or 410 Gone). The caller should
+// clear the stored handle and re-submit a fresh extraction.
+var ErrHandleDead = fmt.Errorf("TORCH job handle is gone (404 or 410)")
 
 // ErrInvalidCRTDL is returned when CRTDL file is malformed
 var ErrInvalidCRTDL = fmt.Errorf("invalid CRTDL file")
@@ -197,6 +203,26 @@ func (c *TORCHClient) SubmitExtraction(crtdlPath string) (string, error) {
 	c.logger.Info("TORCH extraction submitted successfully", "extraction_url", contentLocation)
 
 	return contentLocation, nil
+}
+
+// JobIDFromStatusURL returns the TORCH job ID — the last path segment of a
+// status / Content-Location URL (e.g. ".../fhir/__status/{jobId}") — or "" if
+// none can be parsed. The job ID is the handle aether persists to re-attach.
+func JobIDFromStatusURL(statusURL string) string {
+	trimmed := strings.TrimRight(statusURL, "/")
+	if trimmed == "" {
+		return ""
+	}
+
+	if u, err := url.Parse(trimmed); err == nil && u.Path != "" {
+		trimmed = strings.TrimRight(u.Path, "/")
+	}
+
+	base := path.Base(trimmed)
+	if base == "." || base == "/" {
+		return ""
+	}
+	return base
 }
 
 // SubmitExtractionWithContent submits already-encoded CRTDL content for extraction to TORCH server.
@@ -361,23 +387,32 @@ func (c *TORCHClient) PollExtractionStatus(extractionURL string, showProgress bo
 		}
 
 		// Handle response
-		complete, urls, diagnostics, handleErr := handlePollResponse(resp, c)
-		if handleErr != nil {
-			return nil, handleErr
+		outcome := c.handlePollResponse(resp)
+		if outcome.err != nil {
+			if outcome.retryable {
+				time.Sleep(pollConfig.PollInterval)
+				pollConfig.UpdateInterval()
+				continue
+			}
+			return nil, outcome.err
 		}
 
-		if complete {
+		// 200/202 are contact with a live job — reset the liveness window so a
+		// long but responsive extraction never trips extraction_timeout.
+		pollConfig.RecordContact()
+
+		if outcome.complete {
 			c.logger.Info("TORCH extraction completed", "polls", pollConfig.PollCount)
-			return urls, nil
+			return outcome.fileURLs, nil
 		}
 
 		// Log progress diagnostics from OperationOutcome (only when changed)
-		if diagnostics != "" && diagnostics != lastDiagnostics {
-			c.logger.Info("TORCH extraction progress", "diagnostics", diagnostics)
+		if outcome.diagnostics != "" && outcome.diagnostics != lastDiagnostics {
+			c.logger.Info("TORCH extraction progress", "diagnostics", outcome.diagnostics)
 			if spinner != nil {
-				spinner.UpdateMessage(diagnostics)
+				spinner.UpdateMessage(outcome.diagnostics)
 			}
-			lastDiagnostics = diagnostics
+			lastDiagnostics = outcome.diagnostics
 		}
 
 		// Still in progress - wait with exponential backoff

@@ -11,10 +11,13 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
-// PollConfig holds configuration for extraction polling
+// PollConfig holds configuration and timing state for extraction polling.
+// LastContact anchors the liveness window (reset on every 200/202); PollStart
+// is the wall-clock start, kept only for reporting total elapsed time.
 type PollConfig struct {
 	Timeout         time.Duration
-	StartTime       time.Time
+	LastContact     time.Time
+	PollStart       time.Time
 	PollInterval    time.Duration
 	MaxPollInterval time.Duration
 	PollCount       int
@@ -22,9 +25,11 @@ type PollConfig struct {
 
 // NewPollConfig creates polling configuration from TORCH client settings
 func NewPollConfig(cfg models.TORCHConfig) *PollConfig {
+	now := time.Now()
 	return &PollConfig{
 		Timeout:         cfg.ExtractionTimeout,
-		StartTime:       time.Now(),
+		LastContact:     now,
+		PollStart:       now,
 		PollInterval:    cfg.PollingInterval,
 		MaxPollInterval: cfg.MaxPollingInterval,
 		PollCount:       0,
@@ -44,8 +49,21 @@ func createPollRequest(extractionURL string, c *TORCHClient) (*http.Request, err
 	return req, nil
 }
 
-// handlePollResponse processes a polling response and returns completion status, file URLs, and progress diagnostics
-func handlePollResponse(resp *http.Response, c *TORCHClient) (complete bool, fileURLs []string, diagnostics string, err error) {
+// pollOutcome is the result of interpreting a single status poll response.
+// When err is set, retryable says whether the poll loop should keep polling
+// (transient) or give up (terminal).
+type pollOutcome struct {
+	complete    bool
+	fileURLs    []string
+	diagnostics string
+	retryable   bool
+	err         error
+}
+
+// handlePollResponse interprets a status poll response: completion + file URLs
+// on 200, in-progress diagnostics on 202, a dead-handle signal on 404/410, and
+// a retryable/terminal error otherwise.
+func (c *TORCHClient) handlePollResponse(resp *http.Response) pollOutcome {
 	defer func() { _ = resp.Body.Close() }()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
@@ -53,32 +71,48 @@ func handlePollResponse(resp *http.Response, c *TORCHClient) (complete bool, fil
 	switch resp.StatusCode {
 	case http.StatusAccepted, http.StatusProcessing:
 		// Still in progress (202 Accepted or 102 Processing)
-		diagnostics = extractProgressDiagnostics(bodyBytes)
-		return false, nil, diagnostics, nil
+		return pollOutcome{diagnostics: extractProgressDiagnostics(bodyBytes)}
 
 	case http.StatusOK:
-		// Extraction complete - parse result
 		c.logger.Info("TORCH extraction completed")
 		c.logger.Debug("TORCH extraction response body", "body", string(bodyBytes))
 		fileURLs, err := c.parseExtractionResult(bodyBytes)
 		if err != nil {
-			return false, nil, "", err
+			return pollOutcome{err: err}
 		}
-		return true, fileURLs, "", nil
+		return pollOutcome{complete: true, fileURLs: fileURLs}
+
+	case http.StatusNotFound, http.StatusGone:
+		// Handle is dead — the job no longer exists on TORCH. Signal the caller
+		// to clear the stored handle and re-submit a fresh extraction.
+		c.logger.Warn("TORCH job handle is gone", "status_code", resp.StatusCode, "status", resp.Status)
+		return pollOutcome{err: ErrHandleDead}
 
 	default:
-		// Error response
+		// TORCH returns 500 only for a terminal job failure (TEMP_FAILED is
+		// surfaced as 202/503), so treat it as non-transient here even though
+		// 5xx is retryable for generic HTTP calls. Other 5xx, 408, and 429 stay
+		// transient and retryable; 4xx is terminal.
 		errorType := lib.ClassifyHTTPError(resp.StatusCode)
-		c.logger.Error("TORCH extraction failed",
-			"status_code", resp.StatusCode,
-			"status", resp.Status,
-			"error_body", string(bodyBytes))
+		if resp.StatusCode == http.StatusInternalServerError {
+			errorType = models.ErrorTypeNonTransient
+		}
+		retryable := errorType == models.ErrorTypeTransient
+		logFields := []any{"status_code", resp.StatusCode, "status", resp.Status, "error_body", string(bodyBytes)}
+		if retryable {
+			c.logger.Warn("TORCH poll returned transient error, will retry", logFields...)
+		} else {
+			c.logger.Error("TORCH extraction failed", logFields...)
+		}
 
-		return false, nil, "", &TORCHError{
-			Operation:  "poll",
-			StatusCode: resp.StatusCode,
-			Message:    string(bodyBytes),
-			ErrorType:  errorType,
+		return pollOutcome{
+			retryable: retryable,
+			err: &TORCHError{
+				Operation:  "poll",
+				StatusCode: resp.StatusCode,
+				Message:    string(bodyBytes),
+				ErrorType:  errorType,
+			},
 		}
 	}
 }
@@ -117,14 +151,22 @@ func CalculateNextPollInterval(current, max time.Duration) time.Duration {
 	return next
 }
 
-// CheckTimeout checks if polling has exceeded timeout
+// CheckTimeout reports whether the liveness window has elapsed since the last
+// contact with TORCH. extraction_timeout is a no-progress window, not a total
+// cap: a healthy job resets it on every 200/202 (see RecordContact).
 func (pc *PollConfig) CheckTimeout() bool {
-	return time.Since(pc.StartTime) > pc.Timeout
+	return time.Since(pc.LastContact) > pc.Timeout
 }
 
-// GetElapsedTime returns time elapsed since polling started
+// RecordContact resets the liveness window. Call it on every 200/202 response
+// so a long but responsive extraction never trips extraction_timeout.
+func (pc *PollConfig) RecordContact() {
+	pc.LastContact = time.Now()
+}
+
+// GetElapsedTime returns the total time elapsed since polling started.
 func (pc *PollConfig) GetElapsedTime() time.Duration {
-	return time.Since(pc.StartTime)
+	return time.Since(pc.PollStart)
 }
 
 // IncrementPollCount increments the poll attempt counter

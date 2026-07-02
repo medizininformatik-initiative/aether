@@ -11,6 +11,7 @@ type PipelineJob struct {
 	InputType          InputType      `json:"input_type"`                     // "local_directory" | "http_url" | "crtdl_file" | "torch_result_url"
 	CRTDLPath          string         `json:"crtdl_path,omitempty"`           // Optional CRTDL file, decoupled from InputSource (see issue #286)
 	TORCHExtractionURL string         `json:"torch_extraction_url,omitempty"` // Content-Location URL for TORCH polling/resume
+	TORCHJobID         string         `json:"torch_job_id,omitempty"`         // TORCH job ID (handle) for re-attaching to an in-flight extraction
 	CurrentStep        string         `json:"current_step"`                   // Current pipeline step
 	Status             JobStatus      `json:"status"`                         // Job execution status
 	Steps              []PipelineStep `json:"steps"`                          // Ordered list of pipeline steps

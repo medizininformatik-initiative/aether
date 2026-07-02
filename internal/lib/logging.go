@@ -100,14 +100,19 @@ func (l *Logger) Error(message string, fields ...any) {
 	l.log(LogLevelError, "ERROR", message, fields...)
 }
 
-// log formats a message once and fans it out: to the console only when its
-// severity meets the configured level, and to the attached job log file always.
-func (l *Logger) log(lvl LogLevel, label string, message string, fields ...any) {
+// formatLogLine renders a single structured log line shared by every sink.
+func formatLogLine(label string, message string, fields ...any) string {
 	var fieldsStr string
 	if len(fields) > 0 {
 		fieldsStr = fmt.Sprintf(" | %v", fields)
 	}
-	line := fmt.Sprintf("[%s] %s%s", label, message, fieldsStr)
+	return fmt.Sprintf("[%s] %s%s", label, message, fieldsStr)
+}
+
+// log formats a message once and fans it out: to the console only when its
+// severity meets the configured level, and to the attached job log file always.
+func (l *Logger) log(lvl LogLevel, label string, message string, fields ...any) {
+	line := formatLogLine(label, message, fields...)
 
 	if lvl >= l.level {
 		l.console.Println(line)
@@ -115,6 +120,19 @@ func (l *Logger) log(lvl LogLevel, label string, message string, fields ...any) 
 	if l.fileLogger != nil {
 		l.fileLogger.Println(line)
 	}
+}
+
+// logFailure records a structured failure line. When a job log file is attached
+// it writes there only, keeping the console clean because the failure is already
+// surfaced to the user as a top-level `Error:` line. With no file attached it
+// falls back to the console so the record is never silently dropped.
+func (l *Logger) logFailure(label string, message string, fields ...any) {
+	line := formatLogLine(label, message, fields...)
+	if l.fileLogger != nil {
+		l.fileLogger.Println(line)
+		return
+	}
+	l.console.Println(line)
 }
 
 // LogOperation logs the start and completion of an operation
@@ -165,9 +183,12 @@ func LogStepComplete(logger *Logger, stepName string, jobID string, filesProcess
 	)
 }
 
-// LogStepFailed logs a failed pipeline step
+// LogStepFailed records a failed pipeline step to the job log file only. The
+// failure is surfaced to the user as a top-level `Error:` line, so logging it to
+// the console as well would duplicate the same error on stderr.
 func LogStepFailed(logger *Logger, stepName string, jobID string, err error, retryable bool) {
-	logger.Error(
+	logger.logFailure(
+		"ERROR",
 		"Step failed",
 		"step", stepName,
 		"job_id", jobID,

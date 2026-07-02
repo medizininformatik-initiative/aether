@@ -2,6 +2,7 @@ package unit
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,47 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
+
+// A failed step is already surfaced to the user as a top-level `Error:` line, so
+// LogStepFailed must keep its structured record in the job log file only and stay
+// off the console to avoid duplicating the same failure on stderr (issue #467).
+func TestLogStepFailed_FileOnlyNotConsole(t *testing.T) {
+	var console bytes.Buffer
+	logger := lib.NewLoggerWithWriter(lib.LogLevelError, &console)
+
+	logPath := filepath.Join(t.TempDir(), "job.log")
+	require.NoError(t, logger.AttachJobLogFile(logPath))
+
+	lib.LogStepFailed(logger, "torch", "job123", errors.New("boom"), false)
+	require.NoError(t, logger.Close())
+
+	// Console: nothing — the user-facing `Error:` line covers it.
+	assert.Empty(t, console.String())
+
+	// File: full structured record retained for diagnostics.
+	fileContent, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	file := string(fileContent)
+	assert.Contains(t, file, "Step failed")
+	assert.Contains(t, file, "torch")
+	assert.Contains(t, file, "job123")
+	assert.Contains(t, file, "boom")
+}
+
+// Without an attached job log file the failure record has nowhere to go, so it
+// must fall back to the console rather than vanish silently (issue #467).
+func TestLogStepFailed_FallsBackToConsoleWhenNoFile(t *testing.T) {
+	var console bytes.Buffer
+	logger := lib.NewLoggerWithWriter(lib.LogLevelError, &console)
+
+	lib.LogStepFailed(logger, "torch", "job123", errors.New("boom"), false)
+
+	out := console.String()
+	assert.Contains(t, out, "Step failed")
+	assert.Contains(t, out, "torch")
+	assert.Contains(t, out, "job123")
+	assert.Contains(t, out, "boom")
+}
 
 // Console respects the configured level, but the attached job log file always
 // captures full DEBUG output regardless of the console level (issue #409).

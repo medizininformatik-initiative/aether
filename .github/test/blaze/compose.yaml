@@ -3,7 +3,7 @@ name: blaze
 services:
   # Blaze FHIR server used as DSF transfer target for the send step
   blaze-fhir:
-    image: samply/blaze:1.9.0@sha256:cba859fb460df3938792226f16ba9bde32bf8dd9edeeadffbd818bccdcce56dc
+    image: samply/blaze:1.10.1@sha256:dcc951be40714a4eee5f78db08b90a5a9ea9d4a172f716bdb419f5c1a2feebc6
     ports: [ ":8080" ]
     networks: [ "aether" ]
     environment:

@@ -2056,3 +2056,198 @@ func TestTORCHClient_PollExtractionStatus_InvalidURLError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to create poll request")
 }
+
+// -----------------------------------------------------------------------------
+// TORCHClient auth-header application: OAuth2 token-fetch failures surface as
+// "failed to add auth header" from each request-building path.
+// -----------------------------------------------------------------------------
+
+// torchOAuthClient builds a TORCHClient configured for OAuth2 against issuerURL,
+// with no basic-auth credentials so ApplyAuth takes the OAuth path.
+func torchOAuthClient(issuerURL string, cfgMods ...func(*models.TORCHConfig)) *services.TORCHClient {
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(
+		5*time.Second,
+		models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 1, MaxBackoffMs: 1},
+		models.TLSConfig{},
+		logger,
+	)
+	cfg := models.TORCHConfig{
+		BaseURL:            "http://torch.invalid",
+		OAuthIssuerURI:     issuerURL,
+		OAuthClientID:      "id",
+		OAuthClientSecret:  "secret",
+		ExtractionTimeout:  30 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 10 * time.Millisecond,
+	}
+	for _, mod := range cfgMods {
+		mod(&cfg)
+	}
+	return services.NewTORCHClient(cfg, httpClient, logger)
+}
+
+func TestTORCHClient_SubmitExtraction_AuthError(t *testing.T) {
+	services.ClearOAuth2TokenCache()
+	defer services.ClearOAuth2TokenCache()
+
+	tokenServer := oauthTokenServer(http.StatusInternalServerError)
+	defer tokenServer.Close()
+
+	crtdlPath := filepath.Join(t.TempDir(), "crtdl.json")
+	require.NoError(t, os.WriteFile(crtdlPath,
+		[]byte(`{"cohortDefinition":{"inclusionCriteria":[]},"dataExtraction":{"attributeGroups":[]}}`), 0644))
+
+	client := torchOAuthClient(tokenServer.URL)
+
+	_, err := client.SubmitExtraction(crtdlPath)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to add auth header")
+}
+
+func TestTORCHClient_SubmitExtractionWithContent_AuthError(t *testing.T) {
+	services.ClearOAuth2TokenCache()
+	defer services.ClearOAuth2TokenCache()
+
+	tokenServer := oauthTokenServer(http.StatusInternalServerError)
+	defer tokenServer.Close()
+
+	client := torchOAuthClient(tokenServer.URL)
+
+	_, err := client.SubmitExtractionWithContent(
+		[]byte(`{"cohortDefinition":{"inclusionCriteria":[]},"dataExtraction":{"attributeGroups":[]}}`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to add auth header")
+}
+
+func TestTORCHClient_Ping_AuthError(t *testing.T) {
+	services.ClearOAuth2TokenCache()
+	defer services.ClearOAuth2TokenCache()
+
+	tokenServer := oauthTokenServer(http.StatusInternalServerError)
+	defer tokenServer.Close()
+
+	client := torchOAuthClient(tokenServer.URL)
+
+	err := client.Ping()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to add auth header")
+}
+
+func TestTORCHClient_PollExtractionStatus_AuthError(t *testing.T) {
+	services.ClearOAuth2TokenCache()
+	defer services.ClearOAuth2TokenCache()
+
+	tokenServer := oauthTokenServer(http.StatusInternalServerError)
+	defer tokenServer.Close()
+
+	client := torchOAuthClient(tokenServer.URL)
+
+	_, err := client.PollExtractionStatus("http://torch.invalid/status", false)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to add auth header")
+}
+
+func TestTORCHClient_DownloadExtractionFiles_AvailabilityCheckAuthError(t *testing.T) {
+	services.ClearOAuth2TokenCache()
+	defer services.ClearOAuth2TokenCache()
+
+	tokenServer := oauthTokenServer(http.StatusInternalServerError)
+	defer tokenServer.Close()
+
+	// FileReadyRetries=1 runs the HEAD availability check, whose auth fails first.
+	client := torchOAuthClient(tokenServer.URL, func(c *models.TORCHConfig) { c.FileReadyRetries = 1 })
+
+	_, err := client.DownloadExtractionFiles(
+		[]string{"http://torch.invalid/out.ndjson"}, t.TempDir(), false, false, "")
+
+	require.Error(t, err)
+}
+
+func TestTORCHClient_DownloadExtractionFiles_DownloadAuthError(t *testing.T) {
+	services.ClearOAuth2TokenCache()
+	defer services.ClearOAuth2TokenCache()
+
+	tokenServer := oauthTokenServer(http.StatusInternalServerError)
+	defer tokenServer.Close()
+
+	// FileReadyRetries=0 skips the availability check, so downloadFile's auth is
+	// the first application and its error branch is exercised.
+	client := torchOAuthClient(tokenServer.URL, func(c *models.TORCHConfig) { c.FileReadyRetries = 0 })
+
+	_, err := client.DownloadExtractionFiles(
+		[]string{"http://torch.invalid/out.ndjson"}, t.TempDir(), false, false, "")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to add auth header")
+}
+
+func TestTORCHClient_DownloadExtractionFiles_RangeCheckAuthError(t *testing.T) {
+	services.ClearOAuth2TokenCache()
+	defer services.ClearOAuth2TokenCache()
+
+	// The HEAD check's token fetch succeeds; the Range fallback's fetch fails.
+	tokenServer := oauthTokenServer(http.StatusOK, http.StatusInternalServerError)
+	defer tokenServer.Close()
+
+	// File server rejects HEAD with 405 so checkFileAvailable falls back to a
+	// Range GET, whose auth application then fails.
+	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer fileServer.Close()
+
+	client := torchOAuthClient(tokenServer.URL, func(c *models.TORCHConfig) { c.FileReadyRetries = 1 })
+
+	_, err := client.DownloadExtractionFiles(
+		[]string{fileServer.URL + "/out.ndjson"}, t.TempDir(), false, false, "")
+
+	require.Error(t, err)
+}
+
+// The Range-fallback availability check (used when HEAD is unsupported) succeeds
+// and the file downloads: HEAD -> 405, a ranged GET -> 206, a full GET -> 200.
+func TestTORCHClient_DownloadExtractionFiles_RangeCheckAvailable(t *testing.T) {
+	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		case r.Header.Get("Range") != "":
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write([]byte("x"))
+		default:
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"resourceType":"Patient","id":"p1"}` + "\n"))
+		}
+	}))
+	defer fileServer.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(
+		5*time.Second,
+		models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 1, MaxBackoffMs: 1},
+		models.TLSConfig{},
+		logger,
+	)
+	client := services.NewTORCHClient(models.TORCHConfig{
+		BaseURL:          fileServer.URL,
+		Username:         "u",
+		Password:         "p",
+		FileReadyRetries: 1,
+	}, httpClient, logger)
+
+	dir := t.TempDir()
+	files, err := client.DownloadExtractionFiles(
+		[]string{fileServer.URL + "/out.ndjson"}, dir, false, false, "")
+
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+}

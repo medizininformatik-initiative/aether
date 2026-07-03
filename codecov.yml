@@ -1,0 +1,9 @@
+# Codecov configuration.
+#
+# ignore: paths excluded from both project and patch coverage. servicestest holds
+# hand-written test doubles (mocks) for the service-client seams — it is
+# test-support code, not production code, so measuring its coverage is noise.
+# Its only uncovered lines are unset-func fallback branches that no consumer
+# exercises; excluding the package keeps those out of the patch-coverage gate.
+ignore:
+  - "internal/services/servicestest"

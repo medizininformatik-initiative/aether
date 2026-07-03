@@ -23,6 +23,24 @@ import (
 // e.g. Patient.ndjson -> Patient.validation.ndjson
 const validationReportSuffix = ".validation.ndjson"
 
+// defaultResourceValidatorFactory is the production validation client constructor.
+var defaultResourceValidatorFactory = func(baseURL string, httpClient *services.HTTPClient, logger *lib.Logger) services.ResourceValidator {
+	return services.NewValidationClient(baseURL, httpClient, logger)
+}
+
+// resourceValidatorFactory creates a ResourceValidator. Overridable in tests.
+var resourceValidatorFactory = defaultResourceValidatorFactory
+
+// SetResourceValidatorFactoryForTesting replaces the validation client factory for tests.
+func SetResourceValidatorFactoryForTesting(factory func(string, *services.HTTPClient, *lib.Logger) services.ResourceValidator) {
+	resourceValidatorFactory = factory
+}
+
+// ResetResourceValidatorFactory restores the default validation client factory.
+func ResetResourceValidatorFactory() {
+	resourceValidatorFactory = defaultResourceValidatorFactory
+}
+
 // ExecuteValidationStep validates FHIR resources against a FHIR validation service.
 // Reads from the previous data-producing step's output directory.
 // Writes per-file OperationOutcome reports for all validated chunks to jobs/<job-id>/validation/.
@@ -50,7 +68,7 @@ func ExecuteValidationStep(job *models.PipelineJob, jobDir string, logger *lib.L
 	}
 
 	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
-	validationClient := services.NewValidationClient(job.Config.Services.Validation.URL, httpClient, logger)
+	validationClient := resourceValidatorFactory(job.Config.Services.Validation.URL, httpClient, logger)
 
 	layout := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps)
 	inputDir := layout.InputDir(stepName)
@@ -122,8 +140,8 @@ func ExecuteValidationStep(job *models.PipelineJob, jobDir string, logger *lib.L
 				"filename", baseName,
 				"error", err,
 				"job_id", job.JobID)
-			lib.LogStepFailed(logger, string(stepName), job.JobID, err, isValidationErrorRetryable(err))
-			recordStepError(step, err, classifyValidationError(err))
+			lib.LogStepFailed(logger, string(stepName), job.JobID, err, isServiceErrorRetryable(err))
+			recordStepError(step, err, classifyServiceError(err))
 			return fmt.Errorf("failed to validate %s: %w", baseName, err)
 		}
 
@@ -181,7 +199,7 @@ type chunkValidationResult struct {
 // validateFile validates all resources in a single NDJSON file by chunking them into
 // FHIR Bundles and validating concurrently. All OperationOutcomes are written to the report.
 // Returns the total resource count, the number of chunks with errors, and any processing error.
-func validateFile(inputFile, reportFile string, client *services.ValidationClient, logger *lib.Logger, maxConcurrent int, thresholdBytes int) (int, int, error) {
+func validateFile(inputFile, reportFile string, client services.ResourceValidator, logger *lib.Logger, maxConcurrent int, thresholdBytes int) (int, int, error) {
 	inFile, err := lib.OpenFileForReading(inputFile)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to open input file: %w", err)
@@ -475,23 +493,4 @@ func chunkResourcesWithOversized(entries []map[string]any, thresholdBytes int, l
 	}
 
 	return partitions, nil
-}
-
-// isValidationErrorRetryable checks if a validation error should be retried
-func isValidationErrorRetryable(err error) bool {
-	if valErr, ok := err.(*services.ValidationError); ok {
-		return valErr.IsRetryable()
-	}
-	return lib.IsNetworkError(err)
-}
-
-// classifyValidationError classifies a validation error as transient or non-transient
-func classifyValidationError(err error) models.ErrorType {
-	if valErr, ok := err.(*services.ValidationError); ok {
-		return valErr.ErrorType
-	}
-	if lib.IsNetworkError(err) {
-		return models.ErrorTypeTransient
-	}
-	return models.ErrorTypeNonTransient
 }

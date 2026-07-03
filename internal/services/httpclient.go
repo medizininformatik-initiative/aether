@@ -2,6 +2,8 @@ package services
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -121,40 +123,32 @@ func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 
 			// Check if HTTP status indicates error
 			if resp.StatusCode >= 400 {
-				// Classify error type
 				errorType := lib.ClassifyHTTPError(resp.StatusCode)
 
-				// Create error for HTTP status
+				// Return the response (so the caller can read and classify the
+				// error body) for non-transient statuses, and for transient
+				// statuses once no retry attempt remains. Only retry a transient
+				// status when a further attempt will actually run.
+				if errorType == models.ErrorTypeNonTransient || attempt >= c.retryConfig.MaxAttempts-1 {
+					return resp, nil
+				}
+
 				statusErr := fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
+				lib.LogRetry(c.logger, req.URL.String(), attempt, c.retryConfig.MaxAttempts, statusErr)
+				lastErr = statusErr
 
-				// For non-transient errors, return immediately
-				if errorType == models.ErrorTypeNonTransient {
-					return resp, nil // Return response so caller can read error details
+				// Close response body before retry
+				_ = resp.Body.Close()
+
+				backoff := lib.CalculateBackoff(attempt, c.retryConfig.InitialBackoffMs, c.retryConfig.MaxBackoffMs)
+				time.Sleep(backoff)
+
+				// Reset request body for retry
+				if bodyBytes != nil {
+					req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 				}
 
-				// For transient errors, retry
-				if lib.ShouldRetry(errorType, attempt, c.retryConfig.MaxAttempts) {
-					lib.LogRetry(c.logger, req.URL.String(), attempt, c.retryConfig.MaxAttempts, statusErr)
-
-					// Store the error in case this is the last attempt
-					lastErr = statusErr
-
-					// Close response body before retry
-					_ = resp.Body.Close()
-
-					// Wait before retry
-					if attempt < c.retryConfig.MaxAttempts-1 {
-						backoff := lib.CalculateBackoff(attempt, c.retryConfig.InitialBackoffMs, c.retryConfig.MaxBackoffMs)
-						time.Sleep(backoff)
-					}
-
-					// Reset request body for retry
-					if bodyBytes != nil {
-						req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-					}
-
-					continue
-				}
+				continue
 			}
 
 			return resp, nil
@@ -187,6 +181,100 @@ func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 	}
 
 	return nil, fmt.Errorf("request failed after %d attempts: %w", c.retryConfig.MaxAttempts, lastErr)
+}
+
+// DoOnce executes a request exactly once with no retry. It is for callers that
+// own their own outer polling/availability loop (e.g. TORCH status polling),
+// where wrapping each attempt in the shared retry loop would be wrong.
+func (c *HTTPClient) DoOnce(req *http.Request) (*http.Response, error) {
+	startTime := time.Now()
+	resp, err := c.client.Do(req)
+	lib.LogServiceCall(c.logger, req.URL.Host, req.URL.Path, req.Method)
+	if err == nil {
+		lib.LogServiceResponse(c.logger, req.URL.Host, resp.StatusCode, time.Since(startTime))
+	}
+	return resp, err
+}
+
+// ApplyAuth sets the Authorization header from the given auth config.
+// Basic auth takes precedence; OAuth2 client-credentials is used otherwise.
+// No header is set when auth is unconfigured.
+func (c *HTTPClient) ApplyAuth(req *http.Request, auth models.AuthConfig) error {
+	if auth.Username != "" && auth.Password != "" {
+		credentials := auth.Username + ":" + auth.Password
+		encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
+		req.Header.Set("Authorization", "Basic "+encoded)
+		return nil
+	}
+
+	if auth.OAuthIssuerURI != "" && auth.OAuthClientID != "" && auth.OAuthClientSecret != "" {
+		token, err := FetchOAuth2Token(auth.OAuthIssuerURI, auth.OAuthClientID, auth.OAuthClientSecret, c)
+		if err != nil {
+			return fmt.Errorf("failed to get OAuth2 token: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		return nil
+	}
+
+	return nil
+}
+
+// FHIRRequest describes a single FHIR-JSON request end to end.
+type FHIRRequest struct {
+	Method      string
+	URL         string
+	ContentType string // defaults to application/fhir+json when empty
+	Body        any    // marshaled to JSON when non-nil
+	Auth        models.AuthConfig
+	Service     string // labels classified errors (e.g. "DIMP", "validation")
+}
+
+// DoFHIRJSON executes a FHIR-JSON request end to end: marshal the body, apply
+// auth, run the shared retry loop, classify any HTTP-status error into a
+// *ServiceError, and JSON-decode a success response into out (skipped when
+// out is nil). This is the deep entry point DIMP and validation share.
+func (c *HTTPClient) DoFHIRJSON(fhirReq FHIRRequest, out any) error {
+	var bodyReader io.Reader
+	if fhirReq.Body != nil {
+		jsonBody, err := json.Marshal(fhirReq.Body)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request: %w", err)
+		}
+		bodyReader = bytes.NewReader(jsonBody)
+	}
+
+	req, err := http.NewRequest(fhirReq.Method, fhirReq.URL, bodyReader)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	contentType := fhirReq.ContentType
+	if contentType == "" {
+		contentType = "application/fhir+json"
+	}
+	req.Header.Set("Content-Type", contentType)
+
+	if err := c.ApplyAuth(req, fhirReq.Auth); err != nil {
+		return fmt.Errorf("failed to add auth header: %w", err)
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= 400 {
+		return classifyHTTPResponse(fhirReq.Service, resp)
+	}
+
+	if out != nil {
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			return fmt.Errorf("failed to decode response: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // Download downloads a file from a URL and writes it to a writer

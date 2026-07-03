@@ -3,6 +3,7 @@ package unit
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -217,4 +218,25 @@ func TestClearOAuth2TokenCache(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "new-token", token)
 	assert.Equal(t, 1, requestCount) // Server was called because cache was cleared
+}
+
+// oauthTokenServer returns a token endpoint that replies with the given HTTP
+// statuses in sequence, repeating the last one for any further calls. A 200 is
+// answered with a short-lived (uncacheable) token so each request re-fetches.
+// Shared by the client auth-failure tests (TORCH, DoFHIRJSON).
+func oauthTokenServer(statuses ...int) *httptest.Server {
+	var n int32
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		i := int(atomic.AddInt32(&n, 1)) - 1
+		status := statuses[len(statuses)-1]
+		if i < len(statuses) {
+			status = statuses[i]
+		}
+		if status == http.StatusOK {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"tok","expires_in":0,"token_type":"Bearer"}`))
+			return
+		}
+		w.WriteHeader(status)
+	}))
 }

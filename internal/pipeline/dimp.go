@@ -15,6 +15,24 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/ui"
 )
 
+// defaultDIMPFactory is the production DIMP client constructor.
+var defaultDIMPFactory = func(baseURL string, httpClient *services.HTTPClient, logger *lib.Logger) services.DIMPProcessor {
+	return services.NewDIMPClient(baseURL, httpClient, logger)
+}
+
+// dimpFactory creates a DIMPProcessor. Overridable in tests.
+var dimpFactory = defaultDIMPFactory
+
+// SetDIMPFactoryForTesting replaces the DIMP client factory for tests.
+func SetDIMPFactoryForTesting(factory func(string, *services.HTTPClient, *lib.Logger) services.DIMPProcessor) {
+	dimpFactory = factory
+}
+
+// ResetDIMPFactory restores the default DIMP client factory.
+func ResetDIMPFactory() {
+	dimpFactory = defaultDIMPFactory
+}
+
 // ExecuteDIMPStep processes FHIR resources through the DIMP pseudonymization service
 // Reads from import/ directory, writes to dimp/ directory
 // Orchestrates Bundle splitting and oversized resource detection before pseudonymization
@@ -41,7 +59,7 @@ func ExecuteDIMPStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 	}
 
 	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
-	dimpClient := services.NewDIMPClient(job.Config.Services.DIMP.URL, httpClient, logger)
+	dimpClient := dimpFactory(job.Config.Services.DIMP.URL, httpClient, logger)
 
 	layout := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps)
 	importDir := layout.InputDir(stepName)
@@ -114,8 +132,8 @@ func ExecuteDIMPStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 				"resources_processed_so_far", totalResourcesProcessed,
 				"error", err,
 				"job_id", job.JobID)
-			lib.LogStepFailed(logger, string(stepName), job.JobID, err, isDIMPErrorRetryable(err))
-			recordStepError(step, err, classifyDIMPError(err))
+			lib.LogStepFailed(logger, string(stepName), job.JobID, err, isServiceErrorRetryable(err))
+			recordStepError(step, err, classifyServiceError(err))
 			return fmt.Errorf("failed to process %s: %w", baseName, err)
 		}
 
@@ -147,7 +165,7 @@ func ExecuteDIMPStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 // Uses atomic write pattern: writes to .part file, renames on success
 // Implements Bundle splitting for large Bundles to prevent HTTP 413 errors
 // If compress is true, output will be compressed with zstd
-func processDIMPFile(inputFile, outputFile string, dimpClient *services.DIMPClient, logger *lib.Logger, job *models.PipelineJob, compress bool, compressionLevel string) (int, error) {
+func processDIMPFile(inputFile, outputFile string, dimpClient services.DIMPProcessor, logger *lib.Logger, job *models.PipelineJob, compress bool, compressionLevel string) (int, error) {
 	fileCtx, err := SetupFileProcessing(inputFile, outputFile, compress, compressionLevel)
 	if err != nil {
 		return 0, err
@@ -268,25 +286,6 @@ func findFHIRFiles(dir string) ([]string, error) {
 	files = append(files, compressedFiles...)
 
 	return files, nil
-}
-
-// isDIMPErrorRetryable checks if a DIMP error should be retried
-func isDIMPErrorRetryable(err error) bool {
-	if dimpErr, ok := err.(*services.DIMPError); ok {
-		return dimpErr.IsRetryable()
-	}
-	return lib.IsNetworkError(err)
-}
-
-// classifyDIMPError classifies a DIMP error as transient or non-transient
-func classifyDIMPError(err error) models.ErrorType {
-	if dimpErr, ok := err.(*services.DIMPError); ok {
-		return dimpErr.ErrorType
-	}
-	if lib.IsNetworkError(err) {
-		return models.ErrorTypeTransient
-	}
-	return models.ErrorTypeNonTransient
 }
 
 // Helper functions

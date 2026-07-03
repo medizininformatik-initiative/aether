@@ -9,10 +9,12 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
-// ResourceProcessor handles pseudonymization of FHIR resources
+// ResourceProcessor runs FHIR resources through DIMP (De-identification,
+// Minimization, and Pseudonymization); pseudonymization is only one part of
+// that operation.
 // Encapsulates Bundle splitting logic and oversized resource detection
 type ResourceProcessor struct {
-	dimpClient         *services.DIMPClient
+	dimpClient         services.DIMPProcessor
 	logger             *lib.Logger
 	thresholdBytes     int
 	inputFile          string
@@ -20,7 +22,7 @@ type ResourceProcessor struct {
 }
 
 // NewResourceProcessor creates a new resource processor
-func NewResourceProcessor(dimpClient *services.DIMPClient, logger *lib.Logger, thresholdBytes int, inputFile string) *ResourceProcessor {
+func NewResourceProcessor(dimpClient services.DIMPProcessor, logger *lib.Logger, thresholdBytes int, inputFile string) *ResourceProcessor {
 	return &ResourceProcessor{
 		dimpClient:         dimpClient,
 		logger:             logger,

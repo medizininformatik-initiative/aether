@@ -10,4 +10,6 @@ echo "Converting to Cobertura format..."
 gocover-cobertura < coverage.out > coverage.xml
 
 echo "Generating patch coverage report..."
-diff-cover coverage.xml --compare-branch=origin/main | grep -v '^$'
+# Exclude servicestest (hand-written test doubles) to match codecov.yml's ignore:
+# it is test-support code, so its coverage is noise and must not gate the patch.
+diff-cover coverage.xml --compare-branch=origin/main --exclude "internal/services/servicestest/*" | grep -v '^$'

@@ -108,9 +108,9 @@ func TestDownloadFromURL_HTTP500(t *testing.T) {
 	// Execute download
 	downloadedFiles, err := services.DownloadFromURL(server.URL+"/error.ndjson", destDir, httpClient, logger, false, false, "")
 
-	// Verify error (should eventually fail after retries)
+	// Verify error (retries are exhausted, then the final 500 response surfaces)
 	assert.Error(t, err, "Should fail with 500 after retries")
-	assert.Contains(t, err.Error(), "failed after", "Error should mention failure after retries")
+	assert.Contains(t, err.Error(), "500", "Error should mention the HTTP status")
 	assert.Nil(t, downloadedFiles, "Should not return files on error")
 }
 

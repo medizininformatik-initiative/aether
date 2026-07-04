@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -61,71 +60,59 @@ func putWithAuth(targetURL, contentType string, body []byte, config models.SendC
 	return httpClient.Do(req)
 }
 
-// ExecuteSendStep sends pipeline output to the configured destination.
-// Supports two modes:
-// - direct_resource_load: Sends NDJSON files directly to a FHIR server using transaction bundles
-// - transfer_load: Prepares and sends to a transfer FHIR server using Binary/DocumentReference
+// sendStep sends pipeline output to the configured destination, dispatching on
+// Services.Send.SendAs:
+//   - direct_resource_load: NDJSON files to a FHIR server via transaction bundles
+//   - transfer_load: to a transfer FHIR server via Binary/DocumentReference
+//   - s3_upload: to an S3 bucket
+type sendStep struct{}
+
+func (sendStep) Name() models.StepName { return models.StepSend }
+
+// ExecuteSendStep runs the send step through the shared lifecycle. It is the
+// exported single-step entrypoint used by the black-box tests; it has no
+// production caller yet (the cmd manual path wires only import and dimp today).
+// To be folded into one exported pipeline.RunStep — see issue #516.
 func ExecuteSendStep(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
-	stepName := models.StepSend
+	return runStep(sendStep{}, &StepContext{Job: job, JobDir: jobDir, Logger: logger})
+}
 
-	if !isStepEnabled(job.Config, stepName) {
-		logger.Info("Send step not enabled, skipping", "job_id", job.JobID)
-		return nil
-	}
-
-	logger.Debug("Send step starting", "job_id", job.JobID)
-
-	step := getOrCreateStep(job, stepName)
-	step.Status = models.StepStatusInProgress
-	now := time.Now()
-	step.StartedAt = &now
+func (sendStep) Run(ctx *StepContext) (StepResult, error) {
+	job := ctx.Job
+	logger := ctx.Logger
 
 	if err := job.Config.Services.Send.Validate(); err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return err
+		return StepResult{}, err
 	}
 
-	// Route to appropriate send implementation based on send mode
 	sendMode := job.Config.Services.Send.SendAs
-
-	var err error
 	switch sendMode {
 	case models.SendModeDirectResourceLoad:
-		err = executeDirectResourceLoadSend(job, jobDir, step, logger)
+		return executeDirectResourceLoadSend(job, ctx.JobDir, logger)
 	case models.SendModeTransferLoad:
-		err = executeTransferLoadSend(job, jobDir, step, logger)
+		return executeTransferLoadSend(job, ctx.JobDir, logger)
 	case models.SendModeS3Upload:
-		err = executeS3UploadSend(job, jobDir, step, logger)
+		return executeS3UploadSend(job, ctx.JobDir, logger)
 	default:
-		err = fmt.Errorf("unknown send mode: %s", sendMode)
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
+		return StepResult{}, fmt.Errorf("unknown send mode: %s", sendMode)
 	}
-
-	return err
 }
 
 // executeTransferLoadSend sends files to a transfer FHIR server.
 // For each file: zips it, base64-encodes it, and wraps it in a FHIR Binary resource.
 // Then creates a DocumentReference linking all Binaries and uploads them.
-func executeTransferLoadSend(job *models.PipelineJob, jobDir string, step *models.PipelineStep, logger *lib.Logger) error {
+func executeTransferLoadSend(job *models.PipelineJob, jobDir string, logger *lib.Logger) (StepResult, error) {
 	stepName := models.StepSend
 
 	inputDir := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps).InputDir(stepName)
 
 	files, err := findAllFilesRecursive(inputDir)
 	if err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return fmt.Errorf("failed to list input files: %w", err)
+		return StepResult{}, fmt.Errorf("failed to list input files: %w", err)
 	}
 
 	if len(files) == 0 {
-		err := fmt.Errorf("no files found in %s", inputDir)
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return err
+		return StepResult{}, fmt.Errorf("no files found in %s", inputDir)
 	}
 
 	fmt.Printf("Preparing %d file(s) for transfer...\n\n", len(files))
@@ -136,9 +123,7 @@ func executeTransferLoadSend(job *models.PipelineJob, jobDir string, step *model
 
 		entry, err := createBinaryFromFile(filePath)
 		if err != nil {
-			lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-			recordStepError(step, err, models.ErrorTypeNonTransient)
-			return fmt.Errorf("failed to process %s: %w", fileName, err)
+			return StepResult{}, fmt.Errorf("failed to process %s: %w", fileName, err)
 		}
 
 		binaryResources = append(binaryResources, entry)
@@ -163,41 +148,29 @@ func executeTransferLoadSend(job *models.PipelineJob, jobDir string, step *model
 	for i, binary := range binaryResources {
 		fmt.Printf("  Uploading Binary %d/%d...\n", i+1, len(binaryResources))
 		if err := uploadBinary(binary, sendConfig, httpClient, logger); err != nil {
-			retryable := isSendErrorRetryable(err)
-			lib.LogStepFailed(logger, string(stepName), job.JobID, err, retryable)
-			recordStepError(step, err, classifySendError(err))
-			return fmt.Errorf("failed to upload Binary %s: %w", binary.id, err)
+			return StepResult{}, fmt.Errorf("failed to upload Binary %s: %w", binary.id, err)
 		}
 	}
 
 	// Upload DocumentReference
 	fmt.Println("  Uploading DocumentReference...")
 	if err := uploadDocumentReference(docRef, sendConfig, httpClient, logger); err != nil {
-		retryable := isSendErrorRetryable(err)
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, retryable)
-		recordStepError(step, err, classifySendError(err))
-		return fmt.Errorf("failed to upload DocumentReference: %w", err)
+		return StepResult{}, fmt.Errorf("failed to upload DocumentReference: %w", err)
 	}
 
 	fmt.Printf("\n✓ Transfer complete (%d files sent)\n", len(files))
 
-	step.Status = models.StepStatusCompleted
-	step.FilesProcessed = len(files)
-	completedAt := time.Now()
-	step.CompletedAt = &completedAt
-
 	logger.Debug("Transfer load send step completed",
 		"files_sent", len(files),
-		"duration", completedAt.Sub(*step.StartedAt),
 		"job_id", job.JobID)
 
-	return nil
+	return StepResult{FilesProcessed: len(files)}, nil
 }
 
 // executeDirectResourceLoadSend uploads NDJSON files to a FHIR server using transaction bundles.
 // Core files (core.ndjson) are loaded first before other NDJSON files to ensure
 // base resources are created before dependent resources.
-func executeDirectResourceLoadSend(job *models.PipelineJob, jobDir string, step *models.PipelineStep, logger *lib.Logger) error {
+func executeDirectResourceLoadSend(job *models.PipelineJob, jobDir string, logger *lib.Logger) (StepResult, error) {
 	stepName := models.StepSend
 
 	inputDir := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps).InputDir(stepName)
@@ -205,16 +178,11 @@ func executeDirectResourceLoadSend(job *models.PipelineJob, jobDir string, step 
 	// Find NDJSON files
 	files, err := findNDJSONFiles(inputDir)
 	if err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return fmt.Errorf("failed to list NDJSON files in %s: %w", inputDir, err)
+		return StepResult{}, fmt.Errorf("failed to list NDJSON files in %s: %w", inputDir, err)
 	}
 
 	if len(files) == 0 {
-		err := fmt.Errorf("no NDJSON files found in %s", inputDir)
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return err
+		return StepResult{}, fmt.Errorf("no NDJSON files found in %s", inputDir)
 	}
 
 	// Partition files: core files first, then others
@@ -251,9 +219,7 @@ func executeDirectResourceLoadSend(job *models.PipelineJob, jobDir string, step 
 		// Open file (handles both compressed and uncompressed)
 		reader, err := lib.OpenFileForReading(filePath)
 		if err != nil {
-			lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-			recordStepError(step, err, models.ErrorTypeNonTransient)
-			return fmt.Errorf("failed to open %s: %w", filepath.Base(filePath), err)
+			return StepResult{}, fmt.Errorf("failed to open %s: %w", filepath.Base(filePath), err)
 		}
 
 		// Upload file
@@ -263,9 +229,7 @@ func executeDirectResourceLoadSend(job *models.PipelineJob, jobDir string, step 
 		}
 
 		if err != nil {
-			lib.LogStepFailed(logger, string(stepName), job.JobID, err, isFHIRErrorRetryable(err))
-			recordStepError(step, err, classifyFHIRError(err))
-			return fmt.Errorf("failed to upload %s: %w", filepath.Base(filePath), err)
+			return StepResult{}, fmt.Errorf("failed to upload %s: %w", filepath.Base(filePath), err)
 		}
 
 		filesProcessed++
@@ -275,23 +239,15 @@ func executeDirectResourceLoadSend(job *models.PipelineJob, jobDir string, step 
 			filepath.Base(filePath), stats.ResourcesUploaded, stats.BatchesSent)
 	}
 
-	step.Status = models.StepStatusCompleted
-	step.FilesProcessed = filesProcessed
-	completedAt := time.Now()
-	step.CompletedAt = &completedAt
-
-	duration := completedAt.Sub(*step.StartedAt)
-
 	logger.Debug("Direct resource load send step completed",
 		"files_processed", filesProcessed,
 		"resources_uploaded", totalResources,
-		"duration", duration,
 		"fhir_url", fhirURL,
 		"job_id", job.JobID)
 
 	fmt.Printf("\n✓ Uploaded %d resources from %d files to FHIR server\n", totalResources, filesProcessed)
 
-	return nil
+	return StepResult{FilesProcessed: filesProcessed}, nil
 }
 
 // findNDJSONFiles finds all NDJSON files in a directory (both .ndjson and .ndjson.zst)
@@ -329,25 +285,6 @@ func partitionCoreFiles(files []string) (coreFiles, otherFiles []string) {
 		}
 	}
 	return coreFiles, otherFiles
-}
-
-// isFHIRErrorRetryable checks if a FHIR error should be retried
-func isFHIRErrorRetryable(err error) bool {
-	if fhirErr, ok := err.(*services.FHIRError); ok {
-		return fhirErr.IsRetryable()
-	}
-	return lib.IsNetworkError(err)
-}
-
-// classifyFHIRError classifies a FHIR error as transient or non-transient
-func classifyFHIRError(err error) models.ErrorType {
-	if fhirErr, ok := err.(*services.FHIRError); ok {
-		return fhirErr.ErrorType
-	}
-	if lib.IsNetworkError(err) {
-		return models.ErrorTypeTransient
-	}
-	return models.ErrorTypeNonTransient
 }
 
 // binaryEntry holds a FHIR Binary resource and its metadata
@@ -553,23 +490,19 @@ func findAllFilesRecursive(dir string) ([]string, error) {
 
 // executeS3UploadSend uploads files from the input directory to an S3 bucket.
 // Uses an upload manifest for retry resilience — previously uploaded files are skipped.
-func executeS3UploadSend(job *models.PipelineJob, jobDir string, step *models.PipelineStep, logger *lib.Logger) error {
+func executeS3UploadSend(job *models.PipelineJob, jobDir string, logger *lib.Logger) (StepResult, error) {
 	stepName := models.StepSend
+	startTime := time.Now()
 
 	inputDir := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps).InputDir(stepName)
 
 	files, err := findAllFilesRecursive(inputDir)
 	if err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return fmt.Errorf("failed to list input files: %w", err)
+		return StepResult{}, fmt.Errorf("failed to list input files: %w", err)
 	}
 
 	if len(files) == 0 {
-		err := fmt.Errorf("no files found in %s", inputDir)
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return err
+		return StepResult{}, fmt.Errorf("no files found in %s", inputDir)
 	}
 
 	s3Config := job.Config.Services.Send.S3
@@ -577,9 +510,7 @@ func executeS3UploadSend(job *models.PipelineJob, jobDir string, step *models.Pi
 	// Create uploader via factory (allows test injection)
 	uploader, err := s3UploaderFactory(s3Config, job.Config.Services.Send.Auth, job.Config.TLS, logger)
 	if err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return fmt.Errorf("failed to create S3 uploader: %w", err)
+		return StepResult{}, fmt.Errorf("failed to create S3 uploader: %w", err)
 	}
 
 	// Load or create upload manifest for retry resilience
@@ -619,21 +550,16 @@ func executeS3UploadSend(job *models.PipelineJob, jobDir string, step *models.Pi
 		// Get file size for logging
 		info, err := os.Stat(filePath)
 		if err != nil {
-			lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-			recordStepError(step, err, models.ErrorTypeNonTransient)
 			_ = models.SaveManifest(manifest, manifestPath)
-			return fmt.Errorf("failed to stat file %s: %w", filepath.Base(filePath), err)
+			return StepResult{}, fmt.Errorf("failed to stat file %s: %w", filepath.Base(filePath), err)
 		}
 		fileSize := info.Size()
 
 		etag, err := uploader.UploadFile(ctx, filePath, s3Key)
 		if err != nil {
-			retryable := isSendErrorRetryable(err)
-			lib.LogStepFailed(logger, string(stepName), job.JobID, err, retryable)
-			recordStepError(step, err, classifySendError(err))
 			// Save manifest before returning so progress is not lost
 			_ = models.SaveManifest(manifest, manifestPath)
-			return fmt.Errorf("failed to upload %s to S3: %w", filepath.Base(filePath), err)
+			return StepResult{}, fmt.Errorf("failed to upload %s to S3: %w", filepath.Base(filePath), err)
 		}
 
 		manifest.AddUploadedFile(filePath, s3Key, etag, fileSize)
@@ -652,12 +578,7 @@ func executeS3UploadSend(job *models.PipelineJob, jobDir string, step *models.Pi
 	manifest.MarkCompleted()
 	_ = models.SaveManifest(manifest, manifestPath)
 
-	step.Status = models.StepStatusCompleted
-	step.FilesProcessed = filesUploaded
-	completedAt := time.Now()
-	step.CompletedAt = &completedAt
-
-	duration := completedAt.Sub(*step.StartedAt)
+	duration := time.Since(startTime)
 	fmt.Printf("\n✓ Uploaded %d files (%s) to s3://%s in %s\n",
 		filesUploaded, formatSize(totalBytes), uploader.GetBucket(), duration.Truncate(time.Second))
 
@@ -668,7 +589,7 @@ func executeS3UploadSend(job *models.PipelineJob, jobDir string, step *models.Pi
 		"duration", duration,
 		"job_id", job.JobID)
 
-	return nil
+	return StepResult{FilesProcessed: filesUploaded}, nil
 }
 
 // FormatSizeForTesting exposes formatSize for unit tests.
@@ -707,29 +628,8 @@ func (e *SendError) Error() string {
 	return fmt.Sprintf("send failed: HTTP %d: %s", e.StatusCode, e.Message)
 }
 
-func isSendErrorRetryable(err error) bool {
-	var sendErr *SendError
-	if errors.As(err, &sendErr) {
-		return sendErr.ErrorType == models.ErrorTypeTransient
-	}
-	var s3Err *services.S3Error
-	if errors.As(err, &s3Err) {
-		return s3Err.IsRetryable()
-	}
-	return lib.IsNetworkError(err)
-}
-
-func classifySendError(err error) models.ErrorType {
-	var sendErr *SendError
-	if errors.As(err, &sendErr) {
-		return sendErr.ErrorType
-	}
-	var s3Err *services.S3Error
-	if errors.As(err, &s3Err) {
-		return s3Err.ErrorType
-	}
-	if lib.IsNetworkError(err) {
-		return models.ErrorTypeTransient
-	}
-	return models.ErrorTypeNonTransient
+// IsRetryable lets SendError satisfy the retryableError seam so the shared
+// classifier handles it alongside FHIRError, S3Error, and the rest.
+func (e *SendError) IsRetryable() bool {
+	return e.ErrorType == models.ErrorTypeTransient
 }

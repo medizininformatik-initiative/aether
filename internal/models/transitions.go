@@ -60,6 +60,26 @@ func UpdateJobMetrics(job PipelineJob, files int, bytes int64) PipelineJob {
 	return job
 }
 
+// CanTransitionTo reports whether a step may legally move from one status to
+// another. It is the single gate consulted before every step-status mutation.
+// in_progress -> in_progress is allowed so a step left in_progress by a killed
+// process can be re-entered on resume.
+func CanTransitionTo(from, to StepStatus) bool {
+	switch from {
+	case StepStatusPending:
+		return to == StepStatusInProgress
+	case StepStatusInProgress:
+		return to == StepStatusInProgress || to == StepStatusCompleted ||
+			to == StepStatusFailed || to == StepStatusWaiting
+	case StepStatusFailed:
+		return to == StepStatusInProgress
+	case StepStatusWaiting:
+		return to == StepStatusInProgress || to == StepStatusCompleted
+	default: // StepStatusCompleted is terminal
+		return false
+	}
+}
+
 // StartStep creates a new PipelineStep with in_progress status
 // Pure function - returns new instance
 func StartStep(step PipelineStep) PipelineStep {

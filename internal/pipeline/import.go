@@ -28,132 +28,119 @@ func ResetExtractorFactory() {
 	extractorFactory = defaultExtractorFactory
 }
 
-// ExecuteImportStep performs the import step of the pipeline
-// Uses the current step (from job.CurrentStep) to determine import method
-// For local_import: uses config.Services.LocalImport.Dir or job.InputSource
-// For torch: uses TORCH extraction with CRTDL from job.InputSource
-// For http_import: downloads from URL in job.InputSource
-// Updates job state with progress and imported files
+// importStep imports FHIR data into the import/ directory. It carries its own
+// step name (torch/local/http) because the registry maps all three names to it
+// and the name selects both the import method and the error-classification rule.
+type importStep struct {
+	name models.StepName
+}
+
+func (s importStep) Name() models.StepName { return s.name }
+
+// ClassifyError preserves import's step-name-gated classification (network
+// errors are transient only for http/torch imports).
+func (s importStep) ClassifyError(err error) models.ErrorType {
+	return classifyImportError(err, s.name)
+}
+
+// ExecuteImportStep runs the import step through the shared lifecycle. On failure
+// it also marks the job failed (models.AddError), matching import's historical
+// job-level failure behavior, and returns the (mutated) job either way.
 func ExecuteImportStep(job *models.PipelineJob, logger *lib.Logger, httpClient *services.HTTPClient, showProgress bool) (*models.PipelineJob, error) {
-	startTime := time.Now()
+	ctx := &StepContext{
+		Job:          job,
+		JobDir:       services.GetJobDir(job.Config.JobsDir, job.JobID),
+		Logger:       logger,
+		HTTPClient:   httpClient,
+		ShowProgress: showProgress,
+	}
+	if err := runStep(importStep{name: models.StepName(job.CurrentStep)}, ctx); err != nil {
+		updated := models.AddError(*job, err.Error())
+		return &updated, err
+	}
+	return job, nil
+}
 
-	currentStep := models.StepName(job.CurrentStep)
-	lib.LogStepStart(logger, string(currentStep), job.JobID)
+// Run selects the import method from the step name. It builds its own HTTP
+// client when none was injected (the orchestration-loop path), using the
+// longer download-safe timeout.
+func (s importStep) Run(ctx *StepContext) (StepResult, error) {
+	job := ctx.Job
+	logger := ctx.Logger
+	currentStep := s.name
 
-	// Get import output directory
+	httpClient := ctx.HTTPClient
+	if httpClient == nil {
+		httpClient = services.NewHTTPClient(
+			time.Duration(job.Config.Retry.InitialBackoffMs)*time.Millisecond*10,
+			job.Config.Retry, job.Config.TLS, logger)
+	}
+
 	importDir := services.GetJobOutputDir(job.Config.JobsDir, job.JobID, currentStep)
-
-	// Get compression settings
 	compress := job.Config.Compression.Enabled
 	compressionLevel := job.Config.Compression.Level
 
-	// Execute import based on the current step (enabled import step)
 	var importedFiles []models.FHIRDataFile
 	var err error
 
 	switch currentStep {
 	case models.StepLocalImport:
-		// Determine source directory: config dir takes precedence, fallback to job.InputSource
+		// Config dir takes precedence, fallback to job.InputSource
 		sourceDir := job.Config.Services.LocalImport.Dir
 		if sourceDir == "" {
 			sourceDir = job.InputSource
 		}
-
-		// Validate source directory
-		if err := services.ValidateImportSource(sourceDir, models.InputTypeLocal); err != nil {
-			updatedJob := failImportStep(job, err, models.ErrorTypeNonTransient, 0)
-			lib.LogStepFailed(logger, string(currentStep), job.JobID, err, false)
-			return &updatedJob, err
+		if verr := services.ValidateImportSource(sourceDir, models.InputTypeLocal); verr != nil {
+			return StepResult{}, verr
 		}
-
 		logger.Info("Importing from local directory", "source", sourceDir, "compress", compress)
 		importedFiles, err = services.ImportFromLocalDirectory(sourceDir, importDir, logger, compress, compressionLevel)
 
 	case models.StepHttpImport:
-		// Validate HTTP URL
-		if err := services.ValidateImportSource(job.InputSource, models.InputTypeHTTP); err != nil {
-			updatedJob := failImportStep(job, err, models.ErrorTypeNonTransient, 0)
-			lib.LogStepFailed(logger, string(currentStep), job.JobID, err, false)
-			return &updatedJob, err
+		if verr := services.ValidateImportSource(job.InputSource, models.InputTypeHTTP); verr != nil {
+			return StepResult{}, verr
 		}
-
 		logger.Info("Downloading from URL", "source", job.InputSource, "compress", compress)
-		if showProgress {
+		if ctx.ShowProgress {
 			importedFiles, err = services.DownloadFromURLWithProgress(job.InputSource, importDir, httpClient, logger, compress, compressionLevel)
 		} else {
 			importedFiles, err = services.DownloadFromURL(job.InputSource, importDir, httpClient, logger, false, compress, compressionLevel)
 		}
 
 	case models.StepTorchImport:
-		// TORCH result URL: poll directly, skip extraction submission.
-		// Otherwise: submit the attached CRTDL for extraction.
+		// TORCH result URL: poll directly. Otherwise: submit the CRTDL for extraction.
 		if job.InputType == models.InputTypeTORCHURL {
-			if err := services.ValidateImportSource(job.InputSource, models.InputTypeTORCHURL); err != nil {
-				updatedJob := failImportStep(job, err, models.ErrorTypeNonTransient, 0)
-				lib.LogStepFailed(logger, string(currentStep), job.JobID, err, false)
-				return &updatedJob, err
+			if verr := services.ValidateImportSource(job.InputSource, models.InputTypeTORCHURL); verr != nil {
+				return StepResult{}, verr
 			}
-
 			logger.Info("Downloading from TORCH result URL", "source", job.InputSource, "compress", compress)
-			importedFiles, err = executeTORCHDownload(job, importDir, httpClient, logger, showProgress, compress, compressionLevel)
+			importedFiles, err = executeTORCHDownload(job, importDir, httpClient, logger, ctx.ShowProgress, compress, compressionLevel)
 		} else {
-			if err := services.ValidateImportSource(job.CRTDLPath, models.InputTypeCRTDL); err != nil {
-				updatedJob := failImportStep(job, err, models.ErrorTypeNonTransient, 0)
-				lib.LogStepFailed(logger, string(currentStep), job.JobID, err, false)
-				return &updatedJob, err
+			if verr := services.ValidateImportSource(job.CRTDLPath, models.InputTypeCRTDL); verr != nil {
+				return StepResult{}, verr
 			}
-
 			logger.Info("Extracting data from TORCH using CRTDL", "crtdl", job.CRTDLPath, "compress", compress)
-			importedFiles, err = executeTORCHExtraction(job, importDir, httpClient, logger, showProgress, compress, compressionLevel)
+			importedFiles, err = executeTORCHExtraction(job, importDir, httpClient, logger, ctx.ShowProgress, compress, compressionLevel)
 		}
 
 	default:
-		err = fmt.Errorf("unsupported import step: %s", currentStep)
+		return StepResult{}, fmt.Errorf("unsupported import step: %s", currentStep)
 	}
 
-	// Handle errors
 	if err != nil {
-		// Classify error type
-		errorType := classifyImportError(err, currentStep)
-		updatedJob := failImportStep(job, err, errorType, 0)
-		lib.LogStepFailed(logger, string(currentStep), job.JobID, err, errorType == models.ErrorTypeTransient)
-		return &updatedJob, err
+		return StepResult{}, err
 	}
 
-	// Calculate total bytes imported
 	var totalBytes int64
 	for _, file := range importedFiles {
 		totalBytes += file.FileSize
 	}
 
-	// Update job with imported file metrics
-	updatedJob := models.UpdateJobMetrics(*job, len(importedFiles), totalBytes)
+	// Job-level totals are non-lifecycle state the import step owns.
+	job.TotalFiles = len(importedFiles)
+	job.TotalBytes = totalBytes
 
-	// Complete the import step
-	importStep, _ := models.GetStepByName(updatedJob, currentStep)
-	completedStep := models.CompleteStep(importStep, len(importedFiles), totalBytes)
-	updatedJob = models.ReplaceStep(updatedJob, completedStep)
-
-	duration := time.Since(startTime)
-	lib.LogStepComplete(logger, string(currentStep), job.JobID, len(importedFiles), duration)
-
-	return &updatedJob, nil
-}
-
-// failImportStep marks the import step as failed
-func failImportStep(job *models.PipelineJob, err error, errorType models.ErrorType, httpStatus int) models.PipelineJob {
-	currentStep := models.StepName(job.CurrentStep)
-	importStep, found := models.GetStepByName(*job, currentStep)
-	if !found {
-		// Step not found - shouldn't happen, but handle gracefully
-		return models.AddError(*job, err.Error())
-	}
-
-	failedStep := models.FailStep(importStep, errorType, err.Error(), httpStatus)
-	updatedJob := models.ReplaceStep(*job, failedStep)
-	updatedJob = models.AddError(updatedJob, err.Error())
-
-	return updatedJob
+	return StepResult{FilesProcessed: len(importedFiles), BytesProcessed: totalBytes}, nil
 }
 
 // executeTORCHExtraction submits the (already prepared) CRTDL to TORCH,

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -18,8 +17,6 @@ var (
 	noProgress     bool
 	localImportDir string // CLI flag for local import directory override
 	allowHTTPCRTDL bool   // CLI flag acknowledging http_import + CRTDL semantic mismatch
-	// errPipelinePaused is returned when the pipeline pauses at a wait step
-	errPipelinePaused = errors.New("pipeline paused at wait step")
 )
 
 // pipelineCmd represents the pipeline command group
@@ -168,171 +165,6 @@ func init() {
 	pipelineStartCmd.Flags().BoolVar(&allowHTTPCRTDL, "allow-http-crtdl", false, "Acknowledge that combining http_import with a CRTDL may not match the endpoint's data")
 }
 
-// validateImportStepMatch ensures the step name is compatible with the input type
-// CRTDL is compatible with both torch (for TORCH extraction) and local_import (for local import + flattening)
-func validateImportStepMatch(inputType models.InputType, stepName models.StepName) error {
-	switch inputType {
-	case models.InputTypeCRTDL:
-		// CRTDL is compatible with torch (extraction) or local_import (flattening with local data)
-		if stepName != models.StepTorchImport && stepName != models.StepLocalImport {
-			return fmt.Errorf("input type %s requires step '%s' or '%s', but got '%s'", inputType, models.StepTorchImport, models.StepLocalImport, stepName)
-		}
-	case models.InputTypeTORCHURL:
-		if stepName != models.StepTorchImport {
-			return fmt.Errorf("input type %s requires step '%s', but got '%s'", inputType, models.StepTorchImport, stepName)
-		}
-	case models.InputTypeLocal:
-		if stepName != models.StepLocalImport {
-			return fmt.Errorf("input type %s requires step '%s', but got '%s'", inputType, models.StepLocalImport, stepName)
-		}
-	case models.InputTypeHTTP:
-		if stepName != models.StepHttpImport {
-			return fmt.Errorf("input type %s requires step '%s', but got '%s'", inputType, models.StepHttpImport, stepName)
-		}
-	default:
-		return fmt.Errorf("unknown input type: %s", inputType)
-	}
-	return nil
-}
-
-// executeStep executes a single pipeline step based on its name
-// Returns error if step execution fails
-func executeStep(job *models.PipelineJob, stepName models.StepName, config *models.ProjectConfig, logger *lib.Logger, noProgress bool) error {
-	jobDir := services.GetJobDir(config.JobsDir, job.JobID)
-
-	switch stepName {
-	case models.StepTorchImport, models.StepLocalImport, models.StepHttpImport:
-		if err := validateImportStepMatch(job.InputType, stepName); err != nil {
-			return fmt.Errorf("step validation failed: %w", err)
-		}
-
-		httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
-		showProgress := !noProgress
-
-		importedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, showProgress)
-		if err != nil {
-			return fmt.Errorf("%s step failed: %w", stepName, err)
-		}
-
-		if err := pipeline.UpdateJob(config.JobsDir, importedJob); err != nil {
-			return fmt.Errorf("failed to save job state: %w", err)
-		}
-
-		fmt.Printf("\n✓ %s step completed (%d files)\n", stepName, importedJob.TotalFiles)
-		return nil
-
-	case models.StepDIMP:
-		fmt.Println("Starting DIMP pseudonymization step...")
-		if err := pipeline.ExecuteDIMPStep(job, jobDir, logger); err != nil {
-			failedJob := pipeline.FailJob(job, err.Error())
-			if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
-				logger.Error("Failed to save job state", "error", saveErr)
-			}
-			return fmt.Errorf("DIMP step failed: %w", err)
-		}
-
-		if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
-			return fmt.Errorf("failed to save job state: %w", err)
-		}
-
-		fmt.Printf("\n✓ DIMP pseudonymization completed\n")
-		return nil
-
-	case models.StepValidation:
-		fmt.Println("Starting validation step...")
-		if err := pipeline.ExecuteValidationStep(job, jobDir, logger); err != nil {
-			failedJob := pipeline.FailJob(job, err.Error())
-			if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
-				logger.Error("Failed to save job state", "error", saveErr)
-			}
-			return fmt.Errorf("validation step failed: %w", err)
-		}
-
-		if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
-			return fmt.Errorf("failed to save job state: %w", err)
-		}
-
-		fmt.Printf("\n✓ Validation completed\n")
-		return nil
-
-	case models.StepFlattening:
-		fmt.Println("Starting flattening step...")
-		if err := pipeline.ExecuteFlatteningStep(job, jobDir, logger); err != nil {
-			failedJob := pipeline.FailJob(job, err.Error())
-			if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
-				logger.Error("Failed to save job state", "error", saveErr)
-			}
-			return fmt.Errorf("flattening step failed: %w", err)
-		}
-
-		if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
-			return fmt.Errorf("failed to save job state: %w", err)
-		}
-
-		fmt.Printf("\n✓ Flattening completed\n")
-		return nil
-
-	case models.StepSend:
-		fmt.Println("Starting send step...")
-		if err := pipeline.ExecuteSendStep(job, jobDir, logger); err != nil {
-			failedJob := pipeline.FailJob(job, err.Error())
-			if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
-				logger.Error("Failed to save job state", "error", saveErr)
-			}
-			return fmt.Errorf("send step failed: %w", err)
-		}
-
-		if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
-			return fmt.Errorf("failed to save job state: %w", err)
-		}
-
-		fmt.Printf("\n✓ Send completed\n")
-		return nil
-
-	case models.StepWait:
-		// Execute wait step - creates empty wait directory and pauses pipeline
-		stepIndex := -1
-		for i, step := range job.Config.Pipeline.EnabledSteps {
-			if step == models.StepWait && string(step) == job.CurrentStep {
-				stepIndex = i
-				break
-			}
-		}
-		if stepIndex == -1 {
-			return fmt.Errorf("wait step not found in enabled steps")
-		}
-
-		if err := pipeline.ExecuteWaitStep(job, config.JobsDir, stepIndex); err != nil {
-			return fmt.Errorf("wait step failed: %w", err)
-		}
-
-		// Mark the wait step as waiting (job stays in_progress)
-		for i := range job.Steps {
-			if job.Steps[i].Name == models.StepWait && job.Steps[i].Status == models.StepStatusInProgress {
-				job.Steps[i].Status = models.StepStatusWaiting
-				break
-			}
-		}
-
-		if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
-			return fmt.Errorf("failed to save job state: %w", err)
-		}
-
-		waitDir, err := services.NewJobLayout(config.JobsDir, job.JobID, job.Config.Pipeline.EnabledSteps).WaitDir(stepIndex)
-		if err != nil {
-			return fmt.Errorf("failed to resolve wait directory: %w", err)
-		}
-		fmt.Printf("\n⏸ Pipeline paused at wait step\n")
-		fmt.Printf("  Wait directory: %s\n", waitDir)
-		fmt.Printf("  The directory is EMPTY - place your modified data there\n")
-		fmt.Printf("\n  To continue: aether pipeline continue <config> %s\n", job.JobID)
-		return errPipelinePaused // Signal to break out of pipeline loop
-
-	default:
-		return fmt.Errorf("unknown step: %s", stepName)
-	}
-}
-
 func runPipelineStart(cmd *cobra.Command, args []string) error {
 	// Positional contract: <config> <crtdl> [input]. The third positional, if
 	// supplied, is the input source for the enabled import step.
@@ -428,74 +260,18 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Starting %s step...\n", startedJob.CurrentStep)
-	httpClient := services.NewHTTPClient(
-		time.Duration(config.Retry.InitialBackoffMs)*time.Millisecond*10, // Longer timeout for downloads
-		config.Retry,
-		config.TLS,
-		logger,
-	)
 
-	showProgress := !noProgress
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, showProgress)
-
+	final, err := pipeline.RunLoop(startedJob, logger, pipeline.RunOptions{NoProgress: noProgress})
 	if err != nil {
-		failedJob := pipeline.FailJob(importedJob, err.Error())
-		if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
-			logger.Error("Failed to save job state", "error", saveErr)
+		if errors.Is(err, pipeline.ErrPaused) {
+			return nil // Paused at a wait step; RunLoop persisted the state.
 		}
-		return fmt.Errorf("%s step failed: %w", startedJob.CurrentStep, err)
+		return err // RunLoop already marked the job failed and saved it.
 	}
 
-	if saveErr := pipeline.UpdateJob(config.JobsDir, importedJob); saveErr != nil {
-		logger.Error("Failed to save job state", "error", saveErr)
-	}
-
-	fmt.Printf("\n✓ %s completed successfully\n", importedJob.CurrentStep)
-	fmt.Printf("  Files: %d\n", importedJob.TotalFiles)
-	fmt.Printf("  Size: %s\n", formatBytes(importedJob.TotalBytes))
-	fmt.Printf("\n")
-
-	currentJob := importedJob
-	for {
-		currentStepName := models.StepName(currentJob.CurrentStep)
-		nextStepName := currentJob.Config.Pipeline.GetNextStep(currentStepName)
-
-		if nextStepName == "" {
-			fmt.Println("All steps completed, marking job as complete...")
-			completedJob := pipeline.CompleteJob(currentJob)
-			if err := pipeline.UpdateJob(config.JobsDir, completedJob); err != nil {
-				return fmt.Errorf("failed to update job: %w", err)
-			}
-			fmt.Printf("\n✓ Pipeline completed successfully\n")
-			fmt.Printf("Job ID: %s\n", completedJob.JobID)
-			return nil
-		}
-
-		fmt.Printf("\nAdvancing to step: %s\n", nextStepName)
-		advancedJob, err := pipeline.AdvanceToNextStep(currentJob)
-		if err != nil {
-			return fmt.Errorf("failed to advance to next step: %w", err)
-		}
-
-		if err := pipeline.UpdateJob(config.JobsDir, advancedJob); err != nil {
-			return fmt.Errorf("failed to save job state: %w", err)
-		}
-
-		if err := executeStep(advancedJob, nextStepName, config, logger, noProgress); err != nil {
-			// Check if this is a "paused" signal from wait step
-			if err == errPipelinePaused {
-				return nil // Exit gracefully - pipeline is paused
-			}
-			// Mark job as failed
-			failedJob := pipeline.FailJob(advancedJob, err.Error())
-			if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
-				logger.Error("Failed to save failed job state", "error", saveErr)
-			}
-			return err
-		}
-
-		currentJob = advancedJob
-	}
+	fmt.Printf("\n✓ Pipeline completed successfully\n")
+	fmt.Printf("Job ID: %s\n", final.JobID)
+	return nil
 }
 
 func runPipelineStatus(cmd *cobra.Command, args []string) error {
@@ -593,17 +369,15 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 
 	currentStepName := models.StepName(job.CurrentStep)
 	currentStep, found := models.GetStepByName(*job, currentStepName)
-
-	var stepToExecute models.StepName
-	var jobToExecute *models.PipelineJob
-
 	if !found {
 		return fmt.Errorf("current step %s not found in job", currentStepName)
 	}
 
+	// If the current step already completed, advance to the next before running.
+	// Every other status (pending/in_progress/failed/waiting) resumes in place —
+	// RunLoop's transition guard and the idempotent wait step handle each.
 	if currentStep.Status == models.StepStatusCompleted {
 		nextStepName := job.Config.Pipeline.GetNextStep(currentStepName)
-
 		if nextStepName == "" {
 			fmt.Println("All steps completed, marking job as complete...")
 			completedJob := pipeline.CompleteJob(job)
@@ -619,154 +393,27 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to advance to next step: %w", err)
 		}
-
 		if err := pipeline.UpdateJob(config.JobsDir, advancedJob); err != nil {
 			return fmt.Errorf("failed to save job state: %w", err)
 		}
-
-		stepToExecute = nextStepName
-		jobToExecute = advancedJob
-	} else if currentStepName == models.StepWait && currentStep.Status == models.StepStatusWaiting {
-		// Special handling for wait step in "waiting" status
-		// Check if wait directory has files - if so, complete wait step and continue
-		fmt.Printf("Resuming incomplete step: %s (status: %s)\n", currentStepName, currentStep.Status)
-
-		// Find the wait step index to get the previous step
-		waitStepIndex := -1
-		for i, step := range job.Config.Pipeline.EnabledSteps {
-			if step == models.StepWait && string(step) == job.CurrentStep {
-				waitStepIndex = i
-				break
-			}
-		}
-		if waitStepIndex == -1 {
-			return fmt.Errorf("wait step not found in enabled steps")
-		}
-
-		waitDir, err := services.NewJobLayout(config.JobsDir, job.JobID, job.Config.Pipeline.EnabledSteps).WaitDir(waitStepIndex)
-		if err != nil {
-			return fmt.Errorf("failed to resolve wait directory: %w", err)
-		}
-		fileCount, err := pipeline.CountFilesInDir(waitDir)
-		if err != nil {
-			return fmt.Errorf("failed to check wait directory: %w", err)
-		}
-
-		if fileCount == 0 {
-			// Directory is empty - stay paused
-			fmt.Printf("\n⏸ Pipeline still paused at wait step\n")
-			fmt.Printf("  Wait directory: %s\n", waitDir)
-			fmt.Printf("  The directory is EMPTY - place your modified data there\n")
-			fmt.Printf("\n  To continue: aether pipeline continue <config> %s\n", job.JobID)
-			return errPipelinePaused
-		}
-
-		// Files present - mark wait step as completed and continue
-		fmt.Printf("  Found %d file(s) in wait directory\n", fileCount)
-		fmt.Printf("  ✓ Wait step completed\n\n")
-
-		// Mark wait step as completed
-		for i := range job.Steps {
-			if job.Steps[i].Name == models.StepWait && job.Steps[i].Status == models.StepStatusWaiting {
-				now := time.Now()
-				job.Steps[i].Status = models.StepStatusCompleted
-				job.Steps[i].CompletedAt = &now
-				break
-			}
-		}
-
-		if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
-			return fmt.Errorf("failed to save job state: %w", err)
-		}
-
-		// Get and advance to next step
-		nextStepName := job.Config.Pipeline.GetNextStep(currentStepName)
-		if nextStepName == "" {
-			// No more steps - mark job as complete
-			fmt.Println("All steps completed, marking job as complete...")
-			completedJob := pipeline.CompleteJob(job)
-			if err := pipeline.UpdateJob(config.JobsDir, completedJob); err != nil {
-				return fmt.Errorf("failed to update job: %w", err)
-			}
-			fmt.Println("✓ Job completed successfully")
-			return nil
-		}
-
-		// Advance to next step
-		fmt.Printf("Advancing to step: %s\n", nextStepName)
-		advancedJob, err := pipeline.AdvanceToNextStep(job)
-		if err != nil {
-			return fmt.Errorf("failed to advance to next step: %w", err)
-		}
-
-		if err := pipeline.UpdateJob(config.JobsDir, advancedJob); err != nil {
-			return fmt.Errorf("failed to save job state: %w", err)
-		}
-
-		stepToExecute = nextStepName
-		jobToExecute = advancedJob
+		job = advancedJob
 	} else {
 		fmt.Printf("Resuming incomplete step: %s (status: %s)\n", currentStepName, currentStep.Status)
-		stepToExecute = currentStepName
-		jobToExecute = job
 	}
 
 	fmt.Printf("\nResuming pipeline execution...\n")
-	fmt.Printf("Executing step: %s\n\n", stepToExecute)
 
-	if err := executeStep(jobToExecute, stepToExecute, config, logger, noProgress); err != nil {
-		if err == errPipelinePaused {
-			return nil // Exit gracefully - pipeline is paused at wait step
+	final, err := pipeline.RunLoop(job, logger, pipeline.RunOptions{NoProgress: noProgress})
+	if err != nil {
+		if errors.Is(err, pipeline.ErrPaused) {
+			return nil // Still paused at a wait step; RunLoop persisted the state.
 		}
-		// Mark job as failed
-		failedJob := pipeline.FailJob(jobToExecute, err.Error())
-		if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
-			logger.Error("Failed to save failed job state", "error", saveErr)
-		}
-		return err
+		return err // RunLoop already marked the job failed and saved it.
 	}
 
-	// Loop through remaining steps (same as runPipelineStart)
-	currentJob := jobToExecute
-	for {
-		currentStepName := models.StepName(currentJob.CurrentStep)
-		nextStepName := currentJob.Config.Pipeline.GetNextStep(currentStepName)
-
-		if nextStepName == "" {
-			fmt.Println("All steps completed, marking job as complete...")
-			completedJob := pipeline.CompleteJob(currentJob)
-			if err := pipeline.UpdateJob(config.JobsDir, completedJob); err != nil {
-				return fmt.Errorf("failed to update job: %w", err)
-			}
-			fmt.Printf("\n✓ Pipeline completed successfully\n")
-			fmt.Printf("Job ID: %s\n", completedJob.JobID)
-			return nil
-		}
-
-		fmt.Printf("\nAdvancing to step: %s\n", nextStepName)
-		advancedJob, err := pipeline.AdvanceToNextStep(currentJob)
-		if err != nil {
-			return fmt.Errorf("failed to advance to next step: %w", err)
-		}
-
-		if err := pipeline.UpdateJob(config.JobsDir, advancedJob); err != nil {
-			return fmt.Errorf("failed to save job state: %w", err)
-		}
-
-		if err := executeStep(advancedJob, nextStepName, config, logger, noProgress); err != nil {
-			if err == errPipelinePaused {
-				return nil // Exit gracefully - pipeline is paused at wait step
-			}
-			// Mark job as failed
-			failedJob := pipeline.FailJob(advancedJob, err.Error())
-			if saveErr := pipeline.UpdateJob(config.JobsDir, failedJob); saveErr != nil {
-				logger.Error("Failed to save failed job state", "error", saveErr)
-			}
-			return err
-		}
-
-		currentJob = advancedJob
-	}
+	fmt.Printf("\n✓ Pipeline completed successfully\n")
+	fmt.Printf("Job ID: %s\n", final.JobID)
+	return nil
 }
 
 func getStatusSymbol(status models.StepStatus) string {

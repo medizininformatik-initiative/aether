@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
@@ -41,38 +40,34 @@ type groupBatch struct {
 	isFirstBatch bool // true until first flush
 }
 
-// ExecuteFlatteningStep transforms FHIR NDJSON data into CSV files using the fhir-flattener API
-// Reads from dimp/ (if DIMP enabled) or import/ directory
-// Outputs to csv/ directory
+// flatteningStep transforms FHIR NDJSON data into CSV files using the fhir-flattener API.
+// Reads from dimp/ (if DIMP enabled) or import/ directory, outputs to csv/.
+type flatteningStep struct{}
+
+func (flatteningStep) Name() models.StepName { return models.StepFlattening }
+
+// ExecuteFlatteningStep runs the flattening step through the shared lifecycle. It
+// is the exported single-step entrypoint used by the black-box tests; it has no
+// production caller yet (the cmd manual path wires only import and dimp today).
+// To be folded into one exported pipeline.RunStep — see issue #516.
 func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
+	return runStep(flatteningStep{}, &StepContext{Job: job, JobDir: jobDir, Logger: logger})
+}
+
+func (flatteningStep) Run(ctx *StepContext) (StepResult, error) {
+	job := ctx.Job
+	logger := ctx.Logger
 	stepName := models.StepFlattening
-
-	if !isStepEnabled(job.Config, stepName) {
-		logger.Info("Flattening step not enabled, skipping", "job_id", job.JobID)
-		return nil
-	}
-
-	logger.Debug("Flattening step starting", "job_id", job.JobID)
-
-	step := getOrCreateStep(job, stepName)
-	step.Status = models.StepStatusInProgress
-	now := time.Now()
-	step.StartedAt = &now
 
 	// Validate flattening configuration
 	if err := job.Config.Services.Flattening.Validate(); err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return err
+		return StepResult{}, err
 	}
 
 	// CRTDL file is required for flattening. It may come from the positional
 	// arg (for torch) or from --crtdl (for http_import/local_import).
 	if job.CRTDLPath == "" {
-		err := fmt.Errorf("flattening step requires a CRTDL file: pass one as the positional input or via --crtdl")
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return err
+		return StepResult{}, fmt.Errorf("flattening step requires a CRTDL file: pass one as the positional input or via --crtdl")
 	}
 
 	// Load CRTDL document
@@ -80,9 +75,7 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 	logger.Debug("Loading CRTDL file", "path", crtdlPath)
 	crtdl, err := services.ParseCRTDL(crtdlPath)
 	if err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return fmt.Errorf("failed to parse CRTDL file: %w", err)
+		return StepResult{}, fmt.Errorf("failed to parse CRTDL file: %w", err)
 	}
 
 	// Load lookup tables
@@ -90,42 +83,31 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 	logger.Debug("Loading lookup tables", "path", lookupPath)
 	lookupTables, err := services.LoadLookupTables(lookupPath)
 	if err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return fmt.Errorf("failed to load lookup tables: %w", err)
+		return StepResult{}, fmt.Errorf("failed to load lookup tables: %w", err)
 	}
 
 	// Validate lookup tables
 	if err := services.ValidateLookupTables(lookupTables); err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return fmt.Errorf("invalid lookup tables: %w", err)
+		return StepResult{}, fmt.Errorf("invalid lookup tables: %w", err)
 	}
 
-	layout := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps)
+	layout := services.NewJobLayout(filepath.Dir(ctx.JobDir), filepath.Base(ctx.JobDir), job.Config.Pipeline.EnabledSteps)
 	inputDir := layout.InputDir(stepName)
 	outputDir := layout.OutputDir(stepName)
 	viewDefDir := layout.ViewDefinitionsDir()
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return fmt.Errorf("failed to create output directory: %w", err)
+		return StepResult{}, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	// Find FHIR NDJSON files in input directory
 	files, err := findFHIRFiles(inputDir)
 	if err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return fmt.Errorf("failed to list input files: %w", err)
+		return StepResult{}, fmt.Errorf("failed to list input files: %w", err)
 	}
 
 	if len(files) == 0 {
-		err := fmt.Errorf("no FHIR NDJSON files found in %s", inputDir)
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return err
+		return StepResult{}, fmt.Errorf("no FHIR NDJSON files found in %s", inputDir)
 	}
 
 	logger.Info("Streaming FHIR resources from input files",
@@ -136,9 +118,7 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 	// Pass 1: scan input files for provenance index
 	provenanceIndex, err := scanProvenanceIndex(files)
 	if err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return fmt.Errorf("failed to load resources: %w", err)
+		return StepResult{}, fmt.Errorf("failed to load resources: %w", err)
 	}
 
 	logger.Info("Built provenance index",
@@ -202,9 +182,7 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 		job.Config.Services.Flattening.GetBatchSizeBytes(),
 	)
 	if err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, IsFlatteningErrorRetryable(err))
-		recordStepError(step, err, ClassifyFlatteningError(err))
-		return err
+		return StepResult{}, err
 	}
 
 	// Print per-group progress
@@ -221,19 +199,11 @@ func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.L
 		fmt.Printf("  ✓ %s (%d resources → %s)\n", group.Name, totals[i], filenames[i])
 	}
 
-	step.Status = models.StepStatusCompleted
-	step.FilesProcessed = totalFilesWritten
-	completedAt := time.Now()
-	step.CompletedAt = &completedAt
-
-	duration := completedAt.Sub(*step.StartedAt)
-
 	logger.Debug("Flattening step completed",
 		"files_written", totalFilesWritten,
-		"duration", duration,
 		"job_id", job.JobID)
 
-	return nil
+	return StepResult{FilesProcessed: totalFilesWritten}, nil
 }
 
 // scanProvenanceIndex performs a lightweight first pass over all input files,

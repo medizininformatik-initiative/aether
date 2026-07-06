@@ -87,8 +87,8 @@ aether pipeline continue aether.yaml <job-id>
 ## More Information
 
 - [Full Documentation](https://medizininformatik-initiative.github.io/aether/)
-- [Configuration Options](https://medizininformatik-initiative.github.io/aether/v0.10.1/getting-started/configuration.html)
-- [Pipeline Steps](https://medizininformatik-initiative.github.io/aether/v0.10.1/guides/pipeline-steps.html)
+- [Configuration Options](https://medizininformatik-initiative.github.io/aether/stable/getting-started/configuration.html)
+- [Pipeline Steps](https://medizininformatik-initiative.github.io/aether/stable/guides/pipeline-steps.html)
 
 ## License
 

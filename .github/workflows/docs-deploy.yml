@@ -17,6 +17,11 @@ on:
         description: 'Git tag to build docs from (e.g. v0.4.0)'
         required: true
         type: string
+      update_stable:
+        description: 'Also overwrite /aether/stable/ with this build (use the latest release tag)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -58,7 +63,11 @@ jobs:
           DISPATCH_TAG: ${{ github.event.inputs.tag }}
           PUSH_REF: ${{ github.ref }}
           PUSH_REF_NAME: ${{ github.ref_name }}
+          DISPATCH_UPDATE_STABLE: ${{ github.event.inputs.update_stable }}
         run: |
+          # build_stable controls whether the version-independent /aether/stable/
+          # copy is rebuilt. It tracks non-prerelease releases (job-level `if` already
+          # filters prereleases), plus an explicit workflow_dispatch opt-in for backfills.
           if [[ "${EVENT_NAME}" == "push" ]]; then
             if [[ "${PUSH_REF}" == refs/tags/* ]]; then
               # Tag push: workflow triggered by release tag (release event is suppressed
@@ -66,19 +75,27 @@ jobs:
               echo "version=${PUSH_REF_NAME}" >> "$GITHUB_OUTPUT"
               echo "ref=${PUSH_REF_NAME}" >> "$GITHUB_OUTPUT"
               echo "is_release=true" >> "$GITHUB_OUTPUT"
+              echo "build_stable=true" >> "$GITHUB_OUTPUT"
             else
               echo "version=dev" >> "$GITHUB_OUTPUT"
               echo "ref=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
               echo "is_release=false" >> "$GITHUB_OUTPUT"
+              echo "build_stable=false" >> "$GITHUB_OUTPUT"
             fi
           elif [[ "${EVENT_NAME}" == "release" ]]; then
             echo "version=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
             echo "ref=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
             echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "build_stable=true" >> "$GITHUB_OUTPUT"
           elif [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             echo "version=${DISPATCH_TAG}" >> "$GITHUB_OUTPUT"
             echo "ref=${DISPATCH_TAG}" >> "$GITHUB_OUTPUT"
             echo "is_release=false" >> "$GITHUB_OUTPUT"
+            if [[ "${DISPATCH_UPDATE_STABLE}" == "true" ]]; then
+              echo "build_stable=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "build_stable=false" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
       - name: Checkout repository at target ref
@@ -116,6 +133,19 @@ jobs:
       - name: Save build output
         run: cp -r docs/.vitepress/dist /tmp/docs-build
 
+      # Second build with the version-independent base so /aether/stable/ has its
+      # own correctly-based asset and link URLs (a plain copy would keep /aether/<version>/).
+      - name: Build stable documentation
+        if: steps.vars.outputs.build_stable == 'true'
+        run: npm run docs:build
+        working-directory: docs
+        env:
+          VITE_BASE_PATH: /aether/stable/
+
+      - name: Save stable build output
+        if: steps.vars.outputs.build_stable == 'true'
+        run: cp -r docs/.vitepress/dist /tmp/docs-build-stable
+
       - name: Checkout gh-pages branch
         run: |
           git fetch origin gh-pages:gh-pages 2>/dev/null || true
@@ -144,6 +174,12 @@ jobs:
         run: |
           rm -rf "${VERSION}"
           cp -r /tmp/docs-build "${VERSION}"
+
+      - name: Deploy stable directory
+        if: steps.vars.outputs.build_stable == 'true'
+        run: |
+          rm -rf stable
+          cp -r /tmp/docs-build-stable stable
 
       - name: Update versions.json
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
@@ -215,5 +251,8 @@ jobs:
           VERSION: ${{ steps.vars.outputs.version }}
         run: |
           git add "${VERSION}" versions.json index.html .nojekyll
+          if [ -d stable ]; then
+            git add stable
+          fi
           git commit -m "Deploy docs: ${VERSION}" || echo "No changes to commit"
           git push origin gh-pages

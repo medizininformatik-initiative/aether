@@ -14,8 +14,8 @@ const loaded = ref(false)
 
 function detectCurrentVersion(): string {
   if (typeof window === 'undefined') return 'dev'
-  // Path format: /aether/dev/ or /aether/v0.4.0/...
-  const match = window.location.pathname.match(/^\/aether\/(v[\d.]+|dev)/)
+  // Path format: /aether/dev/, /aether/stable/, or /aether/v0.4.0/...
+  const match = window.location.pathname.match(/^\/aether\/(v[\d.]+|dev|stable)/)
   return match ? match[1] : 'dev'
 }
 

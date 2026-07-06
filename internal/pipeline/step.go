@@ -18,11 +18,13 @@ type Step interface {
 	Run(ctx *StepContext) (StepResult, error)
 }
 
-// StepContext carries everything Run needs. The Execute*Step wrappers and the
-// orchestration loop populate it; Run never constructs it.
+// StepContext is the parameter block passed to a Step's Run. The Execute*Step
+// wrappers and the orchestration loop build it — resolving the JobLayout once so
+// no Run re-derives the job's directory layout — and Run never constructs it. Not
+// every field applies to every step (HTTPClient and ShowProgress are import-only).
 type StepContext struct {
 	Job    *models.PipelineJob
-	JobDir string // job root as passed by the caller, not derived from Config.JobsDir
+	Layout services.JobLayout // resolved once by the caller; the single source for a step's directories
 	Logger *lib.Logger
 
 	// HTTPClient is populated only by the import wrapper (whose signature takes

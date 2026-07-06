@@ -3,7 +3,6 @@ package pipeline
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
@@ -23,14 +22,9 @@ func (waitStep) Run(ctx *StepContext) (StepResult, error) {
 		return StepResult{}, err
 	}
 
-	jobsBaseDir := filepath.Dir(ctx.JobDir)
-	if err := ExecuteWaitStep(ctx.Job, jobsBaseDir, idx); err != nil {
-		return StepResult{}, err
-	}
-
-	waitDir, err := services.NewJobLayout(jobsBaseDir, ctx.Job.JobID, ctx.Job.Config.Pipeline.EnabledSteps).WaitDir(idx)
+	waitDir, err := resolveWaitDir(ctx.Layout, idx)
 	if err != nil {
-		return StepResult{}, fmt.Errorf("failed to find previous step: %w", err)
+		return StepResult{}, err
 	}
 
 	count, err := CountFilesInDir(waitDir)
@@ -94,16 +88,22 @@ func GetCurrentWaitStepIndex(job *models.PipelineJob) (int, error) {
 // Returns nil on success, the job should then be saved with status "waiting"
 func ExecuteWaitStep(job *models.PipelineJob, jobsBaseDir string, waitStepIndex int) error {
 	layout := services.NewJobLayout(jobsBaseDir, job.JobID, job.Config.Pipeline.EnabledSteps)
+	_, err := resolveWaitDir(layout, waitStepIndex)
+	return err
+}
+
+// resolveWaitDir resolves the wait override directory for the wait step at
+// waitStepIndex and ensures it exists. waitStep.Run and the exported
+// ExecuteWaitStep share it so both report the same errors from one place.
+func resolveWaitDir(layout services.JobLayout, waitStepIndex int) (string, error) {
 	waitDir, err := layout.WaitDir(waitStepIndex)
 	if err != nil {
-		return fmt.Errorf("failed to find previous step: %w", err)
+		return "", fmt.Errorf("failed to find previous step: %w", err)
 	}
-
 	if err := CreateWaitDirectory(waitDir); err != nil {
-		return fmt.Errorf("failed to create wait directory: %w", err)
+		return "", fmt.Errorf("failed to create wait directory: %w", err)
 	}
-
-	return nil
+	return waitDir, nil
 }
 
 // CreateWaitDirectory creates an empty wait directory for manual data inspection.

@@ -51,7 +51,8 @@ func (flatteningStep) Name() models.StepName { return models.StepFlattening }
 // production caller yet (the cmd manual path wires only import and dimp today).
 // To be folded into one exported pipeline.RunStep — see issue #516.
 func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
-	return runStep(flatteningStep{}, &StepContext{Job: job, JobDir: jobDir, Logger: logger})
+	layout := services.NewJobLayoutForDir(jobDir, job.Config.Pipeline.EnabledSteps)
+	return runStep(flatteningStep{}, &StepContext{Job: job, Layout: layout, Logger: logger})
 }
 
 func (flatteningStep) Run(ctx *StepContext) (StepResult, error) {
@@ -91,10 +92,9 @@ func (flatteningStep) Run(ctx *StepContext) (StepResult, error) {
 		return StepResult{}, fmt.Errorf("invalid lookup tables: %w", err)
 	}
 
-	layout := services.NewJobLayout(filepath.Dir(ctx.JobDir), filepath.Base(ctx.JobDir), job.Config.Pipeline.EnabledSteps)
-	inputDir := layout.InputDir(stepName)
-	outputDir := layout.OutputDir(stepName)
-	viewDefDir := layout.ViewDefinitionsDir()
+	inputDir := ctx.Layout.InputDir(stepName)
+	outputDir := ctx.Layout.OutputDir(stepName)
+	viewDefDir := ctx.Layout.ViewDefinitionsDir()
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return StepResult{}, fmt.Errorf("failed to create output directory: %w", err)

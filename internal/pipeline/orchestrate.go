@@ -33,7 +33,7 @@ func RunLoop(job *models.PipelineJob, logger *lib.Logger, opts RunOptions) (*mod
 
 		ctx := &StepContext{
 			Job:          job,
-			JobDir:       services.GetJobDir(job.Config.JobsDir, job.JobID),
+			Layout:       services.NewJobLayout(job.Config.JobsDir, job.JobID, job.Config.Pipeline.EnabledSteps),
 			Logger:       logger,
 			ShowProgress: !opts.NoProgress,
 		}

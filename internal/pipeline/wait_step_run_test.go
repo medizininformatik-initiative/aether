@@ -10,6 +10,7 @@ import (
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
 // waitRunTestJob builds a job with a [local_import, wait] pipeline whose wait
@@ -41,7 +42,8 @@ func waitRunTestJob(t *testing.T, waitStatus models.StepStatus) (*models.Pipelin
 }
 
 func waitRunContext(job *models.PipelineJob, jobDir string) *StepContext {
-	return &StepContext{Job: job, JobDir: jobDir, Logger: lib.NewLogger(lib.LogLevelError)}
+	layout := services.NewJobLayoutForDir(jobDir, job.Config.Pipeline.EnabledSteps)
+	return &StepContext{Job: job, Layout: layout, Logger: lib.NewLogger(lib.LogLevelError)}
 }
 
 func TestWaitStepRun_FirstArrivalPausesAndCreatesDir(t *testing.T) {

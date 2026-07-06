@@ -49,7 +49,7 @@ func (s importStep) ClassifyError(err error) models.ErrorType {
 func ExecuteImportStep(job *models.PipelineJob, logger *lib.Logger, httpClient *services.HTTPClient, showProgress bool) (*models.PipelineJob, error) {
 	ctx := &StepContext{
 		Job:          job,
-		JobDir:       services.GetJobDir(job.Config.JobsDir, job.JobID),
+		Layout:       services.NewJobLayout(job.Config.JobsDir, job.JobID, job.Config.Pipeline.EnabledSteps),
 		Logger:       logger,
 		HTTPClient:   httpClient,
 		ShowProgress: showProgress,
@@ -76,7 +76,7 @@ func (s importStep) Run(ctx *StepContext) (StepResult, error) {
 			job.Config.Retry, job.Config.TLS, logger)
 	}
 
-	importDir := services.GetJobOutputDir(job.Config.JobsDir, job.JobID, currentStep)
+	importDir := ctx.Layout.OutputDir(currentStep)
 	compress := job.Config.Compression.Enabled
 	compressionLevel := job.Config.Compression.Level
 

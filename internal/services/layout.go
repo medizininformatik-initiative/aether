@@ -40,6 +40,13 @@ func NewJobLayout(jobsBaseDir, jobID string, enabledSteps []models.StepName) Job
 	return JobLayout{jobsBaseDir: jobsBaseDir, jobID: jobID, enabledSteps: enabledSteps}
 }
 
+// NewJobLayoutForDir builds a resolver from a job's root directory, splitting it
+// into its base directory and job ID. Use when the caller holds the job root path
+// rather than the base dir and ID separately.
+func NewJobLayoutForDir(jobDir string, enabledSteps []models.StepName) JobLayout {
+	return NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), enabledSteps)
+}
+
 // JobDir returns the root directory for the job.
 func (l JobLayout) JobDir() string {
 	return GetJobDir(l.jobsBaseDir, l.jobID)

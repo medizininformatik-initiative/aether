@@ -41,57 +41,49 @@ func ResetResourceValidatorFactory() {
 	resourceValidatorFactory = defaultResourceValidatorFactory
 }
 
-// ExecuteValidationStep validates FHIR resources against a FHIR validation service.
-// Reads from the previous data-producing step's output directory.
-// Writes per-file OperationOutcome reports for all validated chunks to jobs/<job-id>/validation/.
-// Fails the step if any chunk has error-level or fatal-level issues.
+// validationStep validates FHIR resources against a FHIR validation service.
+// Reads from the previous data-producing step's output directory. Writes per-file
+// OperationOutcome reports for all validated chunks to jobs/<job-id>/validation/.
+// With fail_on_error enabled, error-level issues complete the step yet halt the pipeline.
+type validationStep struct{}
+
+func (validationStep) Name() models.StepName { return models.StepValidation }
+
+// ExecuteValidationStep runs the validation step through the shared lifecycle. It
+// is the exported single-step entrypoint used by the black-box tests; it has no
+// production caller yet (the cmd manual path reports validation as not-yet-wired).
+// To be folded into one exported pipeline.RunStep — see issue #516.
 func ExecuteValidationStep(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
+	return runStep(validationStep{}, &StepContext{Job: job, JobDir: jobDir, Logger: logger})
+}
+
+func (validationStep) Run(ctx *StepContext) (StepResult, error) {
+	job := ctx.Job
+	logger := ctx.Logger
 	stepName := models.StepValidation
 
-	if !isStepEnabled(job.Config, stepName) {
-		logger.Info("Validation step not enabled, skipping", "job_id", job.JobID)
-		return nil
-	}
-
-	logger.Debug("Validation step starting", "job_id", job.JobID)
-
-	step := getOrCreateStep(job, stepName)
-	step.Status = models.StepStatusInProgress
-	now := time.Now()
-	step.StartedAt = &now
-
 	if job.Config.Services.Validation.URL == "" {
-		err := fmt.Errorf("validation service URL not configured")
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return err
+		return StepResult{}, fmt.Errorf("validation service URL not configured")
 	}
 
 	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
 	validationClient := resourceValidatorFactory(job.Config.Services.Validation.URL, httpClient, logger)
 
-	layout := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps)
+	layout := services.NewJobLayout(filepath.Dir(ctx.JobDir), filepath.Base(ctx.JobDir), job.Config.Pipeline.EnabledSteps)
 	inputDir := layout.InputDir(stepName)
 	outputDir := layout.OutputDir(stepName)
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return fmt.Errorf("failed to create output directory: %w", err)
+		return StepResult{}, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	files, err := findFHIRFiles(inputDir)
 	if err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return fmt.Errorf("failed to list input files: %w", err)
+		return StepResult{}, fmt.Errorf("failed to list input files: %w", err)
 	}
 
 	if len(files) == 0 {
-		err := fmt.Errorf("no FHIR NDJSON files found in %s", inputDir)
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return err
+		return StepResult{}, fmt.Errorf("no FHIR NDJSON files found in %s", inputDir)
 	}
 
 	fmt.Printf("Validating %d FHIR file(s)...\n\n", len(files))
@@ -116,7 +108,6 @@ func ExecuteValidationStep(job *models.PipelineJob, jobDir string, logger *lib.L
 
 	var totalChunksWithErrors int
 	totalResourcesValidated := 0
-	filesProcessed := 0
 
 	for _, inputFile := range files {
 		baseName := lib.GetUncompressedFilename(filepath.Base(inputFile))
@@ -130,7 +121,6 @@ func ExecuteValidationStep(job *models.PipelineJob, jobDir string, logger *lib.L
 				"filename", baseName,
 				"report_file", reportFile,
 				"job_id", job.JobID)
-			filesProcessed++
 			continue
 		}
 
@@ -140,9 +130,7 @@ func ExecuteValidationStep(job *models.PipelineJob, jobDir string, logger *lib.L
 				"filename", baseName,
 				"error", err,
 				"job_id", job.JobID)
-			lib.LogStepFailed(logger, string(stepName), job.JobID, err, isServiceErrorRetryable(err))
-			recordStepError(step, err, classifyServiceError(err))
-			return fmt.Errorf("failed to validate %s: %w", baseName, err)
+			return StepResult{}, fmt.Errorf("failed to validate %s: %w", baseName, err)
 		}
 
 		if chunksWithErrors > 0 {
@@ -153,39 +141,31 @@ func ExecuteValidationStep(job *models.PipelineJob, jobDir string, logger *lib.L
 
 		totalResourcesValidated += resourceCount
 		totalChunksWithErrors += chunksWithErrors
-		filesProcessed++
 	}
 
-	step.Status = models.StepStatusCompleted
-	step.FilesProcessed = len(files)
-	completedAt := time.Now()
-	step.CompletedAt = &completedAt
-
-	duration := completedAt.Sub(*step.StartedAt)
+	result := StepResult{FilesProcessed: len(files)}
 
 	if totalChunksWithErrors > 0 {
 		logger.Warn("Validation completed with errors in data",
 			"chunks_with_errors", totalChunksWithErrors,
 			"files_processed", len(files),
 			"resources_validated", totalResourcesValidated,
-			"duration", duration,
 			"job_id", job.JobID,
 		)
 		fmt.Printf("\n⚠ Validation completed: found errors in %d chunk(s) across %d file(s). See reports in validation/ directory.\n", totalChunksWithErrors, len(files))
 
 		if job.Config.Services.Validation.FailOnError != nil && *job.Config.Services.Validation.FailOnError {
-			return fmt.Errorf("validation found errors in %d chunk(s) across %d file(s) — stopping pipeline (fail_on_error is enabled)", totalChunksWithErrors, len(files))
+			return StepResult{}, stopAfterCompletion(result, fmt.Errorf("validation found errors in %d chunk(s) across %d file(s) — stopping pipeline (fail_on_error is enabled)", totalChunksWithErrors, len(files)))
 		}
 	} else {
 		logger.Debug("Validation step completed",
 			"files_processed", len(files),
 			"resources_validated", totalResourcesValidated,
-			"duration", duration,
 			"job_id", job.JobID,
 		)
 	}
 
-	return nil
+	return result, nil
 }
 
 // chunkValidationResult holds the result of validating a single Bundle chunk

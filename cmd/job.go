@@ -327,6 +327,20 @@ func isStepEnabledInConfig(config *models.ProjectConfig, stepName models.StepNam
 func executeStepManually(job *models.PipelineJob, stepName models.StepName, config *models.ProjectConfig, logger *lib.Logger) error {
 	jobDir := services.GetJobDir(config.JobsDir, job.JobID)
 
+	// A completed step is terminal for the pipeline's transition gate, so
+	// re-running it manually would otherwise fail with an illegal
+	// completed->in_progress transition. Reset it to pending first so the manual
+	// re-run works (the step's own idempotent skip logic handles already-produced
+	// output). The gate stays strict for the automatic RunLoop, which never
+	// re-enters a completed step.
+	if s, ok := models.GetStepByName(*job, stepName); ok && s.Status == models.StepStatusCompleted {
+		s.Status = models.StepStatusPending
+		s.StartedAt = nil
+		s.CompletedAt = nil
+		s.LastError = nil
+		*job = models.ReplaceStep(*job, s)
+	}
+
 	switch stepName {
 	case models.StepTorchImport, models.StepLocalImport, models.StepHttpImport:
 		// Validate step name matches input type (imported from pipeline.go logic)

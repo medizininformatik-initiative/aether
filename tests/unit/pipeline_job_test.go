@@ -232,6 +232,26 @@ func TestAdvanceToNextStep_NoMoreSteps(t *testing.T) {
 	assert.Equal(t, "", updatedJob.CurrentStep, "Current step should be empty")
 }
 
+// TestAdvanceToNextStep_MultipleWaitSteps guards against advancing toward a
+// second, non-consecutive wait step. Steps are tracked by name, so the lookup
+// resolves the first (already completed) wait step; advancing must still not
+// hard-fail for this documented-supported configuration.
+func TestAdvanceToNextStep_MultipleWaitSteps(t *testing.T) {
+	steps := []models.StepName{models.StepLocalImport, models.StepWait, models.StepDIMP, models.StepWait}
+	job := createJobForPipelineTests(steps)
+	job.CurrentStep = string(models.StepDIMP)
+
+	for _, name := range []models.StepName{models.StepLocalImport, models.StepDIMP} {
+		s, _ := models.GetStepByName(job, name)
+		job = models.ReplaceStep(job, models.CompleteStep(s, 1, 1))
+	}
+	firstWait, _ := models.GetStepByName(job, models.StepWait)
+	job = models.ReplaceStep(job, models.CompleteStep(firstWait, 1, 1))
+
+	_, err := pipeline.AdvanceToNextStep(&job)
+	require.NoError(t, err)
+}
+
 // TestStartJob_EmptySteps tests StartJob when there are no steps
 func TestStartJob_EmptySteps(t *testing.T) {
 	job := models.PipelineJob{

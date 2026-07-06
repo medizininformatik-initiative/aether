@@ -3,10 +3,50 @@ package pipeline
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
+
+// waitStep pauses the pipeline for manual data inspection. Its Run is idempotent:
+// it ensures the wait directory exists, then pauses while empty and completes
+// once the user has placed files there — so first-arrival and resume are the
+// same code path.
+type waitStep struct{}
+
+func (waitStep) Name() models.StepName { return models.StepWait }
+
+func (waitStep) Run(ctx *StepContext) (StepResult, error) {
+	idx, err := GetCurrentWaitStepIndex(ctx.Job)
+	if err != nil {
+		return StepResult{}, err
+	}
+
+	jobsBaseDir := filepath.Dir(ctx.JobDir)
+	if err := ExecuteWaitStep(ctx.Job, jobsBaseDir, idx); err != nil {
+		return StepResult{}, err
+	}
+
+	waitDir, err := services.NewJobLayout(jobsBaseDir, ctx.Job.JobID, ctx.Job.Config.Pipeline.EnabledSteps).WaitDir(idx)
+	if err != nil {
+		return StepResult{}, fmt.Errorf("failed to find previous step: %w", err)
+	}
+
+	count, err := CountFilesInDir(waitDir)
+	if err != nil {
+		return StepResult{}, err
+	}
+	if count == 0 {
+		fmt.Printf("\n⏸ Pipeline paused at wait step\n")
+		fmt.Printf("  Wait directory: %s\n", waitDir)
+		fmt.Printf("  The directory is EMPTY - place your modified data there\n")
+		fmt.Printf("\n  To continue: aether pipeline continue <config> %s\n", ctx.Job.JobID)
+		return StepResult{}, ErrPaused
+	}
+	fmt.Printf("  Found %d file(s) in wait directory\n", count)
+	return StepResult{FilesProcessed: count}, nil
+}
 
 // FileOps interface for file operations, allowing mocking in tests
 type FileOps interface {

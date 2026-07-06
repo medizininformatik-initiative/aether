@@ -33,62 +33,49 @@ func ResetDIMPFactory() {
 	dimpFactory = defaultDIMPFactory
 }
 
-// ExecuteDIMPStep processes FHIR resources through the DIMP pseudonymization service
-// Reads from import/ directory, writes to dimp/ directory
-// Orchestrates Bundle splitting and oversized resource detection before pseudonymization
+// dimpStep pseudonymizes FHIR resources through the DIMP service.
+// Reads from import/ directory, writes to dimp/ directory. Orchestrates Bundle
+// splitting and oversized resource detection before pseudonymization.
+type dimpStep struct{}
+
+func (dimpStep) Name() models.StepName { return models.StepDIMP }
+
+// ExecuteDIMPStep runs the DIMP pseudonymization step through the shared lifecycle.
 func ExecuteDIMPStep(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
+	return runStep(dimpStep{}, &StepContext{Job: job, JobDir: jobDir, Logger: logger})
+}
+
+func (dimpStep) Run(ctx *StepContext) (StepResult, error) {
+	job := ctx.Job
+	logger := ctx.Logger
 	stepName := models.StepDIMP
 
-	if !isStepEnabled(job.Config, stepName) {
-		logger.Info("DIMP step not enabled, skipping", "job_id", job.JobID)
-		return nil
-	}
-
-	logger.Debug("DIMP step starting", "job_id", job.JobID)
-
-	step := getOrCreateStep(job, stepName)
-	step.Status = models.StepStatusInProgress
-	now := time.Now()
-	step.StartedAt = &now
-
 	if job.Config.Services.DIMP.URL == "" {
-		err := fmt.Errorf("DIMP service URL not configured")
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return err
+		return StepResult{}, fmt.Errorf("DIMP service URL not configured")
 	}
 
 	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
 	dimpClient := dimpFactory(job.Config.Services.DIMP.URL, httpClient, logger)
 
-	layout := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps)
+	layout := services.NewJobLayout(filepath.Dir(ctx.JobDir), filepath.Base(ctx.JobDir), job.Config.Pipeline.EnabledSteps)
 	importDir := layout.InputDir(stepName)
 	outputDir := layout.OutputDir(stepName)
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return fmt.Errorf("failed to create output directory: %w", err)
+		return StepResult{}, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	files, err := findFHIRFiles(importDir)
 	if err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return fmt.Errorf("failed to list import files: %w", err)
+		return StepResult{}, fmt.Errorf("failed to list import files: %w", err)
 	}
 
 	if len(files) == 0 {
-		err := fmt.Errorf("no FHIR NDJSON files found in %s", importDir)
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return err
+		return StepResult{}, fmt.Errorf("no FHIR NDJSON files found in %s", importDir)
 	}
 
 	if err := models.DetectDuplicateFHIRFiles(files); err != nil {
-		lib.LogStepFailed(logger, string(stepName), job.JobID, err, false)
-		recordStepError(step, err, models.ErrorTypeNonTransient)
-		return err
+		return StepResult{}, err
 	}
 
 	fmt.Printf("Processing %d FHIR file(s) through DIMP...\n\n", len(files))
@@ -103,7 +90,6 @@ func ExecuteDIMPStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 	compressionLevel := job.Config.Compression.Level
 
 	totalResourcesProcessed := 0
-	filesProcessed := 0
 	for fileIdx, inputFile := range files {
 		baseName := lib.GetUncompressedFilename(filepath.Base(inputFile))
 		outputBaseName := "dimped_" + baseName
@@ -116,7 +102,6 @@ func ExecuteDIMPStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 				"filename", baseName,
 				"output_file", outputFile,
 				"job_id", job.JobID)
-			filesProcessed++
 			if lineCount, err := lib.CountResourcesInFile(outputFile); err == nil {
 				totalResourcesProcessed += lineCount
 			}
@@ -132,32 +117,20 @@ func ExecuteDIMPStep(job *models.PipelineJob, jobDir string, logger *lib.Logger)
 				"resources_processed_so_far", totalResourcesProcessed,
 				"error", err,
 				"job_id", job.JobID)
-			lib.LogStepFailed(logger, string(stepName), job.JobID, err, isServiceErrorRetryable(err))
-			recordStepError(step, err, classifyServiceError(err))
-			return fmt.Errorf("failed to process %s: %w", baseName, err)
+			return StepResult{}, fmt.Errorf("failed to process %s: %w", baseName, err)
 		}
 
 		fmt.Printf("  ✓ %s (%d resources)\n", baseName, resourcesProcessed)
-
 		totalResourcesProcessed += resourcesProcessed
-		filesProcessed++
 	}
-
-	step.Status = models.StepStatusCompleted
-	step.FilesProcessed = len(files)
-	completedAt := time.Now()
-	step.CompletedAt = &completedAt
-
-	duration := completedAt.Sub(*step.StartedAt)
 
 	logger.Debug("DIMP step completed",
 		"files_processed", len(files),
 		"resources_processed", totalResourcesProcessed,
-		"duration", duration,
 		"job_id", job.JobID,
 	)
 
-	return nil
+	return StepResult{FilesProcessed: len(files)}, nil
 }
 
 // processDIMPFile processes a single NDJSON file through DIMP
@@ -313,13 +286,4 @@ func getOrCreateStep(job *models.PipelineJob, stepName models.StepName) *models.
 	}
 	job.Steps = append(job.Steps, step)
 	return &job.Steps[len(job.Steps)-1]
-}
-
-func recordStepError(step *models.PipelineStep, err error, errorType models.ErrorType) {
-	step.Status = models.StepStatusFailed
-	step.LastError = &models.StepError{
-		Type:      errorType,
-		Message:   err.Error(),
-		Timestamp: time.Now(),
-	}
 }

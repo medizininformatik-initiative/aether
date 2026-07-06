@@ -2079,6 +2079,42 @@ func TestExecuteSendStep_FHIR_FileOpenError(t *testing.T) {
 	assert.Equal(t, models.ErrorTypeNonTransient, sendStep.LastError.Type)
 }
 
+func TestExecuteSendStep_FHIR_RetryableServerErrorClassifiedTransient(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable) // 503 - retryable
+		_, _ = w.Write([]byte(`{"issue":"service unavailable"}`))
+	}))
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	jobID := "test-fhir-retryable-error"
+	jobDir := filepath.Join(tmpDir, jobID)
+	inputDir := filepath.Join(jobDir, "dimp")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "Patient.ndjson"),
+		[]byte(`{"resourceType":"Patient","id":"1"}`+"\n"), 0644))
+
+	job := createFHIRSendTestJob(server.URL, jobID, tmpDir)
+	// Keep retries fast; the FHIRError surfaces wrapped once retries are exhausted.
+	job.Config.Retry = models.RetryConfig{MaxAttempts: 2, InitialBackoffMs: 1, MaxBackoffMs: 5}
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	require.Error(t, err)
+
+	var sendStep *models.PipelineStep
+	for i := range job.Steps {
+		if job.Steps[i].Name == models.StepSend {
+			sendStep = &job.Steps[i]
+			break
+		}
+	}
+	require.NotNil(t, sendStep)
+	require.NotNil(t, sendStep.LastError)
+	// A wrapped, transient FHIR server error must be classified transient.
+	assert.Equal(t, models.ErrorTypeTransient, sendStep.LastError.Type)
+}
+
 func TestExecuteSendStep_FHIR_CloseWarning(t *testing.T) {
 	// This test verifies the close error handling path (line 260-262)
 	// by ensuring the upload completes even if close has warnings

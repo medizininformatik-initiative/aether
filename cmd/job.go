@@ -387,23 +387,13 @@ func isImportStep(stepName models.StepName) bool {
 	}
 }
 
-// validateImportStepMatchesInput rejects an import step name that does not match
-// the job's input type (e.g. requesting torch import for a local-directory job).
+// validateImportStepMatchesInput rejects a manual --step import request whose
+// step cannot handle the job's input type (e.g. http_import for a local job). It
+// shares models.ImportStepAcceptsInputType with the RunLoop guard and job
+// creation so all three paths agree on the mapping.
 func validateImportStepMatchesInput(job *models.PipelineJob, stepName models.StepName) error {
-	var expectedStep models.StepName
-	switch job.InputType {
-	case models.InputTypeCRTDL, models.InputTypeTORCHURL:
-		expectedStep = models.StepTorchImport
-	case models.InputTypeLocal:
-		expectedStep = models.StepLocalImport
-	case models.InputTypeHTTP:
-		expectedStep = models.StepHttpImport
-	default:
-		return fmt.Errorf("unknown input type: %s", job.InputType)
-	}
-
-	if stepName != expectedStep {
-		return fmt.Errorf("step '%s' does not match input type %s (expected '%s')", stepName, job.InputType, expectedStep)
+	if !models.ImportStepAcceptsInputType(stepName, job.InputType) {
+		return fmt.Errorf("import step %q does not accept input type %q (accepts %v)", stepName, job.InputType, models.AcceptedInputTypes(stepName))
 	}
 	return nil
 }

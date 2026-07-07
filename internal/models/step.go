@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -73,6 +74,31 @@ func IsValidStepName(name StepName) bool {
 	default:
 		return false
 	}
+}
+
+// AcceptedInputTypes returns the input types an import step can handle, or nil
+// when the step is not an import step. The import method is selected by step
+// name, so this expresses which sources each method understands. InputTypeLocal
+// is the CRTDL-submission default for torch, hence it is accepted by both torch
+// and local_import.
+func AcceptedInputTypes(step StepName) []InputType {
+	switch step {
+	case StepTorchImport:
+		return []InputType{InputTypeLocal, InputTypeCRTDL, InputTypeTORCHURL}
+	case StepLocalImport:
+		return []InputType{InputTypeLocal}
+	case StepHttpImport:
+		return []InputType{InputTypeHTTP}
+	default:
+		return nil
+	}
+}
+
+// ImportStepAcceptsInputType reports whether the import step can handle the
+// given input type. It is the single parity check shared by the RunLoop/continue
+// resume path, the manual --step path, and job creation.
+func ImportStepAcceptsInputType(step StepName, inputType InputType) bool {
+	return slices.Contains(AcceptedInputTypes(step), inputType)
 }
 
 // IsValidStepStatus checks if the step status is recognized

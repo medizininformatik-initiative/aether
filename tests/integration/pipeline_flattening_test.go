@@ -14,7 +14,6 @@ import (
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
-	"github.com/medizininformatik-initiative/aether/internal/pipeline"
 )
 
 // makeProvenance builds a Provenance resource for integration testing
@@ -182,7 +181,7 @@ func TestExecuteFlatteningStep_FullPipeline(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 
 	// Execute flattening step
-	err = pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err = runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Verify output files were created
@@ -214,7 +213,7 @@ func TestExecuteFlatteningStep_NotEnabled(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	assert.NoError(t, err) // Should skip without error
 }
 
@@ -249,7 +248,7 @@ func TestExecuteFlatteningStep_NoCRTDLAttached(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "requires a CRTDL file")
 	assert.Contains(t, err.Error(), "--crtdl")
@@ -283,7 +282,7 @@ func TestExecuteFlatteningStep_MissingCRTDL(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to parse CRTDL")
 }
@@ -330,7 +329,7 @@ func TestExecuteFlatteningStep_MissingLookupTables(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load lookup tables")
 }
@@ -383,7 +382,7 @@ func TestExecuteFlatteningStep_NoInputFiles(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no FHIR NDJSON files found")
 }
@@ -464,7 +463,7 @@ func TestExecuteFlatteningStep_FlattenerServiceError(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err = pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err = runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "flattener failed")
 }
@@ -580,7 +579,7 @@ func TestExecuteFlatteningStep_NonBundleStreamRouting(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err = pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err = runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
 	assert.True(t, flushed, "flattener service should have been called")
 

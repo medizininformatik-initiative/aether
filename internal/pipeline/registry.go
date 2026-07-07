@@ -25,10 +25,10 @@ func defaultStepLookup(name models.StepName) (Step, bool) {
 // orchestration loop can run against fake steps.
 var stepLookup = defaultStepLookup
 
-// StepFor returns the Step registered for name. It is the exported registry
-// accessor used by the black-box tests; production dispatch (RunLoop) goes through
-// the unexported stepLookup directly, so this has no production caller.
-// To be reconsidered alongside the pipeline.RunStep unification — see issue #516.
+// StepFor returns the raw Step registered for name, without running it. RunStep
+// is the entrypoint for driving a step through the full lifecycle; StepFor exists
+// for tests that need the Step itself (e.g. to call Run in isolation). Production
+// dispatch (RunLoop) resolves via the unexported stepLookup directly.
 func StepFor(name models.StepName) (Step, bool) { return stepLookup(name) }
 
 // SetStepRegistryForTesting replaces the step lookup for tests.

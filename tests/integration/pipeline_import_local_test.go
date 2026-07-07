@@ -81,7 +81,7 @@ func TestPipelineImportLocal_EndToEnd(t *testing.T) {
 	require.NoError(t, pipeline.UpdateJob(jobsDir, startedJob))
 
 	// Step 3: Execute import step
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 	require.NoError(t, err, "Import should succeed")
 	require.NotNil(t, importedJob, "Imported job should be returned")
 
@@ -153,7 +153,7 @@ func TestPipelineImportLocal_InvalidSource(t *testing.T) {
 	startedJob := pipeline.StartJob(job)
 
 	// Execute import - should fail
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 	assert.Error(t, err, "Import should fail for nonexistent directory")
 	assert.NotNil(t, importedJob, "Job should be returned even on failure")
 
@@ -199,7 +199,7 @@ func TestPipelineImportLocal_EmptyDirectory(t *testing.T) {
 	startedJob := pipeline.StartJob(job)
 
 	// Execute import - should fail
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 	assert.Error(t, err, "Import should fail for directory with no FHIR files")
 
 	// Verify error details
@@ -243,7 +243,7 @@ func TestPipelineImportLocal_ResourceCounting(t *testing.T) {
 	// Execute import
 	job, _ := pipeline.CreateJob(models.GenerateJobID(), sourceDir, "", config, logger)
 	startedJob := pipeline.StartJob(job)
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 
 	require.NoError(t, err)
 
@@ -292,7 +292,7 @@ func TestPipelineImportLocal_JobListAndStatus(t *testing.T) {
 
 	// Execute import for first job
 	startedJob1 := pipeline.StartJob(job1)
-	importedJob1, _ := pipeline.ExecuteImportStep(startedJob1, logger, httpClient, false)
+	importedJob1, _ := runImportStep(startedJob1, logger, httpClient, false)
 	_ = pipeline.UpdateJob(jobsDir, importedJob1)
 
 	// List all jobs

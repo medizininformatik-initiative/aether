@@ -9,51 +9,8 @@ import (
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
-	"github.com/medizininformatik-initiative/aether/internal/pipeline"
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
-
-// TestExecuteImportStep_UnsupportedStep tests error handling for unsupported import steps
-// This covers import.go switch statement for currentStep
-func TestExecuteImportStep_UnsupportedStep(t *testing.T) {
-	tmpDir := t.TempDir()
-	logger := lib.NewLogger(lib.LogLevelInfo)
-
-	retryConfig := models.RetryConfig{
-		MaxAttempts:      3,
-		InitialBackoffMs: 500,
-		MaxBackoffMs:     5000,
-	}
-	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, models.TLSConfig{}, logger)
-
-	// Create a job with an unsupported step (not an import step)
-	job := &models.PipelineJob{
-		JobID:       "test-job-123",
-		InputSource: "/some/path",
-		InputType:   models.InputTypeLocal,
-		CurrentStep: string(models.StepDIMP), // Not an import step
-		Status:      models.JobStatusPending,
-		Steps:       models.InitializeSteps([]models.StepName{models.StepDIMP}),
-		Config: models.ProjectConfig{
-			JobsDir: tmpDir,
-			Pipeline: models.PipelineConfig{
-				EnabledSteps: []models.StepName{models.StepDIMP},
-			},
-			Retry: models.RetryConfig{
-				MaxAttempts:      3,
-				InitialBackoffMs: 500,
-				MaxBackoffMs:     5000,
-			},
-		},
-	}
-
-	// Execute import step - should fail with unsupported step
-	_, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
-
-	// Verify error
-	require.Error(t, err, "Should fail with unsupported import step")
-	assert.Contains(t, err.Error(), "unsupported import step", "Error should mention unsupported import step")
-}
 
 // TestExecuteImportStep_LocalImportMissingDir tests error handling when local_import directory doesn't exist
 func TestExecuteImportStep_LocalImportMissingDir(t *testing.T) {
@@ -89,7 +46,7 @@ func TestExecuteImportStep_LocalImportMissingDir(t *testing.T) {
 	}
 
 	// Execute import step - should fail because directory doesn't exist
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	updatedJob, err := runImportStep(job, logger, httpClient, false)
 
 	// Verify error
 	require.Error(t, err, "Should fail when directory doesn't exist")
@@ -140,7 +97,7 @@ func TestExecuteImportStep_HttpImportValidationFailure(t *testing.T) {
 	}
 
 	// Execute import step - should fail with unsupported protocol
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	updatedJob, err := runImportStep(job, logger, httpClient, false)
 
 	require.Error(t, err, "Should fail when HTTP import has invalid URL")
 	assert.NotNil(t, updatedJob, "Should return updated job even on error")
@@ -178,7 +135,7 @@ func TestExecuteImportStep_HttpImportEmptyURL(t *testing.T) {
 	}
 
 	// Execute import step - should fail validation
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	updatedJob, err := runImportStep(job, logger, httpClient, false)
 
 	require.Error(t, err, "Should fail when HTTP import URL is empty")
 	assert.NotNil(t, updatedJob, "Should return updated job even on error")
@@ -222,7 +179,7 @@ func TestExecuteImportStep_TorchImportCRTDLValidationFailure(t *testing.T) {
 	}
 
 	// Execute import step - should fail validation
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	updatedJob, err := runImportStep(job, logger, httpClient, false)
 
 	require.Error(t, err, "Should fail when CRTDL validation fails")
 	assert.NotNil(t, updatedJob, "Should return updated job even on error")
@@ -260,7 +217,7 @@ func TestExecuteImportStep_TorchImportTORCHURLValidationFailure(t *testing.T) {
 	}
 
 	// Execute import step - should fail validation
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	updatedJob, err := runImportStep(job, logger, httpClient, false)
 
 	require.Error(t, err, "Should fail when TORCH URL validation fails")
 	assert.NotNil(t, updatedJob, "Should return updated job even on error")
@@ -301,7 +258,7 @@ func TestExecuteImportStep_TorchImportInvalidInputType(t *testing.T) {
 	}
 
 	// Execute import step - should fail because no CRTDL is attached
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	updatedJob, err := runImportStep(job, logger, httpClient, false)
 
 	require.Error(t, err, "Should fail when torch import has no CRTDL")
 	assert.NotNil(t, updatedJob, "Should return updated job even on error")

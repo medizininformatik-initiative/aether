@@ -16,7 +16,6 @@ import (
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
-	"github.com/medizininformatik-initiative/aether/internal/pipeline"
 )
 
 // Integration test: End-to-end splitting with mock DIMP
@@ -72,7 +71,7 @@ func TestDIMPStepWithLargeBundle(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 
 	// Execute DIMP step
-	err := pipeline.ExecuteDIMPStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, jobDir, logger)
 	require.NoError(t, err, "DIMP step should complete without error")
 
 	// Verify output file exists
@@ -179,7 +178,7 @@ func TestDIMPStepWithLargeBundleAndChunks(t *testing.T) {
 
 	// Execute DIMP step
 	startTime := time.Now()
-	err := pipeline.ExecuteDIMPStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, jobDir, logger)
 	duration := time.Since(startTime)
 	require.NoError(t, err, "DIMP step should complete without error")
 
@@ -255,7 +254,7 @@ func TestDIMPStepWithSmallBundleNoSplit(t *testing.T) {
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
 
-	err := pipeline.ExecuteDIMPStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, jobDir, logger)
 	require.NoError(t, err, "DIMP step should complete without error")
 
 	// Verify output exists
@@ -501,7 +500,7 @@ func TestDIMPStepWithOversizedResource(t *testing.T) {
 
 	// Execute DIMP step - should handle oversized resource gracefully
 	logger := lib.NewLogger(lib.LogLevelInfo)
-	err := pipeline.ExecuteDIMPStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, jobDir, logger)
 
 	// Expect error due to oversized resource
 	assert.Error(t, err, "Step should error when oversized resource is encountered")
@@ -558,7 +557,7 @@ func TestDIMPStepWithCustomThreshold(t *testing.T) {
 		}
 
 		logger := lib.NewLogger(lib.LogLevelDebug)
-		err := pipeline.ExecuteDIMPStep(job, jobDir, logger)
+		err := runPipelineStep(models.StepDIMP, job, jobDir, logger)
 		require.NoError(t, err, "DIMP step should succeed with valid threshold")
 
 		// Verify output file exists
@@ -609,7 +608,7 @@ func TestDIMPStepWithCustomThreshold(t *testing.T) {
 		}
 
 		logger := lib.NewLogger(lib.LogLevelDebug)
-		err := pipeline.ExecuteDIMPStep(job, jobDir, logger)
+		err := runPipelineStep(models.StepDIMP, job, jobDir, logger)
 		require.NoError(t, err, "DIMP step should succeed with valid threshold")
 
 		// Verify output file exists
@@ -660,7 +659,7 @@ func TestDIMPStepWithCustomThreshold(t *testing.T) {
 		}
 
 		logger := lib.NewLogger(lib.LogLevelDebug)
-		err := pipeline.ExecuteDIMPStep(job, jobDir, logger)
+		err := runPipelineStep(models.StepDIMP, job, jobDir, logger)
 		require.NoError(t, err, "DIMP step should succeed with valid threshold")
 
 		// Verify output file exists

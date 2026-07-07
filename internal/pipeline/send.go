@@ -69,15 +69,6 @@ type sendStep struct{}
 
 func (sendStep) Name() models.StepName { return models.StepSend }
 
-// ExecuteSendStep runs the send step through the shared lifecycle. It is the
-// exported single-step entrypoint used by the black-box tests; it has no
-// production caller yet (the cmd manual path wires only import and dimp today).
-// To be folded into one exported pipeline.RunStep — see issue #516.
-func ExecuteSendStep(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
-	layout := services.NewJobLayoutForDir(jobDir, job.Config.Pipeline.EnabledSteps)
-	return runStep(sendStep{}, &StepContext{Job: job, Layout: layout, Logger: logger})
-}
-
 func (sendStep) Run(ctx *StepContext) (StepResult, error) {
 	job := ctx.Job
 	logger := ctx.Logger

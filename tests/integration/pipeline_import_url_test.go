@@ -66,7 +66,7 @@ func TestPipelineImportURL_EndToEnd(t *testing.T) {
 	assert.Equal(t, models.JobStatusInProgress, startedJob.Status)
 
 	// Step 3: Execute import with progress display
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, true)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, true)
 	require.NoError(t, err, "Import should succeed")
 
 	// Verify import step completed
@@ -140,7 +140,7 @@ func TestPipelineImportURL_WithRetry(t *testing.T) {
 	// Create and execute job
 	job, _ := pipeline.CreateJob(models.GenerateJobID(), server.URL+"/test.ndjson", "", config, logger)
 	startedJob := pipeline.StartJob(job)
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 
 	// Verify retry succeeded
 	require.NoError(t, err, "Import should succeed after retries")
@@ -188,7 +188,7 @@ func TestPipelineImportURL_LargeFile(t *testing.T) {
 	// Execute import with progress
 	job, _ := pipeline.CreateJob(models.GenerateJobID(), server.URL+"/large.ndjson", "", config, logger)
 	startedJob := pipeline.StartJob(job)
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, true)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, true)
 
 	require.NoError(t, err, "Import should succeed")
 
@@ -244,7 +244,7 @@ func TestPipelineImportURL_ProgressDisplay(t *testing.T) {
 	startedJob := pipeline.StartJob(job)
 
 	// This should use progress bar/spinner internally (progress indicator requirementsc, Progress indicators must update at least every 2 seconds)
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, true)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, true)
 
 	require.NoError(t, err, "Import should succeed")
 
@@ -291,7 +291,7 @@ func TestPipelineImportURL_MultipleURLs(t *testing.T) {
 	for _, url := range urls {
 		job, _ := pipeline.CreateJob(models.GenerateJobID(), url, "", config, logger)
 		startedJob := pipeline.StartJob(job)
-		importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+		importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 		require.NoError(t, err, "Import should succeed for URL %s", url)
 		jobs = append(jobs, importedJob)
 	}
@@ -366,7 +366,7 @@ func TestPipelineImportURL_FilenameFromURL(t *testing.T) {
 			url := server.URL + tt.urlPath
 			job, _ := pipeline.CreateJob(models.GenerateJobID(), url, "", config, logger)
 			startedJob := pipeline.StartJob(job)
-			_, _ = pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+			_, _ = runImportStep(startedJob, logger, httpClient, false)
 
 			// Verify filename
 			importDir := services.GetJobOutputDir(jobsDir, job.JobID, models.StepHttpImport)
@@ -413,8 +413,8 @@ func TestPipelineImportURL_ConcurrentDownloads(t *testing.T) {
 	startedJob1 := pipeline.StartJob(job1)
 	startedJob2 := pipeline.StartJob(job2)
 
-	_, err1 := pipeline.ExecuteImportStep(startedJob1, logger, httpClient, false)
-	_, err2 := pipeline.ExecuteImportStep(startedJob2, logger, httpClient, false)
+	_, err1 := runImportStep(startedJob1, logger, httpClient, false)
+	_, err2 := runImportStep(startedJob2, logger, httpClient, false)
 
 	// Verify both succeeded independently
 	require.NoError(t, err1, "Job1 import should succeed")

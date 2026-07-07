@@ -68,7 +68,7 @@ func TestExecuteSendStep_Success(t *testing.T) {
 	job := createSendTestJob(server.URL, jobID, tmpDir)
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// 2 Binary resources + 1 DocumentReference = 3 PUT requests
@@ -173,7 +173,7 @@ func TestExecuteSendStep_ZipContentVerification(t *testing.T) {
 
 	job := createSendTestJob(server.URL, jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Verify the captured Binary resource
@@ -224,7 +224,7 @@ func TestExecuteSendStep_ContentTypeMapping(t *testing.T) {
 
 	job := createSendTestJob(server.URL, jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// 3 Binaries + 1 DocumentReference = 4 requests
@@ -259,7 +259,7 @@ func TestExecuteSendStep_ServerError(t *testing.T) {
 
 	job := createSendTestJob(server.URL, jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to upload Binary")
 }
@@ -273,7 +273,7 @@ func TestExecuteSendStep_NoFiles(t *testing.T) {
 
 	job := createSendTestJob("http://unused", jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no files found")
 }
@@ -307,7 +307,7 @@ func TestExecuteSendStep_InvalidConfig(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "url is required")
 }
@@ -346,7 +346,7 @@ func TestExecuteSendStep_NotEnabled(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	// Should succeed by skipping (not an error)
 	assert.NoError(t, err)
 }
@@ -364,7 +364,7 @@ func TestExecuteSendStep_InputDirNotExists(t *testing.T) {
 
 	job := createSendTestJob(server.URL, jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to list input files")
 }
@@ -397,7 +397,7 @@ func TestExecuteSendStep_DocumentReferenceUploadError(t *testing.T) {
 
 	job := createSendTestJob(server.URL, jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to upload DocumentReference")
 }
@@ -430,7 +430,7 @@ func TestExecuteSendStep_JsonFile(t *testing.T) {
 
 	job := createSendTestJob(server.URL, jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// All files are now zipped - JSON files get application/zip
@@ -480,7 +480,7 @@ func TestExecuteSendStep_AllJsonFilesZipped(t *testing.T) {
 
 	job := createSendTestJob(server.URL, jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Count Binary resources with application/zip
@@ -518,7 +518,7 @@ func TestExecuteSendStep_SubdirectoryFiles(t *testing.T) {
 
 	job := createSendTestJob(server.URL, jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Should process 2 files (root.csv + nested.csv) -> 2 Binaries + 1 DocumentReference
@@ -548,7 +548,7 @@ func TestExecuteSendStep_ServerNonRetryableError(t *testing.T) {
 
 	job := createSendTestJob(server.URL, jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to upload Binary")
 
@@ -587,7 +587,7 @@ func TestExecuteSendStep_UnknownFileExtension(t *testing.T) {
 
 	job := createSendTestJob(server.URL, jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	var binaryResource map[string]any
@@ -627,7 +627,7 @@ func TestExecuteSendStep_FileReadError(t *testing.T) {
 
 	job := createSendTestJob(server.URL, jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to process")
 }
@@ -663,7 +663,7 @@ func TestExecuteSendStep_CompressedNdjsonFile(t *testing.T) {
 
 	job := createSendTestJob(server.URL, jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err = pipeline.ExecuteSendStep(job, jobDir, logger)
+	err = runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Verify the Binary was created with zip content type
@@ -729,7 +729,7 @@ func TestExecuteSendStep_CompressedJsonFile(t *testing.T) {
 
 	job := createSendTestJob(server.URL, jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err = pipeline.ExecuteSendStep(job, jobDir, logger)
+	err = runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Verify the Binary was created
@@ -767,7 +767,7 @@ func TestExecuteSendStep_UnreadableFile(t *testing.T) {
 
 	job := createSendTestJob(server.URL, jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	// Should fail when trying to read the file to process it
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to process")
@@ -791,7 +791,7 @@ func TestExecuteSendStep_ConnectionRefused(t *testing.T) {
 
 	job := createSendTestJob(unreachableURL, jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to upload Binary")
 
@@ -906,7 +906,7 @@ func TestExecuteSendStep_BasicAuth(t *testing.T) {
 	})
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Verify Basic Auth header was sent
@@ -965,7 +965,7 @@ func TestExecuteSendStep_OAuth2(t *testing.T) {
 	})
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Verify Bearer token was sent
@@ -995,7 +995,7 @@ func TestExecuteSendStep_NoAuth(t *testing.T) {
 	job := createSendTestJobWithAuth(server.URL, jobID, tmpDir, models.AuthConfig{})
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// No Authorization header should be sent
@@ -1034,7 +1034,7 @@ func TestExecuteSendStep_OAuth2TokenError(t *testing.T) {
 	})
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get OAuth2 token")
 }
@@ -1076,7 +1076,7 @@ func TestExecuteSendStep_OAuth2TokenCaching(t *testing.T) {
 	})
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job1, jobDir1, logger)
+	err := runPipelineStep(models.StepSend, job1, jobDir1, logger)
 	require.NoError(t, err)
 
 	firstRequestCount := tokenRequestCount
@@ -1094,7 +1094,7 @@ func TestExecuteSendStep_OAuth2TokenCaching(t *testing.T) {
 		OAuthClientSecret: "test-secret",
 	})
 
-	err = pipeline.ExecuteSendStep(job2, jobDir2, logger)
+	err = runPipelineStep(models.StepSend, job2, jobDir2, logger)
 	require.NoError(t, err)
 
 	// The second execution should not have requested a new token (cached)
@@ -1137,7 +1137,7 @@ func TestExecuteSendStep_OAuth2TokenInvalidJSON(t *testing.T) {
 	})
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get OAuth2 token")
 }
@@ -1176,7 +1176,7 @@ func TestExecuteSendStep_OAuth2TokenMissingAccessToken(t *testing.T) {
 	})
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get OAuth2 token")
 }
@@ -1216,7 +1216,7 @@ func TestExecuteSendStep_OAuth2TokenShortExpiry(t *testing.T) {
 	})
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// With short-lived token, each PUT request may need a new token
@@ -1270,7 +1270,7 @@ func TestExecuteSendStep_FHIR_Success(t *testing.T) {
 	job := createFHIRSendTestJob(server.URL, jobID, tmpDir)
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Verify transaction bundles were sent
@@ -1339,7 +1339,7 @@ func TestExecuteSendStep_FHIR_CoreFilesFirst(t *testing.T) {
 	job := createFHIRSendTestJob(server.URL, jobID, tmpDir)
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// core file should be processed first
@@ -1385,7 +1385,7 @@ func TestExecuteSendStep_FHIR_CompressedFiles(t *testing.T) {
 	job := createFHIRSendTestJob(server.URL, jobID, tmpDir)
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err = pipeline.ExecuteSendStep(job, jobDir, logger)
+	err = runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Should have received 2 resources
@@ -1411,7 +1411,7 @@ func TestExecuteSendStep_FHIR_NoFiles(t *testing.T) {
 	job := createFHIRSendTestJob(server.URL, jobID, tmpDir)
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no NDJSON files found")
 }
@@ -1436,7 +1436,7 @@ func TestExecuteSendStep_FHIR_ServerError(t *testing.T) {
 	job.Config.Retry.MaxAttempts = 1
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to upload")
 
@@ -1471,7 +1471,7 @@ func TestExecuteSendStep_FHIR_BadRequest(t *testing.T) {
 	job := createFHIRSendTestJob(server.URL, jobID, tmpDir)
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 
 	// Check that step has non-transient error type for 400 errors
@@ -1507,7 +1507,7 @@ func TestExecuteSendStep_FHIR_WithAuth(t *testing.T) {
 	job := createFHIRSendTestJobWithAuth(server.URL, jobID, tmpDir, "fhiruser", "fhirpass")
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Verify Basic Auth header was sent
@@ -1549,7 +1549,7 @@ func TestExecuteSendStep_FHIR_InvalidConfig(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must use http or https scheme")
 }
@@ -1568,7 +1568,7 @@ func TestExecuteSendStep_FHIR_InputDirNotExists(t *testing.T) {
 	job := createFHIRSendTestJob(server.URL, jobID, tmpDir)
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to list NDJSON files")
 }
@@ -1616,7 +1616,7 @@ func TestExecuteSendStep_FHIR_CoreAndCompressed(t *testing.T) {
 	job := createFHIRSendTestJob(server.URL, jobID, tmpDir)
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err = pipeline.ExecuteSendStep(job, jobDir, logger)
+	err = runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Core file (even compressed) should be processed first
@@ -1644,7 +1644,7 @@ func TestExecuteSendStep_S3_Success(t *testing.T) {
 
 	job := createS3SendTestJob(jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Verify files were uploaded
@@ -1692,7 +1692,7 @@ func TestExecuteSendStep_S3_NoFiles(t *testing.T) {
 
 	job := createS3SendTestJob(jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no files found")
 }
@@ -1716,7 +1716,7 @@ func TestExecuteSendStep_S3_UploadError(t *testing.T) {
 
 	job := createS3SendTestJob(jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to upload")
 
@@ -1761,7 +1761,7 @@ func TestExecuteSendStep_S3_ManifestRetry(t *testing.T) {
 
 	job := createS3SendTestJob(jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Only the second file should have been uploaded
@@ -1800,7 +1800,7 @@ func TestExecuteSendStep_S3_SubdirectoryFiles(t *testing.T) {
 
 	job := createS3SendTestJob(jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 
 	assert.Len(t, mock.UploadedKeys, 2)
@@ -1845,7 +1845,7 @@ func TestExecuteSendStep_S3_InvalidConfig(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bucket is required")
 }
@@ -1869,7 +1869,7 @@ func TestExecuteSendStep_S3_TransientError(t *testing.T) {
 
 	job := createS3SendTestJob(jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 
 	// Error should be classified as transient
@@ -2024,7 +2024,7 @@ func TestExecuteSendStep_UnknownSendMode(t *testing.T) {
 	}
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	// The validation rejects unknown modes with this message
 	assert.Contains(t, err.Error(), "invalid send send_as")
@@ -2063,7 +2063,7 @@ func TestExecuteSendStep_FHIR_FileOpenError(t *testing.T) {
 	job := createFHIRSendTestJob(server.URL, jobID, tmpDir)
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to open")
 
@@ -2099,7 +2099,7 @@ func TestExecuteSendStep_FHIR_RetryableServerErrorClassifiedTransient(t *testing
 	job.Config.Retry = models.RetryConfig{MaxAttempts: 2, InitialBackoffMs: 1, MaxBackoffMs: 5}
 
 	logger := lib.NewLogger(lib.LogLevelError)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 
 	var sendStep *models.PipelineStep
@@ -2147,7 +2147,7 @@ func TestExecuteSendStep_FHIR_CloseWarning(t *testing.T) {
 	job := createFHIRSendTestJob(server.URL, jobID, tmpDir)
 
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.NoError(t, err)
 	assert.Equal(t, 1, receivedResources)
 }
@@ -2191,7 +2191,7 @@ func TestExecuteSendStep_S3_UploaderFactoryError(t *testing.T) {
 
 	job := createS3SendTestJob(jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to create S3 uploader")
 }
@@ -2217,7 +2217,7 @@ func TestExecuteSendStep_S3_CorruptedManifest(t *testing.T) {
 
 	job := createS3SendTestJob(jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	// Should succeed despite the corrupted manifest (starts fresh)
 	require.NoError(t, err)
 	assert.Len(t, mock.UploadedKeys, 1)
@@ -2237,7 +2237,7 @@ func TestExecuteSendStep_S3_NonExistentInputDir(t *testing.T) {
 
 	job := createS3SendTestJob(jobID, tmpDir)
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	err := pipeline.ExecuteSendStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepSend, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to list input files")
 }

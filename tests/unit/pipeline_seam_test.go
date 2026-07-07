@@ -266,6 +266,34 @@ func TestRunLoop_AdvanceErrorSurfaces(t *testing.T) {
 	assert.Equal(t, 0, send.calls, "send must not run when the advance fails")
 }
 
+func TestRunStep_RunsRegisteredStepThroughLifecycle(t *testing.T) {
+	dimp := &seamFakeStep{name: models.StepDIMP, result: pipeline.StepResult{FilesProcessed: 3}}
+	job := seamJobWithSteps(t, []models.StepName{models.StepDIMP},
+		map[models.StepName]pipeline.Step{models.StepDIMP: dimp})
+
+	err := pipeline.RunStep(models.StepDIMP, &pipeline.StepContext{
+		Job: job, Layout: services.NewJobLayoutForDir(t.TempDir(), nil), Logger: seamLogger(),
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, dimp.calls, "the registered step must run once")
+	s, ok := models.GetStepByName(*job, models.StepDIMP)
+	require.True(t, ok)
+	assert.Equal(t, models.StepStatusCompleted, s.Status, "RunStep drives the full lifecycle to completion")
+}
+
+func TestRunStep_UnknownStepErrors(t *testing.T) {
+	job := seamJobWithSteps(t, []models.StepName{models.StepDIMP},
+		map[models.StepName]pipeline.Step{models.StepDIMP: &seamFakeStep{name: models.StepDIMP}})
+
+	err := pipeline.RunStep(models.StepName("bogus"), &pipeline.StepContext{
+		Job: job, Layout: services.NewJobLayoutForDir(t.TempDir(), nil), Logger: seamLogger(),
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown step")
+}
+
 func TestStepFor_ResolvesEveryDefaultStep(t *testing.T) {
 	// Override then reset to exercise both SetStepRegistryForTesting and ResetStepRegistry.
 	pipeline.SetStepRegistryForTesting(func(models.StepName) (pipeline.Step, bool) { return nil, false })

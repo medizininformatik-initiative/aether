@@ -41,7 +41,7 @@ func TestDIMPStep_UsesFakeDIMPProcessor(t *testing.T) {
 		{"resourceType": "Patient", "id": "p1"},
 	})
 
-	require.NoError(t, pipeline.ExecuteDIMPStep(job, tmpDir, createDIMPTestLogger()))
+	require.NoError(t, runPipelineStep(models.StepDIMP, job, tmpDir, createDIMPTestLogger()))
 
 	require.NotEmpty(t, mock.Calls, "step must call the injected fake, not a real client")
 	out := readDIMPNDJSON(t, filepath.Join(tmpDir, "dimp", "dimped_patients.ndjson"))
@@ -71,7 +71,7 @@ func TestValidationStep_UsesFakeValidator(t *testing.T) {
 		{"resourceType": "Patient", "id": "p1"},
 	})
 
-	require.NoError(t, pipeline.ExecuteValidationStep(job, tmpDir, createValidationTestLogger()))
+	require.NoError(t, runPipelineStep(models.StepValidation, job, tmpDir, createValidationTestLogger()))
 	assert.NotEmpty(t, mock.Calls, "step must call the injected fake validator")
 }
 
@@ -130,7 +130,7 @@ func TestImportStep_TorchExtraction_UsesFakeExtractor(t *testing.T) {
 		},
 	}
 
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, nil, false)
+	updatedJob, err := runImportStep(job, logger, nil, false)
 	require.NoError(t, err)
 	require.NotNil(t, updatedJob)
 
@@ -201,7 +201,7 @@ func TestFlatteningStep_UsesFakeFlattener(t *testing.T) {
 	// the fake replaces the HTTP round-trip.
 	job := createFlatteningTestJob("http://flattener.invalid", lookupPath, crtdlPath)
 
-	require.NoError(t, pipeline.ExecuteFlatteningStep(job, jobDir, createFlatteningTestLogger()))
+	require.NoError(t, runPipelineStep(models.StepFlattening, job, jobDir, createFlatteningTestLogger()))
 
 	// The provenance-linked Patient was routed to the fake, carrying a
 	// ViewDefinition compiled from the CRTDL group.

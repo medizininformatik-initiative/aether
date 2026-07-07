@@ -57,7 +57,7 @@ func TestPipelineWithWaitStep_PausesExecution(t *testing.T) {
 	require.NoError(t, err)
 
 	// Execute import step
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, nil, false)
+	importedJob, err := runImportStep(startedJob, logger, nil, false)
 	require.NoError(t, err)
 	require.Equal(t, 3, importedJob.TotalFiles)
 
@@ -120,7 +120,7 @@ func TestPipelineWithWaitStep_DirectoryCreated(t *testing.T) {
 	startedJob := pipeline.StartJob(job)
 	_ = pipeline.UpdateJob(jobsDir, startedJob)
 
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, nil, false)
+	importedJob, err := runImportStep(startedJob, logger, nil, false)
 	require.NoError(t, err)
 
 	// Advance to wait step
@@ -176,7 +176,7 @@ func TestPipelineWithWaitStep_EmptyDirectory(t *testing.T) {
 	startedJob := pipeline.StartJob(job)
 	_ = pipeline.UpdateJob(jobsDir, startedJob)
 
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, nil, false)
+	importedJob, err := runImportStep(startedJob, logger, nil, false)
 	require.NoError(t, err)
 
 	advancedJob, err := pipeline.AdvanceToNextStep(importedJob)
@@ -230,7 +230,7 @@ func TestPipelineWithWaitStep_ContinuesAfterCommand(t *testing.T) {
 	startedJob := pipeline.StartJob(job)
 	_ = pipeline.UpdateJob(jobsDir, startedJob)
 
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, nil, false)
+	importedJob, err := runImportStep(startedJob, logger, nil, false)
 	require.NoError(t, err)
 
 	advancedJob, err := pipeline.AdvanceToNextStep(importedJob)
@@ -310,7 +310,7 @@ func TestWaitStep_ContinueWithFilesPresent(t *testing.T) {
 	startedJob := pipeline.StartJob(job)
 	_ = pipeline.UpdateJob(jobsDir, startedJob)
 
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, nil, false)
+	importedJob, err := runImportStep(startedJob, logger, nil, false)
 	require.NoError(t, err)
 
 	// Advance to wait step and execute it
@@ -397,7 +397,7 @@ func TestWaitStep_ContinueWithEmptyDirectory(t *testing.T) {
 	startedJob := pipeline.StartJob(job)
 	_ = pipeline.UpdateJob(jobsDir, startedJob)
 
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, nil, false)
+	importedJob, err := runImportStep(startedJob, logger, nil, false)
 	require.NoError(t, err)
 
 	advancedJob, err := pipeline.AdvanceToNextStep(importedJob)

@@ -46,15 +46,6 @@ type flatteningStep struct{}
 
 func (flatteningStep) Name() models.StepName { return models.StepFlattening }
 
-// ExecuteFlatteningStep runs the flattening step through the shared lifecycle. It
-// is the exported single-step entrypoint used by the black-box tests; it has no
-// production caller yet (the cmd manual path wires only import and dimp today).
-// To be folded into one exported pipeline.RunStep — see issue #516.
-func ExecuteFlatteningStep(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
-	layout := services.NewJobLayoutForDir(jobDir, job.Config.Pipeline.EnabledSteps)
-	return runStep(flatteningStep{}, &StepContext{Job: job, Layout: layout, Logger: logger})
-}
-
 func (flatteningStep) Run(ctx *StepContext) (StepResult, error) {
 	job := ctx.Job
 	logger := ctx.Logger

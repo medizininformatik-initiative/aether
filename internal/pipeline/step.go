@@ -68,6 +68,18 @@ type errorClassifier interface {
 	ClassifyError(error) models.ErrorType
 }
 
+// RunStep resolves the step registered for name and drives it through the shared
+// lifecycle. It is the single exported entrypoint for running one pipeline step,
+// used by the manual `job run` path and the black-box tests; the orchestration
+// loop resolves via stepLookup and calls runStep directly.
+func RunStep(name models.StepName, ctx *StepContext) error {
+	step, ok := stepLookup(name)
+	if !ok {
+		return fmt.Errorf("unknown step: %s", name)
+	}
+	return runStep(step, ctx)
+}
+
 // runStep is the single step lifecycle. It resolves nothing about the step's
 // work — that is Run's job — but owns every status transition, gating each one
 // through models.CanTransitionTo so an illegal transition fails loudly.

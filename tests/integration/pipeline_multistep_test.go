@@ -84,7 +84,7 @@ func TestPipelineMultiStep_AutomaticExecution(t *testing.T) {
 	// Execute import step
 	logger = lib.NewLogger(lib.LogLevelError) // Suppress logs in tests
 	httpClient := services.NewHTTPClient(30*time.Second, config.Retry, models.TLSConfig{}, logger)
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 	require.NoError(t, err)
 	require.NoError(t, pipeline.UpdateJob(jobsDir, importedJob))
 
@@ -109,7 +109,7 @@ func TestPipelineMultiStep_AutomaticExecution(t *testing.T) {
 
 	// Execute DIMP step
 	jobDir := services.GetJobDir(jobsDir, job.JobID)
-	err = pipeline.ExecuteDIMPStep(advancedJob, jobDir, logger)
+	err = runPipelineStep(models.StepDIMP, advancedJob, jobDir, logger)
 	require.NoError(t, err, "DIMP step should execute successfully")
 
 	// Verify DIMP step completed
@@ -199,7 +199,7 @@ func TestPipelineMultiStep_OnlyImportEnabled(t *testing.T) {
 	// Execute import
 	logger = lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(30*time.Second, config.Retry, models.TLSConfig{}, logger)
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 	require.NoError(t, err)
 
 	// Try to get next step - should be empty
@@ -321,7 +321,7 @@ func TestPipelineMultiStep_JobStatePersistedBetweenSteps(t *testing.T) {
 
 	logger = lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(30*time.Second, config.Retry, models.TLSConfig{}, logger)
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 	require.NoError(t, err)
 	require.NoError(t, pipeline.UpdateJob(jobsDir, importedJob))
 
@@ -339,7 +339,7 @@ func TestPipelineMultiStep_JobStatePersistedBetweenSteps(t *testing.T) {
 
 	// Execute DIMP
 	jobDir := services.GetJobDir(jobsDir, jobID)
-	err = pipeline.ExecuteDIMPStep(advancedJob, jobDir, logger)
+	err = runPipelineStep(models.StepDIMP, advancedJob, jobDir, logger)
 	require.NoError(t, err)
 	require.NoError(t, pipeline.UpdateJob(jobsDir, advancedJob))
 

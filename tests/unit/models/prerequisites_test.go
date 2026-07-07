@@ -54,6 +54,30 @@ func TestValidateStepPrerequisites_ValidationRequiresImport(t *testing.T) {
 	assert.Equal(t, models.StepName("import"), prerequisite) // Returns "import" placeholder
 }
 
+func TestValidateStepPrerequisites_FlatteningRequiresImport(t *testing.T) {
+	job := createTestJob([]models.StepName{models.StepLocalImport, models.StepFlattening})
+
+	// Import not completed yet
+	prerequisite, canRun := models.ValidateStepPrerequisites(job, models.StepFlattening)
+
+	assert.False(t, canRun)
+	assert.Equal(t, models.StepName("import"), prerequisite)
+}
+
+func TestValidateStepPrerequisites_FlatteningAllowedAfterImport(t *testing.T) {
+	job := createTestJob([]models.StepName{models.StepLocalImport, models.StepFlattening})
+
+	// Mark import as completed
+	importStep, _ := models.GetStepByName(job, models.StepLocalImport)
+	importStep = models.CompleteStep(importStep, 10, 1000)
+	job = models.ReplaceStep(job, importStep)
+
+	prerequisite, canRun := models.ValidateStepPrerequisites(job, models.StepFlattening)
+
+	assert.True(t, canRun)
+	assert.Equal(t, models.StepName(""), prerequisite)
+}
+
 func TestValidateStepPrerequisites_PrerequisiteNotEnabled(t *testing.T) {
 	// Job without import step (unusual but possible)
 	job := createTestJob([]models.StepName{models.StepDIMP})

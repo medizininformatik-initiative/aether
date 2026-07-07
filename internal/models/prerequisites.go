@@ -8,6 +8,7 @@ var StepPrerequisites = map[StepName][]StepName{
 	StepHttpImport:  {},         // No prerequisites - can always run
 	StepDIMP:        {"import"}, // Requires any import step to complete
 	StepValidation:  {"import"}, // Can validate after import (regardless of DIMP)
+	StepFlattening:  {"import"}, // Flattening needs imported FHIR input to transform
 	StepWait:        {"import"}, // Wait requires at least one step to have run
 	StepSend:        {"import"}, // Send requires at least import to have run
 }

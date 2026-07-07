@@ -140,8 +140,29 @@ aether job run <config> <job-id> --step <step-name>
 
 **Options:**
 - `--step` - Step to execute (required)
+- `--force` - Re-run the step even if it has already completed
 
 **Valid steps:** `torch`, `local_import`, `http_import`, `dimp`, `validation`
+
+**Re-running completed steps:** An already-completed step is not re-run unless
+`--force` is passed. Without `--force`, the command fails fast with `step
+'<step>' already completed; pass --force to re-run` and a non-zero exit. This is
+a pre-execution guard — nothing runs, so job state is left untouched.
+
+With `--force`, the step is reset to pending and re-run. **Every step ordered
+after it is also reset to pending**, because re-running a step invalidates the
+output the later steps consumed (outputs are not diffed, so this is
+conservative). The command itself re-runs only the target step; the invalidated
+downstream steps stay pending until you re-run them — either with another `job
+run --step` or by resuming the pipeline.
+
+**Job status after a manual run:** The job-level status is always derived from
+its steps. While a `--force` re-run runs, the job reads `in_progress` (visible in
+`aether job status`). After it finishes, the status is re-derived: the job
+returns to `completed` only if every step is completed — so re-running the last
+step completes the job, while re-running an earlier step leaves it `in_progress`
+until the invalidated downstream steps re-run. Likewise, a manual run that
+finishes the last outstanding step sets the job to `completed`.
 
 **Examples:**
 ```bash
@@ -150,6 +171,9 @@ aether job run aether.yaml abc-123-def --step dimp
 
 # Run import step manually
 aether job run aether.yaml abc-123-def --step local_import
+
+# Re-run an already-completed step
+aether job run aether.yaml abc-123-def --step dimp --force
 ```
 
 ## Other Commands

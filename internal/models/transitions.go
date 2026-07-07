@@ -113,6 +113,46 @@ func FailStep(step PipelineStep, errorType ErrorType, errorMsg string, httpStatu
 	return step
 }
 
+// ResetStep returns a copy of the step reset to pending, clearing every run
+// artifact (timestamps, error, and processed counts) so a re-run starts clean.
+// Pure function - returns new instance.
+func ResetStep(step PipelineStep) PipelineStep {
+	step.Status = StepStatusPending
+	step.StartedAt = nil
+	step.CompletedAt = nil
+	step.FilesProcessed = 0
+	step.BytesProcessed = 0
+	step.LastError = nil
+	return step
+}
+
+// ResetStepAndDownstream resets the named step and every step ordered after it to
+// pending: a re-run invalidates the output each later step consumed, so those results
+// are stale until re-run (we do not diff outputs — conservative). job.Steps mirrors
+// EnabledSteps order. Unknown step returns the job unchanged. Pure function.
+func ResetStepAndDownstream(job PipelineJob, name StepName) PipelineJob {
+	idx := -1
+	for i, step := range job.Steps {
+		if step.Name == name {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return job
+	}
+
+	newSteps := make([]PipelineStep, len(job.Steps))
+	copy(newSteps, job.Steps)
+	for i := idx; i < len(newSteps); i++ {
+		newSteps[i] = ResetStep(newSteps[i])
+	}
+
+	job.Steps = newSteps
+	job.UpdatedAt = time.Now()
+	return job
+}
+
 // UpdateStepProgress creates a new PipelineStep with updated progress metrics
 // Pure function - returns new instance
 func UpdateStepProgress(step PipelineStep, filesProcessed int, bytesProcessed int64) PipelineStep {
@@ -181,6 +221,42 @@ func IsJobComplete(job PipelineJob) bool {
 		}
 	}
 	return true
+}
+
+// DeriveJobStatus computes job status purely from its steps, so status is derived
+// rather than left stale after out-of-band mutations (e.g. `job run --step X [--force]`).
+// Precedence:
+//   - any failed           -> failed
+//   - all completed        -> completed
+//   - any underway/partial -> in_progress
+//   - otherwise (none, or all pending) -> pending
+//
+// Pure function - no mutations.
+func DeriveJobStatus(job PipelineJob) JobStatus {
+	anyFailed, anyUnderway, anyCompleted, anyPending := false, false, false, false
+	for _, step := range job.Steps {
+		switch step.Status {
+		case StepStatusFailed:
+			anyFailed = true
+		case StepStatusInProgress, StepStatusWaiting:
+			anyUnderway = true
+		case StepStatusCompleted:
+			anyCompleted = true
+		default: // StepStatusPending
+			anyPending = true
+		}
+	}
+
+	switch {
+	case anyFailed:
+		return JobStatusFailed
+	case anyCompleted && !anyPending && !anyUnderway:
+		return JobStatusCompleted
+	case anyUnderway || anyCompleted:
+		return JobStatusInProgress
+	default:
+		return JobStatusPending
+	}
 }
 
 // GetNextPendingStep finds the first pending step in the job

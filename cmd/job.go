@@ -88,17 +88,22 @@ useful for:
   • Manual recovery after errors
 
 Available Steps:
-  import            - Import FHIR data from local or HTTP source
+  torch             - Import FHIR data from TORCH via CRTDL or TORCH result URL
+  local_import      - Import FHIR data from a local directory
+  http_import       - Import FHIR data from an HTTP URL
   dimp              - Pseudonymize data via DIMP service
-  validation        - Validate FHIR data (placeholder)
+  validation        - Validate FHIR data against a FHIR validation service
+  flattening        - Flatten FHIR data to CSV via fhir-flattener
+  send              - Send data to the configured transfer target
+
 Prerequisites:
   • The step must be enabled in project configuration
   • Prerequisite steps must be completed (e.g., import before dimp)
   • Job must exist and be in a valid state
 
 Examples:
-  # Run import step manually
-  aether job run aether.yaml abc123 --step import
+  # Run local import step manually
+  aether job run aether.yaml abc123 --step local_import
 
   # Run DIMP pseudonymization step
   aether job run aether.yaml abc123 --step dimp
@@ -302,11 +307,13 @@ func validateStepName(step string) (models.StepName, error) {
 		"http_import":  models.StepHttpImport,
 		"dimp":         models.StepDIMP,
 		"validation":   models.StepValidation,
+		"flattening":   models.StepFlattening,
+		"send":         models.StepSend,
 	}
 
 	stepName, ok := validSteps[step]
 	if !ok {
-		return "", fmt.Errorf("invalid step name '%s'. Valid steps: torch, local_import, http_import, dimp, validation", step)
+		return "", fmt.Errorf("invalid step name '%s'. Valid steps: torch, local_import, http_import, dimp, validation, flattening, send", step)
 	}
 
 	return stepName, nil
@@ -322,11 +329,10 @@ func isStepEnabledInConfig(config *models.ProjectConfig, stepName models.StepNam
 	return false
 }
 
-// executeStepManually executes a specific pipeline step manually
-// This is similar to executeStep in pipeline.go but simplified for manual execution
+// executeStepManually runs a single pipeline step through the shared RunStep
+// seam — the same lifecycle the automatic RunLoop uses. It persists job state
+// after the step and, on failure, records job-level failure before returning.
 func executeStepManually(job *models.PipelineJob, stepName models.StepName, config *models.ProjectConfig, logger *lib.Logger) error {
-	jobDir := services.GetJobDir(config.JobsDir, job.JobID)
-
 	// A completed step is terminal for the pipeline's transition gate, so
 	// re-running it manually would otherwise fail with an illegal
 	// completed->in_progress transition. Reset it to pending first so the manual
@@ -341,64 +347,63 @@ func executeStepManually(job *models.PipelineJob, stepName models.StepName, conf
 		*job = models.ReplaceStep(*job, s)
 	}
 
+	ctx := &pipeline.StepContext{
+		Job:          job,
+		Layout:       services.NewJobLayout(config.JobsDir, job.JobID, job.Config.Pipeline.EnabledSteps),
+		Logger:       logger,
+		ShowProgress: true,
+	}
+
+	// Import steps must match the job's input type and take the manual HTTP client;
+	// other steps build their own client internally and ignore ctx.HTTPClient.
+	if isImportStep(stepName) {
+		if err := validateImportStepMatchesInput(job, stepName); err != nil {
+			return err
+		}
+		ctx.HTTPClient = services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
+	}
+
+	if err := pipeline.RunStep(stepName, ctx); err != nil {
+		failed := pipeline.FailJob(job, err.Error())
+		if saveErr := pipeline.UpdateJob(config.JobsDir, failed); saveErr != nil {
+			logger.Error("Failed to save job state", "error", saveErr)
+		}
+		return fmt.Errorf("%s step failed: %w", stepName, err)
+	}
+
+	if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
+		return fmt.Errorf("failed to save job state: %w", err)
+	}
+	return nil
+}
+
+// isImportStep reports whether the step is one of the three import variants.
+func isImportStep(stepName models.StepName) bool {
 	switch stepName {
 	case models.StepTorchImport, models.StepLocalImport, models.StepHttpImport:
-		// Validate step name matches input type (imported from pipeline.go logic)
-		var expectedStep models.StepName
-		switch job.InputType {
-		case models.InputTypeCRTDL, models.InputTypeTORCHURL:
-			expectedStep = models.StepTorchImport
-		case models.InputTypeLocal:
-			expectedStep = models.StepLocalImport
-		case models.InputTypeHTTP:
-			expectedStep = models.StepHttpImport
-		default:
-			return fmt.Errorf("unknown input type: %s", job.InputType)
-		}
-
-		if stepName != expectedStep {
-			return fmt.Errorf("step '%s' does not match input type %s (expected '%s')", stepName, job.InputType, expectedStep)
-		}
-
-		// Create HTTP client
-		httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
-		showProgress := true
-
-		importedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, showProgress)
-		if err != nil {
-			return fmt.Errorf("%s step failed: %w", stepName, err)
-		}
-
-		if err := pipeline.UpdateJob(config.JobsDir, importedJob); err != nil {
-			return fmt.Errorf("failed to save job state: %w", err)
-		}
-
-		fmt.Printf("\n✓ %s step completed (%d files)\n", stepName, importedJob.TotalFiles)
-		return nil
-
-	case models.StepDIMP:
-		// Execute DIMP pseudonymization step
-		fmt.Println("Starting DIMP pseudonymization step...")
-		if err := pipeline.ExecuteDIMPStep(job, jobDir, logger); err != nil {
-			// Save failed state
-			if saveErr := pipeline.UpdateJob(config.JobsDir, job); saveErr != nil {
-				logger.Error("Failed to save job state", "error", saveErr)
-			}
-			return fmt.Errorf("DIMP step failed: %w", err)
-		}
-
-		// Save successful state
-		if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
-			return fmt.Errorf("failed to save job state: %w", err)
-		}
-
-		fmt.Printf("\n✓ DIMP pseudonymization completed\n")
-		return nil
-
-	case models.StepValidation:
-		return fmt.Errorf("validation step not yet implemented")
-
+		return true
 	default:
-		return fmt.Errorf("unknown step: %s", stepName)
+		return false
 	}
+}
+
+// validateImportStepMatchesInput rejects an import step name that does not match
+// the job's input type (e.g. requesting torch import for a local-directory job).
+func validateImportStepMatchesInput(job *models.PipelineJob, stepName models.StepName) error {
+	var expectedStep models.StepName
+	switch job.InputType {
+	case models.InputTypeCRTDL, models.InputTypeTORCHURL:
+		expectedStep = models.StepTorchImport
+	case models.InputTypeLocal:
+		expectedStep = models.StepLocalImport
+	case models.InputTypeHTTP:
+		expectedStep = models.StepHttpImport
+	default:
+		return fmt.Errorf("unknown input type: %s", job.InputType)
+	}
+
+	if stepName != expectedStep {
+		return fmt.Errorf("step '%s' does not match input type %s (expected '%s')", stepName, job.InputType, expectedStep)
+	}
+	return nil
 }

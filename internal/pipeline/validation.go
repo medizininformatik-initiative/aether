@@ -49,15 +49,6 @@ type validationStep struct{}
 
 func (validationStep) Name() models.StepName { return models.StepValidation }
 
-// ExecuteValidationStep runs the validation step through the shared lifecycle. It
-// is the exported single-step entrypoint used by the black-box tests; it has no
-// production caller yet (the cmd manual path reports validation as not-yet-wired).
-// To be folded into one exported pipeline.RunStep — see issue #516.
-func ExecuteValidationStep(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
-	layout := services.NewJobLayoutForDir(jobDir, job.Config.Pipeline.EnabledSteps)
-	return runStep(validationStep{}, &StepContext{Job: job, Layout: layout, Logger: logger})
-}
-
 func (validationStep) Run(ctx *StepContext) (StepResult, error) {
 	job := ctx.Job
 	logger := ctx.Logger

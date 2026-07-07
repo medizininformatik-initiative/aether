@@ -17,7 +17,6 @@ import (
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
-	"github.com/medizininformatik-initiative/aether/internal/pipeline"
 )
 
 // Helper functions for DIMP pipeline tests
@@ -116,7 +115,7 @@ func TestExecuteDIMPStep_DisabledStep(t *testing.T) {
 	job := createDIMPTestJobDisabled()
 	logger := createDIMPTestLogger()
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 }
 
@@ -126,7 +125,7 @@ func TestExecuteDIMPStep_MissingDIMPURL(t *testing.T) {
 	job := createDIMPTestJob("") // Empty URL
 	logger := createDIMPTestLogger()
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "DIMP service URL not configured")
 }
@@ -146,7 +145,7 @@ func TestExecuteDIMPStep_FailedToCreateOutputDir(t *testing.T) {
 	require.NoError(t, cerr)
 	require.NoError(t, f.Close())
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to create output directory")
 }
@@ -164,7 +163,7 @@ func TestExecuteDIMPStep_NoFilesFound(t *testing.T) {
 	importDir := filepath.Join(tmpDir, "import")
 	require.NoError(t, os.MkdirAll(importDir, 0755))
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no FHIR NDJSON files found")
 }
@@ -189,7 +188,7 @@ func TestExecuteDIMPStep_ProcessSimpleResources(t *testing.T) {
 	}
 	writeDIMPNDJSON(t, inputFile, patients)
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify output file was created
@@ -232,7 +231,7 @@ func TestExecuteDIMPStep_ResumeProcessing(t *testing.T) {
 	}
 	writeDIMPNDJSON(t, outputFile, existingData)
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify file still has original content (wasn't reprocessed)
@@ -261,7 +260,7 @@ func TestExecuteDIMPStep_InvalidJSON(t *testing.T) {
 	require.NoError(t, ferr)
 	require.NoError(t, f.Close())
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to parse")
 }
@@ -296,7 +295,7 @@ func TestExecuteDIMPStep_ProcessBundleWithoutSplit(t *testing.T) {
 	}
 	writeDIMPNDJSON(t, inputFile, []map[string]any{bundle})
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	outputFile := filepath.Join(tmpDir, "dimp", "dimped_bundles.ndjson")
@@ -321,7 +320,7 @@ func TestExecuteDIMPStep_ProcessBundleWithSplit(t *testing.T) {
 	bundle := CreateTestBundle(20, 100) // 20 entries, ~100KB each = ~2MB total
 	writeDIMPNDJSON(t, inputFile, []map[string]any{bundle})
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	outputFile := filepath.Join(tmpDir, "dimp", "dimped_bundles.ndjson")
@@ -348,7 +347,7 @@ func TestExecuteDIMPStep_DIMPServiceError(t *testing.T) {
 	patients := []map[string]any{{"resourceType": "Patient", "id": "p1"}}
 	writeDIMPNDJSON(t, inputFile, patients)
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.Error(t, err)
 }
 
@@ -372,7 +371,7 @@ func TestExecuteDIMPStep_MultipleFiles(t *testing.T) {
 		writeDIMPNDJSON(t, inputFile, data)
 	}
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify all output files were created
@@ -398,7 +397,7 @@ func TestExecuteDIMPStep_StepStateUpdated(t *testing.T) {
 	patients := []map[string]any{{"resourceType": "Patient", "id": "p1"}}
 	writeDIMPNDJSON(t, inputFile, patients)
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify step was added to job
@@ -435,7 +434,7 @@ func TestExecuteDIMPStep_EmptyLines(t *testing.T) {
 	require.NoError(t, ferr)
 	require.NoError(t, f.Close())
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	outputFile := filepath.Join(tmpDir, "dimp", "dimped_sparse.ndjson")
@@ -475,7 +474,7 @@ func TestExecuteDIMPStep_OversizedNonBundleResource(t *testing.T) {
 	require.NoError(t, ferr)
 	require.NoError(t, f.Close())
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "oversized")
 }
@@ -502,7 +501,7 @@ func TestExecuteDIMPStep_BundleCalcSizeError(t *testing.T) {
 	require.NoError(t, f.Close())
 
 	// The test should handle this - it shouldn't crash
-	_ = pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	_ = runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 }
 
 // TestExecuteDIMPStep_DefaultBundleThreshold tests default threshold when not configured
@@ -534,7 +533,7 @@ func TestExecuteDIMPStep_DefaultBundleThreshold(t *testing.T) {
 	}
 	writeDIMPNDJSON(t, inputFile, []map[string]any{bundle})
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	outputFile := filepath.Join(tmpDir, "dimp", "dimped_bundles.ndjson")
@@ -567,7 +566,7 @@ func TestExecuteDIMPStep_GetOrCreateStepExisting(t *testing.T) {
 	patients := []map[string]any{{"resourceType": "Patient", "id": "p1"}}
 	writeDIMPNDJSON(t, inputFile, patients)
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify still only one step
@@ -599,7 +598,7 @@ func TestExecuteDIMPStep_NegativeBundleThreshold(t *testing.T) {
 	}
 	writeDIMPNDJSON(t, inputFile, []map[string]any{bundle})
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 }
 
@@ -630,7 +629,7 @@ func TestExecuteDIMPStep_AlreadyProcessedFileCountError(t *testing.T) {
 	}
 	writeDIMPNDJSON(t, outputFile, existingData)
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 	// Step should complete successfully even if counting fails
 	require.Len(t, job.Steps, 1)
@@ -655,7 +654,7 @@ func TestExecuteDIMPStep_StepErrorRecording(t *testing.T) {
 	patients := []map[string]any{{"resourceType": "Patient", "id": "p1"}}
 	writeDIMPNDJSON(t, inputFile, patients)
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.Error(t, err)
 
 	// Verify step was created and has error recorded
@@ -676,7 +675,7 @@ func TestExecuteDIMPStep_FileListingWithoutImportDir(t *testing.T) {
 	logger := createDIMPTestLogger()
 
 	// Don't create import directory - glob should return empty
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no FHIR NDJSON files found")
 }
@@ -701,7 +700,7 @@ func TestExecuteDIMPStep_VeryLargeBundle(t *testing.T) {
 	largeBundle := CreateTestBundle(500, 50) // 500 entries of ~50KB each = ~25MB
 	writeDIMPNDJSON(t, inputFile, []map[string]any{largeBundle})
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify output file was created
@@ -730,7 +729,7 @@ func TestExecuteDIMPStep_MixedResourceTypes(t *testing.T) {
 	}
 	writeDIMPNDJSON(t, inputFile, resources)
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify output file exists and has all resources
@@ -777,7 +776,7 @@ func TestExecuteDIMPStep_BundleWithError(t *testing.T) {
 	}
 	writeDIMPNDJSON(t, inputFile, []map[string]any{bundle})
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	outputFile := filepath.Join(tmpDir, "dimp", "dimped_bundles.ndjson")
@@ -810,7 +809,7 @@ func TestExecuteDIMPStep_LargeNumberOfFiles(t *testing.T) {
 		writeDIMPNDJSON(t, inputFile, data)
 	}
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify all files were processed
@@ -838,7 +837,7 @@ func TestExecuteDIMPStep_SpecialCharactersInFilenames(t *testing.T) {
 	}
 	writeDIMPNDJSON(t, inputFile, patients)
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify output file exists
@@ -873,7 +872,7 @@ func TestExecuteDIMPStep_WithCompression(t *testing.T) {
 	}
 	writeDIMPNDJSON(t, inputFile, patients)
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify output file was created with compression extension
@@ -921,7 +920,7 @@ func TestExecuteDIMPStep_CompressedInput(t *testing.T) {
 	}
 	require.NoError(t, writer.Close())
 
-	err = pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err = runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify output file was created (uncompressed)
@@ -964,7 +963,7 @@ func TestExecuteDIMPStep_CompressedInputToCompressedOutput(t *testing.T) {
 	}
 	require.NoError(t, writer.Close())
 
-	err = pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err = runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify output file was created with compression extension
@@ -1007,7 +1006,7 @@ func TestExecuteDIMPStep_MixedInputFiles(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, writer.Close())
 
-	err = pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err = runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify both output files were created with compression
@@ -1038,7 +1037,7 @@ func TestExecuteDIMPStep_CompressionAllLevels(t *testing.T) {
 			patients := []map[string]any{{"resourceType": "Patient", "id": "p1"}}
 			writeDIMPNDJSON(t, inputFile, patients)
 
-			err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+			err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 			assert.NoError(t, err, "DIMP should succeed with compression level: %s", level)
 
 			outputFile := filepath.Join(tmpDir, "dimp", "dimped_patients.ndjson.zst")
@@ -1071,7 +1070,7 @@ func TestExecuteDIMPStep_DuplicateFilesError(t *testing.T) {
 	require.NoError(t, writer.Close())
 
 	// This should fail due to duplicate files
-	err = pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err = runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "patients.ndjson")
 }
@@ -1105,7 +1104,7 @@ func TestExecuteDIMPStep_ResumeWithCompressedOutput(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, writer.Close())
 
-	err = pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err = runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify file still has original content (wasn't reprocessed)
@@ -1162,7 +1161,7 @@ func TestExecuteDIMPStep_StalePartFileRemovalError(t *testing.T) {
 
 	// Processing should still continue (error is logged but not fatal)
 	// However, it will fail to create output file due to read-only directory
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	// We expect an error, but it should be about creating the output file, not removing .part
 	assert.Error(t, err)
 }
@@ -1193,7 +1192,7 @@ func TestExecuteDIMPStep_CountResourcesError(t *testing.T) {
 	require.NoError(t, os.WriteFile(outputFile, []byte{0x00, 0x01, 0x02, 0x03}, 0644))
 
 	// Processing should skip this file (already exists)
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	// Should succeed - file is skipped as "already processed"
 	assert.NoError(t, err)
 }
@@ -1226,7 +1225,7 @@ func TestExecuteDIMPStep_ProcessDIMPFileOpenError(t *testing.T) {
 		_ = os.Chmod(inputFile, 0644)
 	}()
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to open")
 }
@@ -1265,7 +1264,7 @@ func TestExecuteDIMPStep_LongLine(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 
-	err = pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err = runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify output file was created
@@ -1296,7 +1295,7 @@ func TestExecuteDIMPStep_StalePartFileRemoval(t *testing.T) {
 	partFile := filepath.Join(pseudonymizedDir, "dimped_patients.ndjson.part")
 	require.NoError(t, os.WriteFile(partFile, []byte("stale data"), 0644))
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Verify .part file was removed
@@ -1327,7 +1326,7 @@ func TestExecuteDIMPStep_NetworkErrorIsTransient(t *testing.T) {
 		{"resourceType": "Patient", "id": "1"},
 	})
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.Error(t, err)
 
 	// Find the DIMP step and verify error type is transient
@@ -1371,7 +1370,7 @@ func TestExecuteDIMPStep_GlobPatternError(t *testing.T) {
 	})
 
 	// Execute with the bad directory path - should fail with glob pattern error
-	err := pipeline.ExecuteDIMPStep(job, badDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, badDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "pattern")
 }
@@ -1397,7 +1396,7 @@ func TestExecuteDIMPStep_400BadRequestIsNonTransient(t *testing.T) {
 		{"resourceType": "Patient", "id": "1"},
 	})
 
-	err := pipeline.ExecuteDIMPStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
 	assert.Error(t, err)
 
 	// Find the DIMP step and verify error type is non-transient

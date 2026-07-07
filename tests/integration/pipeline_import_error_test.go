@@ -50,7 +50,7 @@ func TestPipelineImportError_UnreachableURL(t *testing.T) {
 	startedJob := pipeline.StartJob(job)
 
 	// Execute import - should fail
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 
 	// Verify error
 	assert.Error(t, err, "Import should fail for unreachable URL")
@@ -109,7 +109,7 @@ func TestPipelineImportError_HTTP404(t *testing.T) {
 	// Execute import
 	job, _ := pipeline.CreateJob(models.GenerateJobID(), server.URL+"/missing.ndjson", "", config, logger)
 	startedJob := pipeline.StartJob(job)
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 
 	// Verify error
 	assert.Error(t, err, "Import should fail with 404")
@@ -159,7 +159,7 @@ func TestPipelineImportError_HTTP500WithRetry(t *testing.T) {
 	// Execute import
 	job, _ := pipeline.CreateJob(models.GenerateJobID(), server.URL+"/error.ndjson", "", config, logger)
 	startedJob := pipeline.StartJob(job)
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 
 	// Verify error after retries
 	assert.Error(t, err, "Import should fail after max retries")
@@ -205,7 +205,7 @@ func TestPipelineImportError_InvalidLocalPath(t *testing.T) {
 
 	// Start and execute
 	startedJob := pipeline.StartJob(job)
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 
 	// Verify error
 	assert.Error(t, err, "Import should fail for nonexistent directory")
@@ -245,7 +245,7 @@ func TestPipelineImportError_EmptyDirectory(t *testing.T) {
 	// Execute import
 	job, _ := pipeline.CreateJob(models.GenerateJobID(), emptyDir, "", config, logger)
 	startedJob := pipeline.StartJob(job)
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 
 	// Verify error
 	assert.Error(t, err, "Import should fail for empty directory")
@@ -284,7 +284,7 @@ func TestPipelineImportError_PathIsFile(t *testing.T) {
 	// Execute import
 	job, _ := pipeline.CreateJob(models.GenerateJobID(), filePath, "", config, logger)
 	startedJob := pipeline.StartJob(job)
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 
 	// Verify error
 	assert.Error(t, err, "Import should fail when path is a file")
@@ -328,7 +328,7 @@ func TestPipelineImportError_NetworkTimeout(t *testing.T) {
 	// Execute import
 	job, _ := pipeline.CreateJob(models.GenerateJobID(), server.URL+"/slow.ndjson", "", config, logger)
 	startedJob := pipeline.StartJob(job)
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 
 	// Verify timeout error
 	assert.Error(t, err, "Import should fail with timeout")
@@ -371,9 +371,13 @@ func TestPipelineImportError_StatePersistence(t *testing.T) {
 	// Execute import
 	job, _ := pipeline.CreateJob(models.GenerateJobID(), server.URL+"/bad.ndjson", "", config, logger)
 	startedJob := pipeline.StartJob(job)
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	importedJob, err := runImportStep(startedJob, logger, httpClient, false)
 
 	assert.Error(t, err)
+
+	// RunStep records only step-level failure; the caller records the job-level
+	// failure that gets persisted, exactly as the automatic RunLoop does via FailJob.
+	importedJob = pipeline.FailJob(importedJob, err.Error())
 
 	// Save failed job state
 	require.NoError(t, pipeline.UpdateJob(jobsDir, importedJob))
@@ -429,7 +433,7 @@ func TestPipelineImportError_PartialDownloadCleanup(t *testing.T) {
 	// we test the cleanup mechanism with a different error scenario
 	job, _ := pipeline.CreateJob(models.GenerateJobID(), "http://localhost:99999/unreachable.ndjson", "", config, logger)
 	startedJob := pipeline.StartJob(job)
-	_, err := pipeline.ExecuteImportStep(startedJob, logger, httpClient, false)
+	_, err := runImportStep(startedJob, logger, httpClient, false)
 
 	assert.Error(t, err)
 

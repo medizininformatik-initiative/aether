@@ -67,7 +67,7 @@ func TestPipelineResume_AfterImportComplete(t *testing.T) {
 	require.NoError(t, err, "UpdateJob should succeed")
 
 	// Execute import step only
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, nil, false)
+	importedJob, err := runImportStep(startedJob, logger, nil, false)
 	require.NoError(t, err, "ExecuteImportStep should succeed")
 	require.Equal(t, 5, importedJob.TotalFiles, "Should import 5 files")
 
@@ -275,7 +275,7 @@ func createCompletedImportJob(t *testing.T, jobsDir string, fileCount int) *mode
 	// Start job and complete import
 	startedJob := pipeline.StartJob(job)
 	logger = lib.NewLogger(lib.LogLevelInfo)
-	importedJob, err := pipeline.ExecuteImportStep(startedJob, logger, nil, false)
+	importedJob, err := runImportStep(startedJob, logger, nil, false)
 	require.NoError(t, err)
 
 	// Save completed import state

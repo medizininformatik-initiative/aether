@@ -165,7 +165,7 @@ func TestPipeline_TORCHExtraction_EndToEnd(t *testing.T) {
 
 	// Execute import step (which should trigger TORCH extraction)
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	updatedJob, err := runImportStep(job, logger, httpClient, false)
 
 	// Verify successful execution
 	require.NoError(t, err)
@@ -266,7 +266,7 @@ func TestPipeline_TORCHExtraction_EmptyResult(t *testing.T) {
 	require.NoError(t, err)
 
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	updatedJob, err := runImportStep(job, logger, httpClient, false)
 
 	// Empty result should be handled gracefully
 	require.NoError(t, err)
@@ -314,7 +314,7 @@ func TestPipeline_TORCHExtraction_ServerUnavailable(t *testing.T) {
 	require.NoError(t, err)
 
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
-	_, err = pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	_, err = runImportStep(job, logger, httpClient, false)
 
 	// Should fail with network error
 	assert.Error(t, err)
@@ -414,7 +414,7 @@ func TestPipeline_DirectTORCHURL_Download(t *testing.T) {
 
 	// Execute import step (should download directly without extraction submission)
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	updatedJob, err := runImportStep(job, logger, httpClient, false)
 
 	// Verify successful execution
 	require.NoError(t, err)
@@ -501,7 +501,7 @@ func TestPipeline_DirectTORCHURL_EmptyResult(t *testing.T) {
 	require.NoError(t, err)
 
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	updatedJob, err := runImportStep(job, logger, httpClient, false)
 
 	// Empty result should be handled gracefully
 	require.NoError(t, err)
@@ -765,7 +765,7 @@ func TestPipeline_TORCHExtraction_WithWaitStep_DataModification(t *testing.T) {
 
 	// Step 2: Execute TORCH import step
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
-	importedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	importedJob, err := runImportStep(job, logger, httpClient, false)
 	require.NoError(t, err)
 
 	// Verify import completed
@@ -820,7 +820,7 @@ func TestPipeline_TORCHExtraction_WithWaitStep_DataModification(t *testing.T) {
 	assert.Equal(t, string(models.StepDIMP), dimpReadyJob.CurrentStep)
 
 	// Step 6: Execute DIMP step - should read from import_wait directory
-	err = pipeline.ExecuteDIMPStep(dimpReadyJob, services.GetJobDir(jobsDir, dimpReadyJob.JobID), logger)
+	err = runPipelineStep(models.StepDIMP, dimpReadyJob, services.GetJobDir(jobsDir, dimpReadyJob.JobID), logger)
 	require.NoError(t, err)
 
 	// Step 7: Verify DIMP output contains the MODIFIED data (not the original)
@@ -994,7 +994,7 @@ func TestPipeline_TORCHExtraction_WithPreprocessing(t *testing.T) {
 
 	// Execute import step (triggers TORCH extraction with preprocessing)
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	updatedJob, err := runImportStep(job, logger, httpClient, false)
 
 	// Verify successful execution
 	require.NoError(t, err)
@@ -1302,7 +1302,7 @@ func TestPipeline_TORCHExtraction_ReattachViaImportStep(t *testing.T) {
 	job.TORCHExtractionURL = server.URL + "/fhir/extraction/existing-job"
 
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	updatedJob, err := runImportStep(job, logger, httpClient, false)
 
 	require.NoError(t, err)
 	assert.Equal(t, 0, submitCount, "re-attach must not POST $extract-data")
@@ -1392,7 +1392,7 @@ func TestPipeline_TORCHExtraction_DeadHandleResubmitsViaImportStep(t *testing.T)
 	job.TORCHExtractionURL = server.URL + "/fhir/extraction/stale-job"
 
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	updatedJob, err := runImportStep(job, logger, httpClient, false)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, submitCount, "dead handle must trigger exactly one re-submit")
@@ -1603,7 +1603,7 @@ func TestPipeline_TORCHExtraction_PreprocessingDisabled_UsesOriginalCRTDL(t *tes
 
 	// Execute import step - should use original CRTDL without preprocessing
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	updatedJob, err := runImportStep(job, logger, httpClient, false)
 
 	// Verify successful execution
 	require.NoError(t, err)
@@ -1805,7 +1805,7 @@ func TestPipeline_TORCHExtraction_PreprocessingEnabled_EmptyEnrichments(t *testi
 
 	// Execute import step - should use original CRTDL content when no enrichments configured
 	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
-	updatedJob, err := pipeline.ExecuteImportStep(job, logger, httpClient, false)
+	updatedJob, err := runImportStep(job, logger, httpClient, false)
 
 	// Verify successful execution
 	require.NoError(t, err)

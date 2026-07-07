@@ -242,7 +242,7 @@ func TestExecuteFlatteningStep_MissingCRTDLPath(t *testing.T) {
 	job.InputType = models.InputTypeHTTP
 	job.CRTDLPath = ""
 
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, createFlatteningTestLogger())
+	err := runPipelineStep(models.StepFlattening, job, jobDir, createFlatteningTestLogger())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "CRTDL")
 	assert.Contains(t, err.Error(), "--crtdl")
@@ -277,7 +277,7 @@ func TestExecuteFlatteningStep_AcceptsHTTPInputWithCRTDLPath(t *testing.T) {
 	job.InputType = models.InputTypeHTTP
 	// CRTDLPath is set by createFlatteningTestJob via crtdlPath arg
 
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, createFlatteningTestLogger())
+	err := runPipelineStep(models.StepFlattening, job, jobDir, createFlatteningTestLogger())
 	require.NoError(t, err, "http_import + CRTDLPath must be accepted (issue #286)")
 }
 
@@ -384,7 +384,7 @@ func TestExecuteFlatteningStep_ConfigValidationError(t *testing.T) {
 	}
 
 	logger := createFlatteningTestLogger()
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "service_url is required")
 }
@@ -419,7 +419,7 @@ func TestExecuteFlatteningStep_LookupValidationError(t *testing.T) {
 	job := createFlatteningTestJob("http://localhost:8080", lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
 
-	err = pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err = runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid lookup tables")
 	assert.Contains(t, err.Error(), "duplicate profile URL")
@@ -450,7 +450,7 @@ func TestExecuteFlatteningStep_ViewDefinitionBuildError(t *testing.T) {
 	logger := createFlatteningTestLogger()
 
 	// This should complete without error (group is skipped)
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Verify no CSV files were created (group was skipped)
@@ -483,7 +483,7 @@ func TestExecuteFlatteningStep_NoMatchingResources(t *testing.T) {
 	logger := createFlatteningTestLogger()
 
 	// Should complete without error (no matching resources, group skipped)
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Verify no CSV files were created (no matching resources)
@@ -513,7 +513,7 @@ func TestExecuteFlatteningStep_ScanProvenanceError(t *testing.T) {
 	job := createFlatteningTestJob("http://localhost:8080", lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
 
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load resources")
 }
@@ -546,7 +546,7 @@ func TestExecuteFlatteningStep_OutputDirCreationError(t *testing.T) {
 	job := createFlatteningTestJob("http://localhost:8080", lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
 
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to create output directory")
 }
@@ -601,7 +601,7 @@ func TestExecuteFlatteningStep_ViewDefinitionWriteError(t *testing.T) {
 	logger := createFlatteningTestLogger()
 
 	// Should complete successfully even though ViewDefinition write fails
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Verify CSV file was created despite ViewDefinition write failure
@@ -659,7 +659,7 @@ func TestExecuteFlatteningStep_CSVWriteError(t *testing.T) {
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
 
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to write CSV for group")
 }
@@ -717,7 +717,7 @@ func TestExecuteFlatteningStep_MultipleBatches(t *testing.T) {
 
 	logger := createFlatteningTestLogger()
 
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Verify CSV file was created
@@ -773,7 +773,7 @@ func TestExecuteFlatteningStep_FlattenerError(t *testing.T) {
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
 
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "flattener failed for group")
 }
@@ -817,7 +817,7 @@ func TestExecuteFlatteningStep_BundleExtraction(t *testing.T) {
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
 
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Verify CSV was created
@@ -885,7 +885,7 @@ func TestExecuteFlatteningStep_StreamingEdgeCases(t *testing.T) {
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
 
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Flattener should be called once (only the valid Bundle entry with provenance)
@@ -967,7 +967,7 @@ func TestExecuteFlatteningStep_BatchFlushOnThreshold(t *testing.T) {
 
 	logger := createFlatteningTestLogger()
 
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// Flattener should be called at least once
@@ -1021,7 +1021,7 @@ func TestExecuteFlatteningStep_NilViewDefSkipped(t *testing.T) {
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
 
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// No CSV should be created — ViewDefinition is nil, resource is skipped
@@ -1060,7 +1060,7 @@ func TestExecuteFlatteningStep_BundleEntryUnmatchedProfile(t *testing.T) {
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
 
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
 
 	csvFiles, _ := filepath.Glob(filepath.Join(jobDir, "csv", "*.csv"))
@@ -1113,7 +1113,7 @@ func TestExecuteFlatteningStep_FlattenerErrorDuringFlush(t *testing.T) {
 		job.Config.Services.Flattening.BatchSizeMB = 1
 		logger := createFlatteningTestLogger()
 
-		err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+		err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "flattener failed for group")
 	})
@@ -1144,7 +1144,7 @@ func TestExecuteFlatteningStep_FlattenerErrorDuringFlush(t *testing.T) {
 		job.Config.Services.Flattening.BatchSizeMB = 1
 		logger := createFlatteningTestLogger()
 
-		err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+		err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "flattener failed for group")
 	})
@@ -1183,7 +1183,7 @@ func TestExecuteFlatteningStep_OpenFileError(t *testing.T) {
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
 
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load resources")
 }
@@ -1252,7 +1252,7 @@ func TestExecuteFlatteningStep_ProvenanceInPseudonymizedDir(t *testing.T) {
 
 	logger := createFlatteningTestLogger()
 
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// CSV output should be produced — provenance is in the pseudonymized input
@@ -1288,7 +1288,7 @@ func TestExecuteFlatteningStep_UnknownProfile(t *testing.T) {
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
 
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, logger)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
 
 	// No CSV should be written (no matching resources)

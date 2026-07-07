@@ -107,7 +107,7 @@ func TestDIMPResumeAfterInterrupt(t *testing.T) {
 
 	// Execute DIMP step (this should skip patient.ndjson since it's already processed)
 	jobDir := filepath.Join(jobsDir, job.JobID)
-	err = pipeline.ExecuteDIMPStep(reloadedJob, jobDir, logger)
+	err = runPipelineStep(models.StepDIMP, reloadedJob, jobDir, logger)
 
 	// The bug: ExecuteDIMPStep currently processes ALL files, including patient.ndjson
 	// Expected: Should only process observation.ndjson and condition.ndjson

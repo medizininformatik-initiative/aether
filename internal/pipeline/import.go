@@ -43,24 +43,6 @@ func (s importStep) ClassifyError(err error) models.ErrorType {
 	return classifyImportError(err, s.name)
 }
 
-// ExecuteImportStep runs the import step through the shared lifecycle. On failure
-// it also marks the job failed (models.AddError), matching import's historical
-// job-level failure behavior, and returns the (mutated) job either way.
-func ExecuteImportStep(job *models.PipelineJob, logger *lib.Logger, httpClient *services.HTTPClient, showProgress bool) (*models.PipelineJob, error) {
-	ctx := &StepContext{
-		Job:          job,
-		Layout:       services.NewJobLayout(job.Config.JobsDir, job.JobID, job.Config.Pipeline.EnabledSteps),
-		Logger:       logger,
-		HTTPClient:   httpClient,
-		ShowProgress: showProgress,
-	}
-	if err := runStep(importStep{name: models.StepName(job.CurrentStep)}, ctx); err != nil {
-		updated := models.AddError(*job, err.Error())
-		return &updated, err
-	}
-	return job, nil
-}
-
 // Run selects the import method from the step name. It builds its own HTTP
 // client when none was injected (the orchestration-loop path), using the
 // longer download-safe timeout.

@@ -17,7 +17,6 @@ import (
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
-	"github.com/medizininformatik-initiative/aether/internal/pipeline"
 )
 
 func createValidationTestLogger() *lib.Logger {
@@ -144,7 +143,7 @@ func TestExecuteValidationStep_DisabledStep(t *testing.T) {
 	job.Config.Pipeline.EnabledSteps = []models.StepName{} // not enabled
 	logger := createValidationTestLogger()
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.NoError(t, err)
 }
 
@@ -154,7 +153,7 @@ func TestExecuteValidationStep_MissingURL(t *testing.T) {
 	job := createValidationTestJob("") // empty URL
 	logger := createValidationTestLogger()
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "validation service URL not configured")
 }
@@ -170,7 +169,7 @@ func TestExecuteValidationStep_NoFilesFound(t *testing.T) {
 
 	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "import"), 0755))
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no FHIR NDJSON files found")
 }
@@ -194,7 +193,7 @@ func TestExecuteValidationStep_AllValid(t *testing.T) {
 	}
 	writeValidationNDJSON(t, filepath.Join(importDir, "Patient.ndjson"), patients)
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Report file should contain informational OperationOutcome (1 chunk)
@@ -224,7 +223,7 @@ func TestExecuteValidationStep_SomeInvalid(t *testing.T) {
 	}
 	writeValidationNDJSON(t, filepath.Join(importDir, "Condition.ndjson"), resources)
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.NoError(t, err, "validation findings should not fail the pipeline")
 
 	// Step should be completed, not failed
@@ -291,7 +290,7 @@ func TestExecuteValidationStep_BundleChunking(t *testing.T) {
 	}
 	writeValidationNDJSON(t, filepath.Join(importDir, "Patient.ndjson"), resources)
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// With default 10MB chunk size all 20 tiny resources fit in 1 chunk
@@ -321,7 +320,7 @@ func TestExecuteValidationStep_ResumesProcessing(t *testing.T) {
 	require.NoError(t, os.MkdirAll(validationDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(validationDir, "Patient.validation.ndjson"), []byte{}, 0644))
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Both reports should exist
@@ -373,7 +372,7 @@ func TestExecuteValidationStep_ConcurrencyRespected(t *testing.T) {
 		writeValidationNDJSON(t, filepath.Join(importDir, fmt.Sprintf("Patient%d.ndjson", i)), resources)
 	}
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	assert.LessOrEqual(t, maxConcurrent.Load(), int32(2), "concurrent requests should not exceed MaxConcurrentRequests")
@@ -397,7 +396,7 @@ func TestExecuteValidationStep_HTTPError(t *testing.T) {
 	resources := []map[string]any{{"resourceType": "Patient", "id": "p1"}}
 	writeValidationNDJSON(t, filepath.Join(importDir, "Patient.ndjson"), resources)
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to validate")
 }
@@ -421,7 +420,7 @@ func TestExecuteValidationStep_MultipleFiles(t *testing.T) {
 		{"resourceType": "Condition", "id": "c1"},
 	})
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	assert.FileExists(t, filepath.Join(tmpDir, "validation", "Patient.validation.ndjson"))
@@ -444,7 +443,7 @@ func TestExecuteValidationStep_StepStatusTracking(t *testing.T) {
 		{"resourceType": "Patient", "id": "p1"},
 	})
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	require.NoError(t, err)
 
 	var validationStep *models.PipelineStep
@@ -483,7 +482,7 @@ func TestExecuteValidationStep_EmptyLinesInNDJSON(t *testing.T) {
 `
 	require.NoError(t, os.WriteFile(filepath.Join(importDir, "Patient.ndjson"), []byte(content), 0644))
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.NoError(t, err)
 }
 
@@ -504,7 +503,7 @@ not-valid-json{{{
 `
 	require.NoError(t, os.WriteFile(filepath.Join(importDir, "Patient.ndjson"), []byte(content), 0644))
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to validate")
 }
@@ -524,7 +523,7 @@ func TestExecuteValidationStep_EmptyFile(t *testing.T) {
 	// Write an empty NDJSON file
 	require.NoError(t, os.WriteFile(filepath.Join(importDir, "Empty.ndjson"), []byte(""), 0644))
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Report should exist (empty — created for resumption tracking)
@@ -548,7 +547,7 @@ func TestExecuteValidationStep_DefaultConcurrency(t *testing.T) {
 		{"resourceType": "Patient", "id": "p1"},
 	})
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.NoError(t, err)
 }
 
@@ -573,7 +572,7 @@ func TestExecuteValidationStep_StalePartFileCleanup(t *testing.T) {
 	stalePartFile := filepath.Join(validationDir, "OldFile.validation.ndjson.part")
 	require.NoError(t, os.WriteFile(stalePartFile, []byte("stale"), 0644))
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// Stale .part file should be removed
@@ -600,7 +599,7 @@ func TestExecuteValidationStep_ErrorOutcomesHaveExpression(t *testing.T) {
 	}
 	writeValidationNDJSON(t, filepath.Join(importDir, "Patient.ndjson"), resources)
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.NoError(t, err, "validation findings should not fail the pipeline")
 
 	reportFile := filepath.Join(tmpDir, "validation", "Patient.validation.ndjson")
@@ -657,7 +656,7 @@ func TestExecuteValidationStep_FirstErrBailsEarlyFromChunkLoop(t *testing.T) {
 	}
 	writeValidationNDJSON(t, filepath.Join(importDir, "Patient.ndjson"), resources)
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.Error(t, err)
 
 	// Not all chunks should be dispatched — firstErr should bail early
@@ -700,7 +699,7 @@ func TestExecuteValidationStep_OversizedResource(t *testing.T) {
 	}
 	writeValidationNDJSON(t, filepath.Join(importDir, "Patient.ndjson"), resources)
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.NoError(t, err)
 
 	// At least 2 bundles: one for the oversized resource, one for the normal resources
@@ -722,7 +721,7 @@ func TestExecuteValidationStep_ConnectionRefused(t *testing.T) {
 		{"resourceType": "Patient", "id": "p1"},
 	})
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to validate")
 }
@@ -748,7 +747,7 @@ func TestExecuteValidationStep_ValidationServiceReturns400(t *testing.T) {
 		{"resourceType": "Patient", "id": "p1"},
 	})
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to validate")
 }
@@ -784,7 +783,7 @@ func TestExecuteValidationStep_BundleEntriesHaveFullURL(t *testing.T) {
 	}
 	writeValidationNDJSON(t, filepath.Join(importDir, "Test.ndjson"), resources)
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	require.NoError(t, err)
 
 	// Verify the Bundle sent to the validator has fullUrl on all entries
@@ -819,7 +818,7 @@ func TestExecuteValidationStep_FailOnError_StopsPipeline(t *testing.T) {
 	}
 	writeValidationNDJSON(t, filepath.Join(importDir, "Condition.ndjson"), resources)
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	require.Error(t, err, "should return error when FailOnError is true and validation finds errors")
 	assert.Contains(t, err.Error(), "fail_on_error")
 
@@ -856,7 +855,7 @@ func TestExecuteValidationStep_FailOnError_ContinuesWhenNoErrors(t *testing.T) {
 	}
 	writeValidationNDJSON(t, filepath.Join(importDir, "Patient.ndjson"), resources)
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.NoError(t, err, "should not error when FailOnError is true but no validation errors found")
 }
 
@@ -902,7 +901,7 @@ func TestExecuteValidationStep_ChunkValidationHTTPError(t *testing.T) {
 	}
 	writeValidationNDJSON(t, filepath.Join(importDir, "Patient.ndjson"), resources)
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to validate")
 }
@@ -955,7 +954,7 @@ func TestExecuteValidationStep_InnerBundleEntriesGetFullURL(t *testing.T) {
 	}
 	writeValidationNDJSON(t, filepath.Join(importDir, "Bundles.ndjson"), []map[string]any{transactionBundle})
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	require.NoError(t, err)
 
 	// The outer collection Bundle wraps the transaction Bundle as a single entry
@@ -1026,7 +1025,7 @@ func TestExecuteValidationStep_InnerBundlePreservesExistingFullURL(t *testing.T)
 	}
 	writeValidationNDJSON(t, filepath.Join(importDir, "Bundles.ndjson"), []map[string]any{bundleWithFullURLs})
 
-	err := pipeline.ExecuteValidationStep(job, tmpDir, logger)
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	require.NoError(t, err)
 
 	outerEntries := receivedBundle["entry"].([]any)

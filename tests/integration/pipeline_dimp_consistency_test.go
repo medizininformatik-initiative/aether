@@ -13,7 +13,6 @@ import (
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
-	"github.com/medizininformatik-initiative/aether/internal/pipeline"
 )
 
 // TestDIMPConsistency_SplitVsUnsplit verifies that bundle splitting produces
@@ -67,7 +66,7 @@ func TestDIMPConsistency_SplitVsUnsplit(t *testing.T) {
 		}
 
 		logger := lib.NewLogger(lib.LogLevelDebug)
-		err := pipeline.ExecuteDIMPStep(job, jobDir, logger)
+		err := runPipelineStep(models.StepDIMP, job, jobDir, logger)
 		require.NoError(t, err, "DIMP step should succeed without splitting")
 
 		// Read output
@@ -130,7 +129,7 @@ func TestDIMPConsistency_SplitVsUnsplit(t *testing.T) {
 		}
 
 		logger := lib.NewLogger(lib.LogLevelDebug)
-		err := pipeline.ExecuteDIMPStep(job, jobDir, logger)
+		err := runPipelineStep(models.StepDIMP, job, jobDir, logger)
 		require.NoError(t, err, "DIMP step should succeed with splitting")
 
 		// Read output

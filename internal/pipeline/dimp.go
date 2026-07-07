@@ -40,12 +40,6 @@ type dimpStep struct{}
 
 func (dimpStep) Name() models.StepName { return models.StepDIMP }
 
-// ExecuteDIMPStep runs the DIMP pseudonymization step through the shared lifecycle.
-func ExecuteDIMPStep(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
-	layout := services.NewJobLayoutForDir(jobDir, job.Config.Pipeline.EnabledSteps)
-	return runStep(dimpStep{}, &StepContext{Job: job, Layout: layout, Logger: logger})
-}
-
 func (dimpStep) Run(ctx *StepContext) (StepResult, error) {
 	job := ctx.Job
 	logger := ctx.Logger

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
-	"github.com/medizininformatik-initiative/aether/internal/pipeline"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // TestExecuteValidationStep_OutputDirCreationError covers the mkdir failure
@@ -23,7 +23,7 @@ func TestExecuteValidationStep_OutputDirCreationError(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(jobDir, "validation"), []byte("x"), 0644))
 
 	job := createValidationTestJob("http://localhost:9999")
-	err := pipeline.ExecuteValidationStep(job, jobDir, lib.NewLogger(lib.LogLevelError))
+	err := runPipelineStep(models.StepValidation, job, jobDir, lib.NewLogger(lib.LogLevelError))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to create output directory")
@@ -37,7 +37,7 @@ func TestExecuteValidationStep_ListInputFilesError(t *testing.T) {
 	require.NoError(t, os.MkdirAll(jobDir, 0755))
 
 	job := createValidationTestJob("http://localhost:9999")
-	err := pipeline.ExecuteValidationStep(job, jobDir, lib.NewLogger(lib.LogLevelError))
+	err := runPipelineStep(models.StepValidation, job, jobDir, lib.NewLogger(lib.LogLevelError))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to list input files")
@@ -57,7 +57,7 @@ func TestExecuteFlatteningStep_ListInputFilesError(t *testing.T) {
 	writeTestCRTDL(t, crtdlPath, "group-1", "Patient", "https://example.com/Patient")
 
 	job := createFlatteningTestJob("http://localhost:9999", lookupPath, crtdlPath)
-	err := pipeline.ExecuteFlatteningStep(job, jobDir, createFlatteningTestLogger())
+	err := runPipelineStep(models.StepFlattening, job, jobDir, createFlatteningTestLogger())
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to list input files")

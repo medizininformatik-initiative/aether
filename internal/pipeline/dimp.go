@@ -42,7 +42,8 @@ func (dimpStep) Name() models.StepName { return models.StepDIMP }
 
 // ExecuteDIMPStep runs the DIMP pseudonymization step through the shared lifecycle.
 func ExecuteDIMPStep(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
-	return runStep(dimpStep{}, &StepContext{Job: job, JobDir: jobDir, Logger: logger})
+	layout := services.NewJobLayoutForDir(jobDir, job.Config.Pipeline.EnabledSteps)
+	return runStep(dimpStep{}, &StepContext{Job: job, Layout: layout, Logger: logger})
 }
 
 func (dimpStep) Run(ctx *StepContext) (StepResult, error) {
@@ -57,9 +58,8 @@ func (dimpStep) Run(ctx *StepContext) (StepResult, error) {
 	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
 	dimpClient := dimpFactory(job.Config.Services.DIMP.URL, httpClient, logger)
 
-	layout := services.NewJobLayout(filepath.Dir(ctx.JobDir), filepath.Base(ctx.JobDir), job.Config.Pipeline.EnabledSteps)
-	importDir := layout.InputDir(stepName)
-	outputDir := layout.OutputDir(stepName)
+	importDir := ctx.Layout.InputDir(stepName)
+	outputDir := ctx.Layout.OutputDir(stepName)
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return StepResult{}, fmt.Errorf("failed to create output directory: %w", err)

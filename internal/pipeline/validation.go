@@ -54,7 +54,8 @@ func (validationStep) Name() models.StepName { return models.StepValidation }
 // production caller yet (the cmd manual path reports validation as not-yet-wired).
 // To be folded into one exported pipeline.RunStep — see issue #516.
 func ExecuteValidationStep(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
-	return runStep(validationStep{}, &StepContext{Job: job, JobDir: jobDir, Logger: logger})
+	layout := services.NewJobLayoutForDir(jobDir, job.Config.Pipeline.EnabledSteps)
+	return runStep(validationStep{}, &StepContext{Job: job, Layout: layout, Logger: logger})
 }
 
 func (validationStep) Run(ctx *StepContext) (StepResult, error) {
@@ -69,9 +70,8 @@ func (validationStep) Run(ctx *StepContext) (StepResult, error) {
 	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
 	validationClient := resourceValidatorFactory(job.Config.Services.Validation.URL, httpClient, logger)
 
-	layout := services.NewJobLayout(filepath.Dir(ctx.JobDir), filepath.Base(ctx.JobDir), job.Config.Pipeline.EnabledSteps)
-	inputDir := layout.InputDir(stepName)
-	outputDir := layout.OutputDir(stepName)
+	inputDir := ctx.Layout.InputDir(stepName)
+	outputDir := ctx.Layout.OutputDir(stepName)
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return StepResult{}, fmt.Errorf("failed to create output directory: %w", err)

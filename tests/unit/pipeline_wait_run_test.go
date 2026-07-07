@@ -11,6 +11,7 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/pipeline"
+	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
 // waitRunJob builds a [local_import, wait] job whose wait step starts in the
@@ -42,7 +43,8 @@ func waitRunJob(t *testing.T, waitStatus models.StepStatus) (*models.PipelineJob
 }
 
 func waitRunContext(job *models.PipelineJob, jobDir string) *pipeline.StepContext {
-	return &pipeline.StepContext{Job: job, JobDir: jobDir, Logger: lib.NewLogger(lib.LogLevelError)}
+	layout := services.NewJobLayoutForDir(jobDir, job.Config.Pipeline.EnabledSteps)
+	return &pipeline.StepContext{Job: job, Layout: layout, Logger: lib.NewLogger(lib.LogLevelError)}
 }
 
 // waitStepFromRegistry returns the real wait Step through the public seam.

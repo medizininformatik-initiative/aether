@@ -74,7 +74,8 @@ func (sendStep) Name() models.StepName { return models.StepSend }
 // production caller yet (the cmd manual path wires only import and dimp today).
 // To be folded into one exported pipeline.RunStep — see issue #516.
 func ExecuteSendStep(job *models.PipelineJob, jobDir string, logger *lib.Logger) error {
-	return runStep(sendStep{}, &StepContext{Job: job, JobDir: jobDir, Logger: logger})
+	layout := services.NewJobLayoutForDir(jobDir, job.Config.Pipeline.EnabledSteps)
+	return runStep(sendStep{}, &StepContext{Job: job, Layout: layout, Logger: logger})
 }
 
 func (sendStep) Run(ctx *StepContext) (StepResult, error) {
@@ -88,11 +89,11 @@ func (sendStep) Run(ctx *StepContext) (StepResult, error) {
 	sendMode := job.Config.Services.Send.SendAs
 	switch sendMode {
 	case models.SendModeDirectResourceLoad:
-		return executeDirectResourceLoadSend(job, ctx.JobDir, logger)
+		return executeDirectResourceLoadSend(job, ctx.Layout, logger)
 	case models.SendModeTransferLoad:
-		return executeTransferLoadSend(job, ctx.JobDir, logger)
+		return executeTransferLoadSend(job, ctx.Layout, logger)
 	case models.SendModeS3Upload:
-		return executeS3UploadSend(job, ctx.JobDir, logger)
+		return executeS3UploadSend(job, ctx.Layout, logger)
 	default:
 		return StepResult{}, fmt.Errorf("unknown send mode: %s", sendMode)
 	}
@@ -101,10 +102,10 @@ func (sendStep) Run(ctx *StepContext) (StepResult, error) {
 // executeTransferLoadSend sends files to a transfer FHIR server.
 // For each file: zips it, base64-encodes it, and wraps it in a FHIR Binary resource.
 // Then creates a DocumentReference linking all Binaries and uploads them.
-func executeTransferLoadSend(job *models.PipelineJob, jobDir string, logger *lib.Logger) (StepResult, error) {
+func executeTransferLoadSend(job *models.PipelineJob, layout services.JobLayout, logger *lib.Logger) (StepResult, error) {
 	stepName := models.StepSend
 
-	inputDir := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps).InputDir(stepName)
+	inputDir := layout.InputDir(stepName)
 
 	files, err := findAllFilesRecursive(inputDir)
 	if err != nil {
@@ -170,10 +171,10 @@ func executeTransferLoadSend(job *models.PipelineJob, jobDir string, logger *lib
 // executeDirectResourceLoadSend uploads NDJSON files to a FHIR server using transaction bundles.
 // Core files (core.ndjson) are loaded first before other NDJSON files to ensure
 // base resources are created before dependent resources.
-func executeDirectResourceLoadSend(job *models.PipelineJob, jobDir string, logger *lib.Logger) (StepResult, error) {
+func executeDirectResourceLoadSend(job *models.PipelineJob, layout services.JobLayout, logger *lib.Logger) (StepResult, error) {
 	stepName := models.StepSend
 
-	inputDir := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps).InputDir(stepName)
+	inputDir := layout.InputDir(stepName)
 
 	// Find NDJSON files
 	files, err := findNDJSONFiles(inputDir)
@@ -490,11 +491,11 @@ func findAllFilesRecursive(dir string) ([]string, error) {
 
 // executeS3UploadSend uploads files from the input directory to an S3 bucket.
 // Uses an upload manifest for retry resilience — previously uploaded files are skipped.
-func executeS3UploadSend(job *models.PipelineJob, jobDir string, logger *lib.Logger) (StepResult, error) {
+func executeS3UploadSend(job *models.PipelineJob, layout services.JobLayout, logger *lib.Logger) (StepResult, error) {
 	stepName := models.StepSend
 	startTime := time.Now()
 
-	inputDir := services.NewJobLayout(filepath.Dir(jobDir), filepath.Base(jobDir), job.Config.Pipeline.EnabledSteps).InputDir(stepName)
+	inputDir := layout.InputDir(stepName)
 
 	files, err := findAllFilesRecursive(inputDir)
 	if err != nil {
@@ -514,7 +515,7 @@ func executeS3UploadSend(job *models.PipelineJob, jobDir string, logger *lib.Log
 	}
 
 	// Load or create upload manifest for retry resilience
-	manifestPath := models.GetUploadManifestPath(jobDir)
+	manifestPath := models.GetUploadManifestPath(layout.JobDir())
 	manifest, err := models.LoadUploadManifest(manifestPath)
 	if err != nil {
 		logger.Warn("Failed to load upload manifest, starting fresh", "error", err)

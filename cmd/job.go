@@ -100,6 +100,7 @@ Prerequisites:
   • The step must be enabled in project configuration
   • Prerequisite steps must be completed (e.g., import before dimp)
   • Job must exist and be in a valid state
+  • An already-completed step is not re-run unless --force is passed
 
 Examples:
   # Run local import step manually
@@ -107,6 +108,9 @@ Examples:
 
   # Run DIMP pseudonymization step
   aether job run aether.yaml abc123 --step dimp
+
+  # Re-run an already-completed step
+  aether job run aether.yaml abc123 --step dimp --force
 
 Error Handling:
   • Transient errors (network, 5xx) are retried automatically
@@ -116,7 +120,10 @@ Error Handling:
 	RunE: runJobRun,
 }
 
-var stepFlag string
+var (
+	stepFlag  string
+	forceFlag bool
+)
 
 func init() {
 	rootCmd.AddCommand(jobCmd)
@@ -128,6 +135,7 @@ func init() {
 	if err := jobRunCmd.MarkFlagRequired("step"); err != nil {
 		panic(fmt.Sprintf("failed to mark 'step' flag as required: %v", err))
 	}
+	jobRunCmd.Flags().BoolVar(&forceFlag, "force", false, "Re-run the step even if it has already completed")
 }
 
 func runJobList(cmd *cobra.Command, args []string) error {
@@ -288,10 +296,10 @@ func runJobRun(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// Execute the step (with lock held)
-	err = executeStepManually(job, stepName, config, logger)
-	if err != nil {
-		return fmt.Errorf("step execution failed: %w", err)
+	// Execute the step (with lock held). executeStepManually already contextualizes
+	// every error path, so return it as-is rather than double-wrapping.
+	if err := executeStepManually(job, stepName, config, logger, forceFlag); err != nil {
+		return err
 	}
 
 	fmt.Printf("\n✓ Step '%s' completed successfully\n", stepName)
@@ -329,22 +337,27 @@ func isStepEnabledInConfig(config *models.ProjectConfig, stepName models.StepNam
 	return false
 }
 
-// executeStepManually runs a single pipeline step through the shared RunStep
-// seam — the same lifecycle the automatic RunLoop uses. It persists job state
-// after the step and, on failure, records job-level failure before returning.
-func executeStepManually(job *models.PipelineJob, stepName models.StepName, config *models.ProjectConfig, logger *lib.Logger) error {
-	// A completed step is terminal for the pipeline's transition gate, so
-	// re-running it manually would otherwise fail with an illegal
-	// completed->in_progress transition. Reset it to pending first so the manual
-	// re-run works (the step's own idempotent skip logic handles already-produced
-	// output). The gate stays strict for the automatic RunLoop, which never
-	// re-enters a completed step.
+// executeStepManually runs a single pipeline step through the shared RunStep seam —
+// the same lifecycle the automatic RunLoop uses — keeping job status derived from its
+// steps (see DeriveJobStatus) and recording job-level failure on error.
+func executeStepManually(job *models.PipelineJob, stepName models.StepName, config *models.ProjectConfig, logger *lib.Logger, force bool) error {
+	// A completed step is terminal for the transition gate, so re-running it would
+	// fail an illegal completed->in_progress transition. Without --force, refuse as a
+	// pre-execution guard: nothing runs, so job state is left untouched (not marked
+	// failed) and the error surfaces for a non-zero exit. With --force, reset the step
+	// and every step ordered after it to pending (a re-run invalidates the output later
+	// steps consumed), flip the job to in_progress, and persist now so `job status`
+	// shows the in-flight re-run. The invalidated downstream steps stay pending until
+	// re-run; only the target step runs here.
 	if s, ok := models.GetStepByName(*job, stepName); ok && s.Status == models.StepStatusCompleted {
-		s.Status = models.StepStatusPending
-		s.StartedAt = nil
-		s.CompletedAt = nil
-		s.LastError = nil
-		*job = models.ReplaceStep(*job, s)
+		if !force {
+			return fmt.Errorf("step '%s' already completed; pass --force to re-run", stepName)
+		}
+		*job = models.ResetStepAndDownstream(*job, stepName)
+		*job = models.UpdateJobStatus(*job, models.JobStatusInProgress)
+		if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
+			return fmt.Errorf("failed to save job state: %w", err)
+		}
 	}
 
 	ctx := &pipeline.StepContext{
@@ -371,6 +384,13 @@ func executeStepManually(job *models.PipelineJob, stepName models.StepName, conf
 		return fmt.Errorf("%s step failed: %w", stepName, err)
 	}
 
+	// Re-derive job status from its steps: finishing the last step completes the job,
+	// a forced re-run settles back to completed — status is derived, never stale.
+	derived := models.DeriveJobStatus(*job)
+	*job = models.UpdateJobStatus(*job, derived)
+	if derived == models.JobStatusCompleted {
+		job.CurrentStep = ""
+	}
 	if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
 		return fmt.Errorf("failed to save job state: %w", err)
 	}

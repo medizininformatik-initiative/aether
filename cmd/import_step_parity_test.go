@@ -53,7 +53,7 @@ func TestExecuteStepManually_RejectsMismatchedImportStep(t *testing.T) {
 		Config:      *config,
 	}
 
-	err := executeStepManually(job, models.StepHttpImport, config, lib.NewLogger(lib.LogLevelError))
+	err := executeStepManually(job, models.StepHttpImport, config, lib.NewLogger(lib.LogLevelError), false)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not accept input type")
@@ -99,7 +99,7 @@ func TestExecuteStepManually_TorchStepRunsOnLocalDefaultJob(t *testing.T) {
 		Config:      *config,
 	}
 
-	err := executeStepManually(job, models.StepTorchImport, config, lib.NewLogger(lib.LogLevelError))
+	err := executeStepManually(job, models.StepTorchImport, config, lib.NewLogger(lib.LogLevelError), false)
 
 	require.NoError(t, err)
 	s, ok := models.GetStepByName(*job, models.StepTorchImport)

@@ -66,8 +66,9 @@ func TestClassifyImportError_NilError(t *testing.T) {
 	t.Skip("classifyImportError is not exported - covered by integration tests")
 }
 
-// TestExecuteImportStep_HttpImportValidationFailure tests error handling when HTTP import has invalid URL
-// Covers import.go lines 55-59 (validation path) and download error handling
+// TestExecuteImportStep_HttpImportValidationFailure tests download error handling
+// when http_import is given a source that is not a real HTTP URL. The input type
+// matches the step (so it clears the parity guard); the download itself fails.
 func TestExecuteImportStep_HttpImportValidationFailure(t *testing.T) {
 	tmpDir := t.TempDir()
 	logger := lib.NewLogger(lib.LogLevelInfo)
@@ -79,11 +80,12 @@ func TestExecuteImportStep_HttpImportValidationFailure(t *testing.T) {
 	}
 	httpClient := services.NewHTTPClient(5*time.Second, retryConfig, models.TLSConfig{}, logger)
 
-	// Create a job with http_import step but invalid (non-HTTP) input source
+	// http_import job whose source is not a real URL. ValidateImportSource only
+	// rejects an empty URL, so this reaches the download and fails there.
 	job := &models.PipelineJob{
 		JobID:       "test-job-123",
 		InputSource: "/local/path", // Not an HTTP URL
-		InputType:   models.InputTypeLocal,
+		InputType:   models.InputTypeHTTP,
 		CurrentStep: string(models.StepHttpImport),
 		Status:      models.JobStatusPending,
 		Steps:       models.InitializeSteps([]models.StepName{models.StepHttpImport}),
@@ -224,9 +226,10 @@ func TestExecuteImportStep_TorchImportTORCHURLValidationFailure(t *testing.T) {
 	assert.Contains(t, err.Error(), "must start with http", "Error should mention HTTP requirement")
 }
 
-// TestExecuteImportStep_TorchImportInvalidInputType tests error handling when torch import has invalid input type
-// Covers import.go lines 93-94
-func TestExecuteImportStep_TorchImportInvalidInputType(t *testing.T) {
+// TestExecuteImportStep_TorchImportEmptyCRTDL covers the inner CRTDL validation
+// branch: torch accepts InputType=Local (its CRTDL-submission default), so the
+// step clears the parity guard and then rejects the empty CRTDL path.
+func TestExecuteImportStep_TorchImportEmptyCRTDL(t *testing.T) {
 	tmpDir := t.TempDir()
 	logger := lib.NewLogger(lib.LogLevelInfo)
 

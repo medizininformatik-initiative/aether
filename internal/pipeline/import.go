@@ -51,6 +51,18 @@ func (s importStep) Run(ctx *StepContext) (StepResult, error) {
 	logger := ctx.Logger
 	currentStep := s.name
 
+	// The import method is chosen by step name; the job's input type must be one
+	// the method can handle. Nothing on the RunLoop/continue path cross-checks the
+	// two (CreateJob picks the step from config, the input type from the source),
+	// so without this guard a mismatch surfaces as a confusing downstream error.
+	accepted := models.AcceptedInputTypes(currentStep)
+	if len(accepted) == 0 {
+		return StepResult{}, fmt.Errorf("unsupported import step: %s", currentStep)
+	}
+	if !models.ImportStepAcceptsInputType(currentStep, job.InputType) {
+		return StepResult{}, fmt.Errorf("import step %q does not accept input type %q (accepts %v)", currentStep, job.InputType, accepted)
+	}
+
 	httpClient := ctx.HTTPClient
 	if httpClient == nil {
 		httpClient = services.NewHTTPClient(
@@ -104,9 +116,6 @@ func (s importStep) Run(ctx *StepContext) (StepResult, error) {
 			logger.Info("Extracting data from TORCH using CRTDL", "crtdl", job.CRTDLPath, "compress", compress)
 			importedFiles, err = executeTORCHExtraction(job, importDir, httpClient, logger, ctx.ShowProgress, compress, compressionLevel)
 		}
-
-	default:
-		return StepResult{}, fmt.Errorf("unsupported import step: %s", currentStep)
 	}
 
 	if err != nil {

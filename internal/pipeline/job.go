@@ -72,6 +72,14 @@ func CreateJob(jobID string, inputSource string, crtdlPath string, config models
 
 	logger.Info("Determined initial step from config", "step", initialStep)
 
+	// Reject a provided source whose detected type the enabled import step cannot
+	// handle, so a mismatched job is never created. An empty source is the torch/
+	// local default placeholder, not a user-chosen type, so it is not cross-checked
+	// here; the import step's own validation reports a missing source clearly.
+	if inputSource != "" && !models.ImportStepAcceptsInputType(initialStep, inputType) {
+		return nil, fmt.Errorf("input %q was detected as %s, which the enabled import step %q does not accept (accepts %v)", inputSource, inputType, initialStep, models.AcceptedInputTypes(initialStep))
+	}
+
 	// Initialize steps from config
 	steps := models.InitializeSteps(config.Pipeline.EnabledSteps)
 

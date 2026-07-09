@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2250,4 +2251,255 @@ func TestTORCHClient_DownloadExtractionFiles_RangeCheckAvailable(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, files, 1)
+}
+
+// A large download that keeps making progress must complete even when the
+// shared HTTP client's whole-request timeout is short: the download uses its
+// own stall-bounded client, not the shared 30s-style deadline. The server
+// trickles data over ~480ms while the shared client is capped at 200ms; only
+// the stall-based download client lets it finish.
+func TestTORCHClient_DownloadExtractionFiles_SlowProgressingSucceeds(t *testing.T) {
+	const chunks = 8
+	line := `{"resourceType":"Patient","id":"1"}` + "\n"
+
+	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/fhir+ndjson")
+		w.WriteHeader(http.StatusOK)
+		flusher, ok := w.(http.Flusher)
+		for i := 0; i < chunks; i++ {
+			_, _ = w.Write([]byte(line))
+			if ok {
+				flusher.Flush()
+			}
+			time.Sleep(60 * time.Millisecond)
+		}
+	}))
+	defer fileServer.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	// Short whole-request timeout stands in for the old 30s cap: the download
+	// must not inherit it.
+	httpClient := services.NewHTTPClient(
+		200*time.Millisecond,
+		models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 1, MaxBackoffMs: 1},
+		models.TLSConfig{},
+		logger,
+	)
+	client := services.NewTORCHClient(models.TORCHConfig{
+		BaseURL:              fileServer.URL,
+		Username:             "u",
+		Password:             "p",
+		DownloadStallTimeout: 1 * time.Second,
+	}, httpClient, logger)
+
+	dir := t.TempDir()
+	files, err := client.DownloadExtractionFiles(
+		[]string{fileServer.URL + "/out.ndjson"}, dir, false, false, "")
+
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	content, readErr := os.ReadFile(filepath.Join(dir, files[0].FileName))
+	require.NoError(t, readErr)
+	assert.Equal(t, chunks, strings.Count(string(content), "Patient"))
+}
+
+// A download that sends headers and a few bytes, then goes silent, must abort
+// once the stall window elapses with a clear error — not hang forever waiting on
+// the body read.
+func TestTORCHClient_DownloadExtractionFiles_StalledAborts(t *testing.T) {
+	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/fhir+ndjson")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			_, _ = w.Write([]byte(`{"resourceType":"Patient","id":"1"}` + "\n"))
+			f.Flush()
+		}
+		// Stall: send nothing more until the client gives up and cancels.
+		<-r.Context().Done()
+	}))
+	defer fileServer.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(
+		5*time.Second,
+		models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 1, MaxBackoffMs: 1},
+		models.TLSConfig{},
+		logger,
+	)
+	client := services.NewTORCHClient(models.TORCHConfig{
+		BaseURL:              fileServer.URL,
+		Username:             "u",
+		Password:             "p",
+		DownloadStallTimeout: 200 * time.Millisecond,
+	}, httpClient, logger)
+
+	dir := t.TempDir()
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := client.DownloadExtractionFiles(
+			[]string{fileServer.URL + "/out.ndjson"}, dir, false, false, "")
+		errCh <- err
+	}()
+
+	select {
+	case err := <-errCh:
+		require.Error(t, err)
+		assert.Contains(t, strings.ToLower(err.Error()), "stall")
+	case <-time.After(2 * time.Second):
+		t.Fatal("download did not abort on stall; it hung")
+	}
+}
+
+// A download whose error response (>=400) emits headers and a few body bytes,
+// then goes silent, must abort once the stall window elapses — the stall
+// watchdog has to guard the error body too, not just the success-copy phase.
+// A proxy in front of TORCH that flushes error headers immediately but then
+// stalls mid error-body would otherwise hang the download forever, since the
+// download client carries no whole-request deadline.
+func TestTORCHClient_DownloadExtractionFiles_StalledErrorBodyAborts(t *testing.T) {
+	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/fhir+ndjson")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		if f, ok := w.(http.Flusher); ok {
+			_, _ = w.Write([]byte(`{"error":"overloaded"`))
+			f.Flush()
+		}
+		// Stall mid error-body: send nothing more until the client cancels.
+		<-r.Context().Done()
+	}))
+	defer fileServer.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(
+		5*time.Second,
+		models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 1, MaxBackoffMs: 1},
+		models.TLSConfig{},
+		logger,
+	)
+	client := services.NewTORCHClient(models.TORCHConfig{
+		BaseURL:              fileServer.URL,
+		Username:             "u",
+		Password:             "p",
+		DownloadStallTimeout: 200 * time.Millisecond,
+	}, httpClient, logger)
+
+	dir := t.TempDir()
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := client.DownloadExtractionFiles(
+			[]string{fileServer.URL + "/out.ndjson"}, dir, false, false, "")
+		errCh <- err
+	}()
+
+	select {
+	case err := <-errCh:
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "503")
+	case <-time.After(2 * time.Second):
+		t.Fatal("download did not abort on stalled error body; it hung")
+	}
+}
+
+// A transient error at the start of the download (e.g. a 503 from a proxy in
+// front of TORCH) must be retried, not fail the whole import on the first
+// attempt. The file GET is idempotent, so retry-from-scratch is safe.
+func TestTORCHClient_DownloadExtractionFiles_RetriesTransientThenSucceeds(t *testing.T) {
+	var calls int32
+	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) <= 2 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/fhir+ndjson")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"resourceType":"Patient","id":"1"}` + "\n"))
+	}))
+	defer fileServer.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(
+		5*time.Second,
+		models.RetryConfig{MaxAttempts: 5, InitialBackoffMs: 1, MaxBackoffMs: 5},
+		models.TLSConfig{},
+		logger,
+	)
+	client := services.NewTORCHClient(models.TORCHConfig{
+		BaseURL:              fileServer.URL,
+		Username:             "u",
+		Password:             "p",
+		DownloadStallTimeout: 1 * time.Second,
+	}, httpClient, logger)
+
+	dir := t.TempDir()
+	files, err := client.DownloadExtractionFiles(
+		[]string{fileServer.URL + "/out.ndjson"}, dir, false, false, "")
+
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	assert.GreaterOrEqual(t, atomic.LoadInt32(&calls), int32(3), "server should have been retried")
+}
+
+// A TORCHClient built with a custom TLS config (InsecureSkipVerify) must be able
+// to download over HTTPS: the streaming download client clones the shared
+// client's custom *http.Transport, and that clone has to preserve the TLS
+// settings — otherwise the handshake against the test server's self-signed cert
+// would fail. This exercises newDownloadClient's custom-transport clone branch
+// and its connect/handshake bounding of a dialer-less custom transport.
+func TestTORCHClient_DownloadExtractionFiles_CustomTLSTransport(t *testing.T) {
+	ndjsonContent := `{"resourceType":"Patient","id":"tls-1"}`
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/fhir+ndjson")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(ndjsonContent))
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(
+		5*time.Second,
+		models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 10, MaxBackoffMs: 100},
+		models.TLSConfig{InsecureSkipVerify: true},
+		logger,
+	)
+	client := services.NewTORCHClient(models.TORCHConfig{BaseURL: server.URL}, httpClient, logger)
+
+	dir := t.TempDir()
+	files, err := client.DownloadExtractionFiles(
+		[]string{server.URL + "/output/tls.ndjson"}, dir, false, false, "")
+
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	content, _ := os.ReadFile(filepath.Join(dir, files[0].FileName))
+	assert.Contains(t, string(content), "tls-1")
+}
+
+// A retry config of zero attempts must not silently skip the download: the
+// per-file loop clamps attempts up to one so exactly one real attempt runs.
+func TestTORCHClient_DownloadExtractionFiles_ZeroRetryAttemptsStillDownloadsOnce(t *testing.T) {
+	var calls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Header().Set("Content-Type", "application/fhir+ndjson")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"resourceType":"Patient","id":"z-1"}`))
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(
+		5*time.Second,
+		models.RetryConfig{MaxAttempts: 0, InitialBackoffMs: 10, MaxBackoffMs: 100},
+		models.TLSConfig{},
+		logger,
+	)
+	client := services.NewTORCHClient(models.TORCHConfig{BaseURL: server.URL}, httpClient, logger)
+
+	dir := t.TempDir()
+	files, err := client.DownloadExtractionFiles(
+		[]string{server.URL + "/output/z.ndjson"}, dir, false, false, "")
+
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&calls), "zero-attempt config must still make exactly one attempt")
 }

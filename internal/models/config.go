@@ -81,6 +81,12 @@ type TORCHConfig struct {
 	MaxPollingInterval time.Duration `yaml:"max_polling_interval" json:"max_polling_interval" mapstructure:"max_polling_interval"`
 	FileReadyRetries   int           `yaml:"file_ready_retries" json:"file_ready_retries" mapstructure:"file_ready_retries"`
 	FileReadyInterval  time.Duration `yaml:"file_ready_interval" json:"file_ready_interval" mapstructure:"file_ready_interval"`
+	// DownloadStallTimeout bounds inactivity while streaming an extraction file:
+	// the download aborts only when no bytes arrive for this long, so a large but
+	// steadily-progressing NDJSON finishes regardless of total size, while a hung
+	// connection fails fast. Unlike a whole-request deadline, it never has to be
+	// sized to the largest expected download.
+	DownloadStallTimeout time.Duration `yaml:"download_stall_timeout" json:"download_stall_timeout" mapstructure:"download_stall_timeout"`
 }
 
 // SendMode defines the mode for sending data
@@ -339,14 +345,15 @@ func DefaultConfig() ProjectConfig {
 				BundleSplitThresholdMB: 10, // 10MB default threshold for Bundle splitting
 			},
 			TORCH: TORCHConfig{
-				BaseURL:            "",
-				Username:           "",
-				Password:           "",
-				ExtractionTimeout:  30 * time.Minute,
-				PollingInterval:    5 * time.Second,
-				MaxPollingInterval: 30 * time.Second,
-				FileReadyRetries:   10,
-				FileReadyInterval:  10 * time.Second,
+				BaseURL:              "",
+				Username:             "",
+				Password:             "",
+				ExtractionTimeout:    30 * time.Minute,
+				PollingInterval:      5 * time.Second,
+				MaxPollingInterval:   30 * time.Second,
+				FileReadyRetries:     10,
+				FileReadyInterval:    10 * time.Second,
+				DownloadStallTimeout: 60 * time.Second,
 			},
 			Flattening:         DefaultFlatteningConfig(),
 			CRTDLPreprocessing: DefaultCRTDLPreprocessingConfig(),
@@ -408,6 +415,12 @@ func (c *TORCHConfig) Validate() error {
 
 	if c.FileReadyInterval < 0 {
 		return fmt.Errorf("file_ready_interval must be >= 0, got %s", c.FileReadyInterval)
+	}
+
+	// A negative window is nonsensical; zero means "use the built-in default"
+	// (applied when the TORCH client is constructed), mirroring file_ready_interval.
+	if c.DownloadStallTimeout < 0 {
+		return fmt.Errorf("download_stall_timeout must be >= 0, got %s", c.DownloadStallTimeout)
 	}
 
 	return nil

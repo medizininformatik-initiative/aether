@@ -25,3 +25,22 @@ contact with TORCH**, reset on every `202`/`200` poll response. A healthy job (p
 
 - A TORCH job that stays responsive (`202`) but never completes will be polled indefinitely until
   manually interrupted. Accepted as a TORCH-side fault, not aether's to bound.
+
+## Applied again: `download_stall_timeout` (#530)
+
+The same liveness principle governs the NDJSON *download*, for the same reason. Downloads shared
+the HTTP client's 30 s whole-request timeout, which capped the entire body read — so any extraction
+that could not stream within 30 s was impossible to import. A healthy but large download was killed
+for being large: exactly the failure this ADR rejects for polling, one layer down at the byte
+stream.
+
+Downloads now use a dedicated client with no whole-request deadline (`Timeout: 0`); a
+`download_stall_timeout` (default `PT1M`) bounds *inactivity* instead, re-armed on every read of the
+response body. A large but progressing download completes regardless of size, while a connection
+that goes silent fails fast with a clear "download stalled" error. This mirrors the polling liveness
+window (reset on each `202`/`200`) at the download stream.
+
+- The stall window spans each body read together with the write of the chunk that read returned, so
+  it bounds read+write inactivity, not a pure network stall. At the default 60 s the distinction is
+  academic (a 32 KiB chunk write never approaches it); keeping the write inside the window also means
+  a wedged local disk cannot hang the download forever, which narrowing to read-only would give up.

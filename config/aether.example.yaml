@@ -36,6 +36,14 @@ services:
     # Default: PT10S
     # file_ready_interval: PT10S
 
+    # Inactivity window when streaming an extraction file to disk. The download
+    # aborts only if NO bytes arrive for this long, so a large but steadily
+    # progressing NDJSON completes regardless of total size, while a hung
+    # connection fails fast. Unlike a whole-request deadline, it never needs to
+    # be sized to the largest expected download.
+    # Default: PT1M
+    # download_stall_timeout: PT1M
+
   # DIMP Pseudonymization Service (optional)
   # Leave empty to skip pseudonymization step
   # URL must be the server root; aether appends /fhir internally.

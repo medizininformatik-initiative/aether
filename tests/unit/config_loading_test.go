@@ -397,6 +397,43 @@ jobs_dir: "` + jobsDir + `"
 	assert.NoError(t, err, "Valid TORCH config should pass validation")
 }
 
+func TestTORCHConfig_DownloadStallTimeoutLoading(t *testing.T) {
+	writeConfig := func(t *testing.T, torchExtra string) *models.ProjectConfig {
+		tmpDir := t.TempDir()
+		configFile := filepath.Join(tmpDir, "config.yaml")
+		jobsDir := filepath.Join(tmpDir, "jobs")
+		_ = os.MkdirAll(jobsDir, 0755)
+
+		configContent := `
+services:
+  torch:
+    base_url: "http://localhost:8080"
+    username: "testuser"
+    password: "testpass"
+` + torchExtra + `
+pipeline:
+  enabled_steps:
+    - local_import
+
+jobs_dir: "` + jobsDir + `"
+`
+		require.NoError(t, os.WriteFile(configFile, []byte(configContent), 0644))
+		config, err := services.LoadConfig(configFile)
+		require.NoError(t, err)
+		return config
+	}
+
+	t.Run("explicit value parses", func(t *testing.T) {
+		config := writeConfig(t, "    download_stall_timeout: PT2M\n")
+		assert.Equal(t, 2*time.Minute, config.Services.TORCH.DownloadStallTimeout)
+	})
+
+	t.Run("defaults when omitted", func(t *testing.T) {
+		config := writeConfig(t, "")
+		assert.Equal(t, 60*time.Second, config.Services.TORCH.DownloadStallTimeout)
+	})
+}
+
 func TestTORCHConfig_ValidateMissingBaseURL(t *testing.T) {
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.yaml")
@@ -530,6 +567,39 @@ jobs_dir: "` + jobsDir + `"
 	_, err = services.LoadConfig(configFile)
 	assert.Error(t, err, "Zero timeout should fail validation")
 	assert.Contains(t, err.Error(), "timeout")
+}
+
+func TestTORCHConfig_ValidateNegativeDownloadStallTimeout(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  torch:
+    base_url: "http://localhost:8080"
+    username: "testuser"
+    password: "testpass"
+    download_stall_timeout: -1s
+
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	_, err = services.LoadConfig(configFile)
+	assert.Error(t, err, "Negative download_stall_timeout should fail validation")
+	assert.Contains(t, err.Error(), "download_stall_timeout")
 }
 
 func TestTORCHConfig_ValidateInvalidPollingInterval(t *testing.T) {

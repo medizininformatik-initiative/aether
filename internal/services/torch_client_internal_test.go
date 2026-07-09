@@ -1,12 +1,44 @@
 package services
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
+
+// The streaming download client drops the whole-request deadline, so the
+// connect and TLS-handshake phases (not covered by ResponseHeaderTimeout or the
+// body stall watchdog) must still be bounded — otherwise a black-holed TCP
+// connect on a custom-TLS transport would hang forever. Custom-TLS transports
+// (BuildTLSTransport) ship without a dialer, so this guards that path.
+func TestNewDownloadClient_BoundsConnectAndHandshake(t *testing.T) {
+	logger := lib.NewLogger(lib.LogLevelError)
+
+	cases := map[string]models.TLSConfig{
+		"default transport":    {},
+		"custom TLS transport": {InsecureSkipVerify: true},
+	}
+
+	for name, tlsCfg := range cases {
+		t.Run(name, func(t *testing.T) {
+			shared := NewHTTPClient(30, models.RetryConfig{MaxAttempts: 1}, tlsCfg, logger)
+
+			dl := shared.newDownloadClient(60)
+
+			assert.Zero(t, dl.Timeout, "download client must not carry a whole-request deadline")
+			transport, ok := dl.Transport.(*http.Transport)
+			require.True(t, ok)
+			assert.NotNil(t, transport.DialContext, "connect phase must be bounded")
+			assert.Positive(t, transport.TLSHandshakeTimeout, "TLS handshake must be bounded")
+			assert.Equal(t, 60*1, int(transport.ResponseHeaderTimeout))
+		})
+	}
+}
 
 // Pure unit table for makeAbsoluteURL — all URL shapes and fallback branches,
 // no HTTP server. The integration path stays covered by the

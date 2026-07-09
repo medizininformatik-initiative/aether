@@ -1,8 +1,10 @@
 package services
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,8 +25,17 @@ import (
 type TORCHClient struct {
 	config     models.TORCHConfig
 	httpClient *HTTPClient
-	logger     *lib.Logger
+	// downloadClient streams extraction files without a whole-request deadline;
+	// stallTimeout bounds inactivity during that stream. Submit/poll/availability
+	// keep using httpClient, whose short timeout suits their small payloads.
+	downloadClient *http.Client
+	stallTimeout   time.Duration
+	logger         *lib.Logger
 }
+
+// defaultDownloadStallTimeout applies when TORCHConfig.DownloadStallTimeout is
+// unset (e.g. a client built directly in tests), keeping downloads bounded.
+const defaultDownloadStallTimeout = 60 * time.Second
 
 // TORCHExtractionRequest represents the FHIR Parameters resource for extraction submission
 type TORCHExtractionRequest struct {
@@ -112,10 +123,17 @@ var ErrInvalidCRTDL = fmt.Errorf("invalid CRTDL file")
 
 // NewTORCHClient creates a new TORCH client with the given configuration
 func NewTORCHClient(config models.TORCHConfig, httpClient *HTTPClient, logger *lib.Logger) *TORCHClient {
+	stallTimeout := config.DownloadStallTimeout
+	if stallTimeout <= 0 {
+		stallTimeout = defaultDownloadStallTimeout
+	}
+
 	return &TORCHClient{
-		config:     config,
-		httpClient: httpClient,
-		logger:     logger,
+		config:         config,
+		httpClient:     httpClient,
+		downloadClient: httpClient.newDownloadClient(stallTimeout),
+		stallTimeout:   stallTimeout,
+		logger:         logger,
 	}
 }
 
@@ -516,9 +534,64 @@ func (c *TORCHClient) DownloadExtractionFiles(fileURLs []string, destinationDir 
 	return downloadedFiles, nil
 }
 
-// downloadFile downloads a single file from URL to destination path
+// errDownloadStalled marks a download aborted because no bytes arrived within
+// the stall window, so the failure can be reported clearly rather than as a
+// generic "context canceled".
+var errDownloadStalled = errors.New("download stalled: no data received within stall timeout")
+
+// stallGuardReader arms an inactivity watchdog before each read of the wrapped
+// body. A read that blocks longer than the stall window lets the watchdog fire
+// and cancel the request context, which unblocks the read with an error. This
+// is what bounds a mid-body stall; no http.Transport setting does.
+type stallGuardReader struct {
+	body  io.Reader
+	timer *time.Timer
+	stall time.Duration
+}
+
+func (s *stallGuardReader) Read(p []byte) (int, error) {
+	s.timer.Reset(s.stall)
+	return s.body.Read(p)
+}
+
+// downloadFile downloads a single file, retrying transient failures. The file
+// GET is idempotent, so a fresh attempt is safe; a stall or mid-body write error
+// is not a *TORCHError and so is not retried (retrying from scratch would repeat
+// the stall or waste a full re-transfer). Retry cadence follows the shared
+// client's config.
 func (c *TORCHClient) downloadFile(fileURL, destPath string, compress bool, compressionLevel string) (models.FHIRDataFile, error) {
-	req, err := http.NewRequest("GET", fileURL, nil)
+	retry := c.httpClient.retryConfig
+	attempts := retry.MaxAttempts
+	if attempts < 1 {
+		attempts = 1
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		file, err := c.downloadFileOnce(fileURL, destPath, compress, compressionLevel)
+		if err == nil {
+			return file, nil
+		}
+		lastErr = err
+
+		var torchErr *TORCHError
+		if !errors.As(err, &torchErr) || !torchErr.IsRetryable() || attempt == attempts-1 {
+			return models.FHIRDataFile{}, err
+		}
+
+		c.logger.Warn("TORCH download attempt failed, retrying", "url", fileURL, "attempt", attempt+1, "error", err)
+		time.Sleep(lib.CalculateBackoff(attempt, retry.InitialBackoffMs, retry.MaxBackoffMs))
+	}
+	return models.FHIRDataFile{}, lastErr
+}
+
+// downloadFileOnce performs a single download attempt from URL to destination path.
+func (c *TORCHClient) downloadFileOnce(fileURL, destPath string, compress bool, compressionLevel string) (models.FHIRDataFile, error) {
+	// The stall watchdog aborts the download by cancelling this context.
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", fileURL, nil)
 	if err != nil {
 		return models.FHIRDataFile{}, fmt.Errorf("failed to create download request: %w", err)
 	}
@@ -528,7 +601,7 @@ func (c *TORCHClient) downloadFile(fileURL, destPath string, compress bool, comp
 	}
 	req.Header.Set("Accept", "application/fhir+ndjson")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.downloadClient.Do(req)
 	if err != nil {
 		return models.FHIRDataFile{}, &TORCHError{
 			Operation:  "download",
@@ -539,8 +612,16 @@ func (c *TORCHClient) downloadFile(fileURL, destPath string, compress bool, comp
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	// Arm the inactivity watchdog before touching the body — downloadClient has
+	// no whole-request deadline, so an error body that stalls mid-stream (a
+	// proxy that flushes 4xx/5xx headers then goes silent) must be bounded too,
+	// not just the success copy. Each read of guardedBody re-arms the timer.
+	timer := time.AfterFunc(c.stallTimeout, func() { cancel(errDownloadStalled) })
+	defer timer.Stop()
+	guardedBody := &stallGuardReader{body: resp.Body, timer: timer, stall: c.stallTimeout}
+
 	if resp.StatusCode >= 400 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, _ := io.ReadAll(guardedBody)
 		errorType := lib.ClassifyHTTPError(resp.StatusCode)
 
 		return models.FHIRDataFile{}, &TORCHError{
@@ -566,7 +647,7 @@ func (c *TORCHClient) downloadFile(fileURL, destPath string, compress bool, comp
 		writer = compWriter
 	}
 
-	bytesWritten, err := io.Copy(writer, resp.Body)
+	bytesWritten, err := io.Copy(writer, guardedBody)
 
 	if closeErr := writer.Close(); closeErr != nil && err == nil {
 		err = closeErr
@@ -578,6 +659,11 @@ func (c *TORCHClient) downloadFile(fileURL, destPath string, compress bool, comp
 	}
 
 	if err != nil {
+		// A cancelled context surfaces from io.Copy as a generic error; recover the
+		// stall cause so the caller sees why the download aborted.
+		if cause := context.Cause(ctx); errors.Is(cause, errDownloadStalled) {
+			err = cause
+		}
 		_ = os.Remove(destPath)
 		return models.FHIRDataFile{}, fmt.Errorf("failed to write file: %w", err)
 	}

@@ -289,9 +289,10 @@ type binaryEntry struct {
 // createBinaryFromFile reads a file, zips it, base64-encodes the content,
 // and returns a FHIR Binary resource.
 func createBinaryFromFile(filePath string) (binaryEntry, error) {
-	contentType := detectContentType(filePath)
+	// Every file is zipped for transfer, so the Binary describes a zip archive.
+	// application/zip is the IANA-registered type for zip archives.
+	const contentType = "application/zip"
 
-	// All files are zipped for transfer
 	data, err := zipSingleFile(filePath)
 	if err != nil {
 		return binaryEntry{}, fmt.Errorf("failed to zip %s: %w", filepath.Base(filePath), err)
@@ -312,23 +313,6 @@ func createBinaryFromFile(filePath string) (binaryEntry, error) {
 		contentType: contentType,
 		resource:    resource,
 	}, nil
-}
-
-// detectContentType determines the FHIR contentType for a file based on its extension.
-// All files are zipped for transfer - the pipeline doesn't produce standalone .json files.
-func detectContentType(filePath string) string {
-	name := strings.ToLower(filepath.Base(filePath))
-
-	switch {
-	case strings.HasSuffix(name, ".ndjson.zst") || strings.HasSuffix(name, ".ndjson"):
-		return "application/zip"
-	case strings.HasSuffix(name, ".csv"):
-		return "text/zip"
-	case strings.HasSuffix(name, ".parquet"):
-		return "text/zip"
-	default:
-		return "application/zip"
-	}
 }
 
 // zipSingleFile compresses a single file into an in-memory zip archive.

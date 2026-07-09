@@ -178,7 +178,7 @@ func TestExecuteSendStep_ZipContentVerification(t *testing.T) {
 
 	// Verify the captured Binary resource
 	require.NotNil(t, binaryResource)
-	assert.Equal(t, "text/zip", binaryResource["contentType"])
+	assert.Equal(t, "application/zip", binaryResource["contentType"])
 
 	b64Data := binaryResource["data"].(string)
 	zipBytes, err := base64.StdEncoding.DecodeString(b64Data)
@@ -230,17 +230,18 @@ func TestExecuteSendStep_ContentTypeMapping(t *testing.T) {
 	// 3 Binaries + 1 DocumentReference = 4 requests
 	require.Len(t, receivedResources, 4)
 
-	// Collect content types from Binary resources
-	contentTypes := make(map[string]bool)
+	// Every file is zipped for transfer, so all Binaries carry application/zip.
+	var binaryContentTypes []string
 	for _, resource := range receivedResources {
 		if resource["resourceType"] == "Binary" {
-			ct := resource["contentType"].(string)
-			contentTypes[ct] = true
+			binaryContentTypes = append(binaryContentTypes, resource["contentType"].(string))
 		}
 	}
 
-	assert.True(t, contentTypes["application/zip"], "ndjson should have application/zip")
-	assert.True(t, contentTypes["text/zip"], "csv/parquet should have text/zip")
+	require.Len(t, binaryContentTypes, 3)
+	for _, ct := range binaryContentTypes {
+		assert.Equal(t, "application/zip", ct)
+	}
 }
 
 func TestExecuteSendStep_ServerError(t *testing.T) {

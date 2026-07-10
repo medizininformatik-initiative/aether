@@ -50,6 +50,64 @@ func TestExpandEnvVars(t *testing.T) {
 			envVars:  map[string]string{},
 			expected: "just_plain_text",
 		},
+		{
+			name:     "Braceless variable expansion",
+			input:    "$MYVAR",
+			envVars:  map[string]string{"MYVAR": "value"},
+			expected: "value",
+		},
+		{
+			name:     "Braceless variable with adjacent text",
+			input:    "prefix_$MYVAR-suffix",
+			envVars:  map[string]string{"MYVAR": "test"},
+			expected: "prefix_test-suffix",
+		},
+		{
+			name:     "Braceless missing variable expands to empty",
+			input:    "$MISSING",
+			envVars:  map[string]string{},
+			expected: "",
+		},
+		{
+			name:     "Lowercase braced variable",
+			input:    "${myvar}",
+			envVars:  map[string]string{"myvar": "value"},
+			expected: "value",
+		},
+		{
+			name:     "Mixed-case braced variable",
+			input:    "${Mixed_Case}",
+			envVars:  map[string]string{"Mixed_Case": "value"},
+			expected: "value",
+		},
+		{
+			name:     "Lowercase missing braced variable expands to empty",
+			input:    "${missing}",
+			envVars:  map[string]string{},
+			expected: "",
+		},
+		// A trailing '$' with no following name is a literal dollar sign.
+		{
+			name:     "Trailing literal dollar preserved",
+			input:    "pass$",
+			envVars:  map[string]string{},
+			expected: "pass$",
+		},
+		// A '$' followed by whitespace is not a variable reference.
+		{
+			name:     "Dollar before space preserved",
+			input:    "cost 5$ total",
+			envVars:  map[string]string{},
+			expected: "cost 5$ total",
+		},
+		// Pins the documented gotcha: '$' followed by a name IS expanded, so
+		// secrets containing such sequences are substituted (here to empty).
+		{
+			name:     "Dollar followed by name is treated as variable",
+			input:    "s3cr$et",
+			envVars:  map[string]string{},
+			expected: "s3cr",
+		},
 	}
 
 	for _, tt := range tests {

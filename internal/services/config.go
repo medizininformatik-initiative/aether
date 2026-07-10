@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"regexp"
 	"strings"
 	"time"
 
@@ -39,17 +38,14 @@ func stringToDurationHookFunc() mapstructure.DecodeHookFuncType {
 	}
 }
 
-// ExpandEnvVars expands environment variables in the format ${VAR} or $VAR
+// ExpandEnvVars expands environment variable references of any case, in either
+// the ${VAR} or bare $VAR form, using os.Expand semantics. Unset variables
+// expand to the empty string. A '$' that is not followed by a name (e.g. a
+// trailing '$' or '$' before whitespace) is left as a literal dollar sign; a
+// '$' followed by a name is always treated as a reference, so string values
+// such as secrets that contain "$name" sequences are substituted.
 func ExpandEnvVars(s string) string {
-	// Match ${VAR} pattern
-	re := regexp.MustCompile(`\$\{([A-Z_][A-Z0-9_]*)\}`)
-	expanded := re.ReplaceAllStringFunc(s, func(match string) string {
-		// Extract variable name (remove ${ and })
-		varName := strings.TrimSuffix(strings.TrimPrefix(match, "${"), "}")
-		// Get environment variable value, return empty string if not set
-		return os.Getenv(varName)
-	})
-	return expanded
+	return os.Expand(s, os.Getenv)
 }
 
 // bindEnvOverrides registers an AETHER_* environment binding for every leaf

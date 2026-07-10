@@ -150,3 +150,83 @@ func TestResetStepAndDownstream(t *testing.T) {
 	u, _ := models.GetStepByName(unchanged, models.StepSend)
 	assert.Equal(t, models.StepStatusCompleted, u.Status)
 }
+
+// TestUpdateStepProgress proves progress counters are overwritten while the rest
+// of the step is left intact, and the original step is not mutated.
+func TestUpdateStepProgress(t *testing.T) {
+	tests := []struct {
+		name       string
+		startFiles int
+		startBytes int64
+		files      int
+		bytes      int64
+	}{
+		{"from zero", 0, 0, 10, 2048},
+		{"overwrites prior progress", 3, 100, 7, 4096},
+		{"back to zero", 5, 500, 0, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			step := models.PipelineStep{
+				Name:           models.StepDIMP,
+				Status:         models.StepStatusInProgress,
+				FilesProcessed: tt.startFiles,
+				BytesProcessed: tt.startBytes,
+			}
+
+			updated := models.UpdateStepProgress(step, tt.files, tt.bytes)
+
+			assert.Equal(t, tt.files, updated.FilesProcessed)
+			assert.Equal(t, tt.bytes, updated.BytesProcessed)
+			assert.Equal(t, models.StepStatusInProgress, updated.Status, "status is untouched")
+			assert.Equal(t, models.StepDIMP, updated.Name, "name is untouched")
+
+			assert.Equal(t, tt.startFiles, step.FilesProcessed, "original step must not be mutated")
+			assert.Equal(t, tt.startBytes, step.BytesProcessed, "original step must not be mutated")
+		})
+	}
+}
+
+// TestGetNextPendingStep proves the first pending step (in order) is returned,
+// and that a job with no pending steps reports none.
+func TestGetNextPendingStep(t *testing.T) {
+	tests := []struct {
+		name     string
+		statuses []models.StepStatus
+		wantName models.StepName
+		wantOK   bool
+	}{
+		{
+			name:     "first pending is returned",
+			statuses: []models.StepStatus{models.StepStatusCompleted, models.StepStatusPending, models.StepStatusPending},
+			wantName: models.StepDIMP,
+			wantOK:   true,
+		},
+		{
+			name:     "no pending steps",
+			statuses: []models.StepStatus{models.StepStatusCompleted, models.StepStatusCompleted},
+			wantOK:   false,
+		},
+		{
+			name:     "empty job has no pending step",
+			statuses: nil,
+			wantOK:   false,
+		},
+	}
+	names := []models.StepName{models.StepLocalImport, models.StepDIMP, models.StepValidation}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			steps := make([]models.PipelineStep, len(tt.statuses))
+			for i, s := range tt.statuses {
+				steps[i] = models.PipelineStep{Name: names[i], Status: s}
+			}
+			job := models.PipelineJob{Steps: steps}
+
+			step, ok := models.GetNextPendingStep(job)
+			assert.Equal(t, tt.wantOK, ok)
+			if tt.wantOK {
+				assert.Equal(t, tt.wantName, step.Name)
+			}
+		})
+	}
+}

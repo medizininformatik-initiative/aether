@@ -454,6 +454,30 @@ func TestCompressionReader_CloseError(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestCompressionReader_CloseSurfacesFileErrorWithDecoder verifies that for a
+// compressed reader (decoder present), a failing underlying file close is
+// surfaced rather than swallowed by the decoder-close path.
+func TestCompressionReader_CloseSurfacesFileErrorWithDecoder(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.ndjson.zst")
+
+	writer, err := lib.CreateCompressedFileWriter(testFile, "default")
+	require.NoError(t, err)
+	_, err = writer.Write([]byte(`{"resourceType":"Patient","id":"1"}` + "\n"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	reader, err := lib.OpenFileForReading(testFile)
+	require.NoError(t, err)
+
+	// First close releases the decoder and the file cleanly.
+	require.NoError(t, reader.Close())
+
+	// The decoder is present, but a second close must still report the file
+	// close error instead of returning nil.
+	assert.Error(t, reader.Close(), "file close error must not be swallowed when a decoder is present")
+}
+
 // TestCompressionWriter_WriteMultipleBlocks verifies writing multiple blocks of data
 func TestCompressionWriter_WriteMultipleBlocks(t *testing.T) {
 	tmpDir := t.TempDir()

@@ -467,6 +467,30 @@ func TestLoadJobState_BackfillSkippedForNonCRTDL(t *testing.T) {
 	assert.Empty(t, loaded.CRTDLPath, "non-CRTDL jobs must NOT backfill CRTDLPath")
 }
 
+// TestDeleteJob covers both deletion paths: removing an existing job directory,
+// and reporting an error when the job does not exist.
+func TestDeleteJob(t *testing.T) {
+	t.Run("removes an existing job directory", func(t *testing.T) {
+		jobsDir := t.TempDir()
+		job := createTestJob(uuid.New().String(), jobsDir)
+		require.NoError(t, services.SaveJobState(jobsDir, job))
+
+		jobDir := services.GetJobDir(jobsDir, job.JobID)
+		require.DirExists(t, jobDir)
+
+		require.NoError(t, services.DeleteJob(jobsDir, job.JobID))
+		assert.NoDirExists(t, jobDir, "job directory is gone after deletion")
+	})
+
+	t.Run("deleting a missing job returns an error", func(t *testing.T) {
+		jobsDir := t.TempDir()
+
+		err := services.DeleteJob(jobsDir, "does-not-exist")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "job not found")
+	})
+}
+
 // Helper function to create a test job
 func createTestJob(jobID, jobsDir string) *models.PipelineJob {
 	now := time.Now()

@@ -101,6 +101,121 @@ func TestExtractBundleResources(t *testing.T) {
 	})
 }
 
+func TestExtractAttributeGroupID(t *testing.T) {
+	entityWithSystem := func(system, value string) []any {
+		return []any{
+			map[string]any{
+				"role": "source",
+				"what": map[string]any{
+					"identifier": map[string]any{
+						"system": system,
+						"value":  value,
+					},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name       string
+		provenance map[string]any
+		want       string
+	}{
+		{
+			name:       "missing entity array",
+			provenance: map[string]any{"resourceType": "Provenance"},
+			want:       "",
+		},
+		{
+			name:       "entity is not an array",
+			provenance: map[string]any{"entity": "not-an-array"},
+			want:       "",
+		},
+		{
+			name:       "empty entity array",
+			provenance: map[string]any{"entity": []any{}},
+			want:       "",
+		},
+		{
+			name:       "entity entry of wrong type",
+			provenance: map[string]any{"entity": []any{"not-a-map", 42}},
+			want:       "",
+		},
+		{
+			name:       "entity missing what",
+			provenance: map[string]any{"entity": []any{map[string]any{"role": "source"}}},
+			want:       "",
+		},
+		{
+			name:       "what is not a map",
+			provenance: map[string]any{"entity": []any{map[string]any{"what": "not-a-map"}}},
+			want:       "",
+		},
+		{
+			name: "what missing identifier",
+			provenance: map[string]any{"entity": []any{
+				map[string]any{"what": map[string]any{"reference": "Patient/1"}},
+			}},
+			want: "",
+		},
+		{
+			name: "identifier is not a map",
+			provenance: map[string]any{"entity": []any{
+				map[string]any{"what": map[string]any{"identifier": "not-a-map"}},
+			}},
+			want: "",
+		},
+		{
+			name:       "identifier system does not match naming system",
+			provenance: map[string]any{"entity": entityWithSystem("https://example.com/other", "group-x")},
+			want:       "",
+		},
+		{
+			name:       "matching system with missing value",
+			provenance: map[string]any{"entity": []any{map[string]any{"what": map[string]any{"identifier": map[string]any{"system": models.AttributeGroupNamingSystem}}}}},
+			want:       "",
+		},
+		{
+			name:       "matching system with empty value",
+			provenance: map[string]any{"entity": entityWithSystem(models.AttributeGroupNamingSystem, "")},
+			want:       "",
+		},
+		{
+			name:       "matching system yields group ID",
+			provenance: map[string]any{"entity": entityWithSystem(models.AttributeGroupNamingSystem, "group-a")},
+			want:       "group-a",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.NotPanics(t, func() {
+				assert.Equal(t, tt.want, extractAttributeGroupID(tt.provenance))
+			})
+		})
+	}
+}
+
+func TestPerGroupBudget(t *testing.T) {
+	tests := []struct {
+		name           string
+		batchSizeBytes int
+		numGroups      int
+		want           int
+	}{
+		{name: "even division", batchSizeBytes: 100, numGroups: 4, want: 25},
+		{name: "budget below one byte clamps to one", batchSizeBytes: 10, numGroups: 100, want: 1},
+		{name: "single group gets full budget", batchSizeBytes: 100, numGroups: 1, want: 100},
+		{name: "integer division truncates but stays at least one", batchSizeBytes: 3, numGroups: 2, want: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, perGroupBudget(tt.batchSizeBytes, tt.numGroups))
+		})
+	}
+}
+
 func TestBuildProvenanceIndex(t *testing.T) {
 	t.Run("maps each target reference to attribute group ID", func(t *testing.T) {
 		provs := []map[string]any{

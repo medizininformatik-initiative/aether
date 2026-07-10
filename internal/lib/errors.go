@@ -332,7 +332,7 @@ func ClassifyError(err error) *AetherError {
 		return aetherErr
 	}
 
-	errMsg := err.Error()
+	errMsg := strings.ToLower(err.Error())
 
 	// Network errors
 	if IsNetworkError(err) {
@@ -346,7 +346,7 @@ func ClassifyError(err error) *AetherError {
 	}
 
 	// Disk space errors
-	if containsIgnoreCase(errMsg, "no space left") || containsIgnoreCase(errMsg, "disk full") {
+	if strings.Contains(errMsg, "no space left") || strings.Contains(errMsg, "disk full") {
 		return &AetherError{
 			Category:    CategoryFileSystem,
 			Message:     "Insufficient disk space",
@@ -357,7 +357,7 @@ func ClassifyError(err error) *AetherError {
 	}
 
 	// Permission errors
-	if containsIgnoreCase(errMsg, "permission denied") || containsIgnoreCase(errMsg, "access denied") {
+	if strings.Contains(errMsg, "permission denied") || strings.Contains(errMsg, "access denied") {
 		return &AetherError{
 			Category:    CategoryFileSystem,
 			Message:     "Permission denied",

@@ -2,6 +2,7 @@ package lib
 
 import (
 	"math"
+	"strings"
 	"time"
 
 	"github.com/medizininformatik-initiative/aether/internal/models"
@@ -73,9 +74,8 @@ func IsNetworkError(err error) bool {
 		return false
 	}
 
-	errMsg := err.Error()
+	errMsg := strings.ToLower(err.Error())
 
-	// Common network error patterns (case-insensitive matching)
 	networkErrors := []string{
 		"connection refused",
 		"connection reset",
@@ -84,54 +84,14 @@ func IsNetworkError(err error) bool {
 		"temporary failure",
 		"network is unreachable",
 		"deadline exceeded", // Catches "context deadline exceeded"
-		"EOF",
+		"eof",
 	}
 
 	for _, pattern := range networkErrors {
-		if containsIgnoreCase(errMsg, pattern) {
+		if strings.Contains(errMsg, pattern) {
 			return true
 		}
 	}
 
 	return false
-}
-
-// Helper function to check if string contains substring (case-insensitive)
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
-
-// containsIgnoreCase checks if string contains substring (case-insensitive)
-func containsIgnoreCase(s, substr string) bool {
-	// Convert both strings to lowercase for comparison
-	sLower := ""
-	substrLower := ""
-
-	for _, r := range s {
-		if r >= 'A' && r <= 'Z' {
-			sLower += string(r + 32)
-		} else {
-			sLower += string(r)
-		}
-	}
-
-	for _, r := range substr {
-		if r >= 'A' && r <= 'Z' {
-			substrLower += string(r + 32)
-		} else {
-			substrLower += string(r)
-		}
-	}
-
-	return contains(sLower, substrLower)
 }

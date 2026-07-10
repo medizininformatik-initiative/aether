@@ -222,6 +222,17 @@ func scanProvenanceIndex(files []string) (models.ProvenanceIndex, error) {
 }
 
 // streamAndFlattenResources performs single-pass streaming over all input files,
+// perGroupBudget splits the total batch byte budget evenly across attribute groups,
+// clamping to one byte so a tiny budget spread over many groups never yields a
+// zero threshold that would flush after every single resource.
+func perGroupBudget(batchSizeBytes, numGroups int) int {
+	perGroupBytes := batchSizeBytes / numGroups
+	if perGroupBytes < 1 {
+		return 1
+	}
+	return perGroupBytes
+}
+
 // routing each resource to per-group batches via provenance index and flushing
 // when the byte threshold is exceeded. Returns per-group resource totals.
 func streamAndFlattenResources(
@@ -242,10 +253,7 @@ func streamAndFlattenResources(
 	totals := make([]int, numGroups)
 
 	// Divide total memory budget across groups so peak usage stays within batchSizeBytes
-	perGroupBytes := batchSizeBytes / numGroups
-	if perGroupBytes < 1 {
-		perGroupBytes = 1
-	}
+	perGroupBytes := perGroupBudget(batchSizeBytes, numGroups)
 
 	// Initialize all batches as first batch
 	for i := range batches {

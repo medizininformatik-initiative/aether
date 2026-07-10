@@ -85,13 +85,16 @@ aether pipeline status aether.yaml abc-123-def
 Resume a paused or failed pipeline.
 
 ```bash
-aether pipeline continue <config> <job-id>
+aether pipeline continue <config> <job-id> [options]
 ```
 
 **Use cases:**
 - Resume after terminal close
 - Continue after fixing errors
 - Resume from wait step after placing files in wait directory
+
+**Options:**
+- `--no-progress` - Disable progress indicators
 
 **Examples:**
 ```bash
@@ -100,6 +103,9 @@ aether pipeline continue aether.yaml abc-123-def
 
 # Resume from wait step (after placing files)
 aether pipeline continue aether.yaml abc-123-def
+
+# Resume without progress bars
+aether pipeline continue aether.yaml abc-123-def --no-progress
 ```
 
 ## Job Commands

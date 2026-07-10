@@ -3,6 +3,7 @@ package unit
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -72,6 +73,86 @@ func TestFetchOAuth2Token_CacheHit(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "cached-token", token2)
 	assert.Equal(t, 1, requestCount) // Still 1, cache was used
+}
+
+func TestFetchOAuth2Token_DifferentIssuersNoCollision(t *testing.T) {
+	services.ClearOAuth2TokenCache()
+
+	serverA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"access_token":"token-A","token_type":"Bearer","expires_in":3600}`))
+	}))
+	defer serverA.Close()
+
+	serverB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"access_token":"token-B","token_type":"Bearer","expires_in":3600}`))
+	}))
+	defer serverB.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
+
+	tokenA, err := services.FetchOAuth2Token(serverA.URL, "client-a", "secret-a", httpClient)
+	require.NoError(t, err)
+	assert.Equal(t, "token-A", tokenA)
+
+	// Second issuer within the first token's expiry window must not receive A's token.
+	tokenB, err := services.FetchOAuth2Token(serverB.URL, "client-b", "secret-b", httpClient)
+	require.NoError(t, err)
+	assert.Equal(t, "token-B", tokenB)
+}
+
+func TestFetchOAuth2Token_DifferentClientsSameIssuerNoCollision(t *testing.T) {
+	services.ClearOAuth2TokenCache()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, r.ParseForm())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"access_token":"token-` + r.Form.Get("client_id") + `","token_type":"Bearer","expires_in":3600}`))
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
+
+	token1, err := services.FetchOAuth2Token(server.URL, "client-one", "secret", httpClient)
+	require.NoError(t, err)
+	assert.Equal(t, "token-client-one", token1)
+
+	token2, err := services.FetchOAuth2Token(server.URL, "client-two", "secret", httpClient)
+	require.NoError(t, err)
+	assert.Equal(t, "token-client-two", token2)
+}
+
+func TestFetchOAuth2Token_ConcurrentSameKey(t *testing.T) {
+	services.ClearOAuth2TokenCache()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"access_token":"concurrent-token","token_type":"Bearer","expires_in":3600}`))
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
+
+	const goroutines = 20
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			token, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
+			assert.NoError(t, err)
+			assert.Equal(t, "concurrent-token", token)
+		}()
+	}
+	wg.Wait()
 }
 
 func TestFetchOAuth2Token_HTTPError(t *testing.T) {

@@ -2,7 +2,11 @@ package services
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -70,6 +74,47 @@ func TestMakeAbsoluteURL(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// A body that delivers headers plus a partial payload then goes silent must be
+// aborted by the stall watchdog with the stall-specific error, the half-written
+// file must be removed, and the stall must not be retried (retrying would just
+// repeat the stall). A short stall timeout keeps the test fast.
+func TestDownloadFile_MidBodyStallAborts(t *testing.T) {
+	logger := lib.NewLogger(lib.LogLevelError)
+
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/fhir+ndjson")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"resourceType":"Patient","id":"1"}` + "\n"))
+		w.(http.Flusher).Flush()
+		// Go silent past the stall window; release when the client aborts the
+		// request so the handler goroutine does not linger.
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	stallTimeout := 150 * time.Millisecond
+	httpClient := NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 50}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:              server.URL,
+		DownloadStallTimeout: stallTimeout,
+	}
+	client := NewTORCHClient(torchConfig, httpClient, logger)
+
+	destPath := filepath.Join(t.TempDir(), "stalled.ndjson")
+
+	start := time.Now()
+	_, err := client.downloadFile(server.URL+"/output/stalled.ndjson", destPath, false, "")
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errDownloadStalled, "abort must carry the stall-specific cause, not a generic context error")
+	assert.NoFileExists(t, destPath, "partial output file must be cleaned up after a stalled download")
+	assert.Equal(t, int32(1), hits.Load(), "a stalled download must not be retried")
+	assert.Less(t, elapsed, 2*time.Second, "stall detection must stay well under the whole-request timeout")
 }
 
 func TestJobIDFromStatusURL(t *testing.T) {

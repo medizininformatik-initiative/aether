@@ -39,13 +39,20 @@ func stringToDurationHookFunc() mapstructure.DecodeHookFuncType {
 }
 
 // ExpandEnvVars expands environment variable references of any case, in either
-// the ${VAR} or bare $VAR form, using os.Expand semantics. Unset variables
-// expand to the empty string. A '$' that is not followed by a name (e.g. a
-// trailing '$' or '$' before whitespace) is left as a literal dollar sign; a
-// '$' followed by a name is always treated as a reference, so string values
-// such as secrets that contain "$name" sequences are substituted.
+// the ${VAR} or bare $VAR form, using os.Expand tokenizing. A reference whose
+// variable is set (including to an empty string) is replaced by its value. A
+// reference whose variable is unset is left intact as a literal $name, so config
+// values that legitimately contain "$" sequences (e.g. secrets like "pa$$w0rd")
+// are preserved rather than silently emptied. Note an unset ${name} collapses to
+// the bare form $name. A '$' not followed by a name (a trailing '$' or a '$'
+// before whitespace) is always a literal dollar sign.
 func ExpandEnvVars(s string) string {
-	return os.Expand(s, os.Getenv)
+	return os.Expand(s, func(name string) string {
+		if v, ok := os.LookupEnv(name); ok {
+			return v
+		}
+		return "$" + name
+	})
 }
 
 // bindEnvOverrides registers an AETHER_* environment binding for every leaf

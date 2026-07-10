@@ -18,6 +18,7 @@ func TestExpandEnvVars(t *testing.T) {
 		name     string
 		input    string
 		envVars  map[string]string
+		unset    []string
 		expected string
 	}{
 		{
@@ -39,10 +40,10 @@ func TestExpandEnvVars(t *testing.T) {
 			expected: "first_second",
 		},
 		{
-			name:     "Missing variable",
+			name:     "Unset braced variable preserved as literal",
 			input:    "${MISSING}",
-			envVars:  map[string]string{},
-			expected: "",
+			unset:    []string{"MISSING"},
+			expected: "$MISSING",
 		},
 		{
 			name:     "No variables",
@@ -63,10 +64,10 @@ func TestExpandEnvVars(t *testing.T) {
 			expected: "prefix_test-suffix",
 		},
 		{
-			name:     "Braceless missing variable expands to empty",
+			name:     "Braceless unset variable preserved as literal",
 			input:    "$MISSING",
-			envVars:  map[string]string{},
-			expected: "",
+			unset:    []string{"MISSING"},
+			expected: "$MISSING",
 		},
 		{
 			name:     "Lowercase braced variable",
@@ -81,10 +82,10 @@ func TestExpandEnvVars(t *testing.T) {
 			expected: "value",
 		},
 		{
-			name:     "Lowercase missing braced variable expands to empty",
+			name:     "Lowercase unset braced variable preserved as literal",
 			input:    "${missing}",
-			envVars:  map[string]string{},
-			expected: "",
+			unset:    []string{"missing"},
+			expected: "$missing",
 		},
 		// A trailing '$' with no following name is a literal dollar sign.
 		{
@@ -100,32 +101,62 @@ func TestExpandEnvVars(t *testing.T) {
 			envVars:  map[string]string{},
 			expected: "cost 5$ total",
 		},
-		// Pins the documented gotcha: '$' followed by a name IS expanded, so
-		// secrets containing such sequences are substituted (here to empty).
+		// Unset references are left literal, so secrets that legitimately
+		// contain "$name" or "$$" survive expansion untouched.
 		{
-			name:     "Dollar followed by name is treated as variable",
+			name:     "Secret with unset $name preserved",
 			input:    "s3cr$et",
-			envVars:  map[string]string{},
-			expected: "s3cr",
+			unset:    []string{"et"},
+			expected: "s3cr$et",
+		},
+		{
+			name:     "Secret with double dollar preserved",
+			input:    "pa$$w0rd",
+			unset:    []string{"$"},
+			expected: "pa$$w0rd",
+		},
+		{
+			name:     "Set variable inside secret-like value still expands",
+			input:    "tok_$SECRET_END",
+			envVars:  map[string]string{"SECRET_END": "abc"},
+			expected: "tok_abc",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set environment variables
-			oldVars := make(map[string]string)
+			// Snapshot then set/unset each referenced variable so the result
+			// never depends on the ambient environment (unset cases must stay
+			// genuinely unset to observe literal preservation).
+			type envState struct {
+				val string
+				set bool
+			}
+			snapshot := make(map[string]envState)
+			remember := func(k string) {
+				if _, seen := snapshot[k]; !seen {
+					v, ok := os.LookupEnv(k)
+					snapshot[k] = envState{v, ok}
+				}
+			}
 			for k, v := range tt.envVars {
-				oldVars[k] = os.Getenv(k)
+				remember(k)
 				require.NoError(t, os.Setenv(k, v))
 			}
+			for _, k := range tt.unset {
+				remember(k)
+				require.NoError(t, os.Unsetenv(k))
+			}
 
-			// Call the function and assert result
 			result := services.ExpandEnvVars(tt.input)
 			assert.Equal(t, tt.expected, result)
 
-			// Clean up environment
-			for k := range tt.envVars {
-				require.NoError(t, os.Setenv(k, oldVars[k]))
+			for k, s := range snapshot {
+				if s.set {
+					require.NoError(t, os.Setenv(k, s.val))
+				} else {
+					require.NoError(t, os.Unsetenv(k))
+				}
 			}
 		})
 	}

@@ -32,8 +32,13 @@ services:
     base_url: "https://your-torch-server.org"
     username: "your-username"
     password: "your-password"
-    extraction_timeout: PT30M
+    # OAuth2 client credentials (alternative to username/password):
+    # oauth_issuer_uri: "${TORCH_OAUTH_ISSUER_URI}"
+    # oauth_client_id: "${TORCH_OAUTH_CLIENT_ID}"
+    # oauth_client_secret: "${TORCH_OAUTH_CLIENT_SECRET}"
+    extraction_timeout: PT30M         # liveness window (silence before giving up)
     polling_interval: PT5S
+    download_stall_timeout: PT1M      # abort a result download after this much inactivity
 ```
 
 ### DIMP

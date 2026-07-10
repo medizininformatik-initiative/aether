@@ -288,7 +288,7 @@ func runJobRun(cmd *cobra.Command, args []string) error {
 	logger := lib.DefaultLogger
 	lock, err := services.AcquireJobLock(config.JobsDir, jobID, logger)
 	if err != nil {
-		return fmt.Errorf("cannot execute step: %w\n\nAnother process may be working on this job. Wait for it to complete or check job status", err)
+		return fmt.Errorf("cannot execute step: %w\n\nAnother process may be working on this job. Wait for it to complete or check its status with 'pipeline status'", err)
 	}
 	defer func() {
 		if err := lock.Release(); err != nil {
@@ -346,7 +346,7 @@ func executeStepManually(job *models.PipelineJob, stepName models.StepName, conf
 	// pre-execution guard: nothing runs, so job state is left untouched (not marked
 	// failed) and the error surfaces for a non-zero exit. With --force, reset the step
 	// and every step ordered after it to pending (a re-run invalidates the output later
-	// steps consumed), flip the job to in_progress, and persist now so `job status`
+	// steps consumed), flip the job to in_progress, and persist now so `pipeline status`
 	// shows the in-flight re-run. The invalidated downstream steps stay pending until
 	// re-run; only the target step runs here.
 	if s, ok := models.GetStepByName(*job, stepName); ok && s.Status == models.StepStatusCompleted {

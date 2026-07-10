@@ -75,7 +75,7 @@ See [Coding Guidelines](./coding-guidelines.md) for detailed standards.
 
 ## Build Tools
 
-- Go 1.21+ ([download](https://go.dev/dl/))
+- Go 1.26+ ([download](https://go.dev/dl/))
 - Make
 - Git
 - Docker & Docker Compose (for integration tests)
@@ -110,7 +110,7 @@ git checkout -b feature/your-feature-name
 Before committing, ensure code quality:
 
 ```bash
-# Format and lint
+# Format, vet, and run tests
 make check
 
 # Run all tests
@@ -187,7 +187,7 @@ git push origin feature/your-feature-name
 3. **Ensure all checks pass locally:**
 
 ```bash
-make check      # Format and lint
+make check      # Format, vet, and test
 make test       # Unit tests
 make coverage   # Check coverage
 ```
@@ -253,11 +253,11 @@ Your PR will be reviewed for:
 ### Running Specific Tests
 
 ```bash
-# Run tests for specific package
-go test -v ./internal/pipeline/...
+# Run tests for a specific suite
+go test -v ./tests/unit/...
 
 # Run specific test function
-go test -v ./internal/pipeline/ -run TestImportStep
+go test -v ./tests/unit/ -run TestImportStep
 
 # Run with verbose output
 go test -v -count=1 ./...
@@ -269,8 +269,8 @@ go test -race ./...
 ### Debugging
 
 ```bash
-# Enable debug logging
-AETHER_LOG_LEVEL=debug ./bin/aether pipeline start test.json
+# Enable debug logging (the -v/--verbose flag)
+./bin/aether -v pipeline start aether.yaml crtdl.json
 
 # Run with CPU profile
 go test -cpuprofile=cpu.prof ./...
@@ -282,7 +282,7 @@ go tool pprof cpu.prof
 ```bash
 # Start test environment
 cd .github/test
-make services-up
+make start
 
 # Run full test suite
 cd ../..
@@ -290,7 +290,7 @@ make test-with-services
 
 # Stop services
 cd .github/test
-make services-down
+make stop
 ```
 
 ## Common Tasks

@@ -109,8 +109,7 @@ Aether completions provide suggestions for:
   - `pipeline start`, `pipeline status`, `pipeline continue`
   - `job list`, `job run`
   - `completion bash`, `completion zsh`, `completion fish`, `completion powershell`
-- **Flags**: `--verbose`, `--help`, `--version`, `--no-progress`, `--dir`, `--allow-http-crtdl`, `--step`
-- **Job IDs**: Tab-complete existing job IDs for `pipeline status` and `pipeline continue`
+- **Flags**: `--verbose`, `--help`, `--version`, `--no-progress`, `--dir`, `--allow-http-crtdl`, `--step`, `--force`
 - **File paths**: Autocomplete paths for `pipeline start` input
 
 ## Examples
@@ -118,13 +117,10 @@ Aether completions provide suggestions for:
 ```bash
 # Type and press TAB
 aether <TAB>
-# Shows: pipeline  job  completion  help  version
+# Shows: pipeline  job  completion  help
 
 aether pipeline <TAB>
 # Shows: start  status  continue
-
-aether pipeline status <TAB>
-# Shows: list of existing job IDs
 
 aether pipeline start <TAB>
 # Shows: files and directories in current path
@@ -167,18 +163,6 @@ source ~/.zshrc
 2. Check `_aether` file exists in that directory
 3. Verify `aether` is in your plugins array: `grep "plugins=" ~/.zshrc`
 4. Restart shell: `exec zsh`
-
-### Completions work but job IDs don't autocomplete
-
-Job ID completion requires:
-- The `jobs` directory exists
-- You have created at least one job
-- The shell has permission to read the jobs directory
-
-Check with:
-```bash
-ls -la jobs/
-```
 
 ## Uninstallation
 

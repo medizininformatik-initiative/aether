@@ -19,7 +19,7 @@ Aether is a command-line tool for orchestrating FHIR data processing pipelines. 
 │  ┌─────────────────────────────────┐   │
 │  │  Cobra Commands                 │   │
 │  │  - pipeline start/continue      │   │
-│  │  - job list/status/logs         │   │
+│  │  - job list/run                 │   │
 │  └──────────┬──────────────────────┘   │
 │             ▼                            │
 │  ┌─────────────────────────────────┐   │
@@ -56,7 +56,7 @@ aether/
 ├── cmd/                      # CLI entry points
 │   ├── root.go               # Root command (aether)
 │   ├── pipeline.go           # Pipeline commands (start, continue, status)
-│   └── job.go                # Job management (list, logs, delete)
+│   └── job.go                # Job management (list, run)
 ├── internal/
 │   ├── models/               # Domain models (immutable)
 │   │   ├── job.go            # PipelineJob, JobStatus
@@ -173,18 +173,17 @@ Job state is persisted to JSON files in the jobs directory:
 ```
 jobs/
 └── {job-id}/
-    ├── status.json               # Job metadata and step status
-    ├── config.json               # Configuration snapshot
+    ├── state.json                       # Job metadata and step status
     ├── import/
-    │   ├── Patient.ndjson.zst    # Compressed FHIR data (zstd)
+    │   ├── Patient.ndjson.zst           # Compressed FHIR data (zstd)
     │   └── Observation.ndjson.zst
     ├── validation/
-    │   ├── Patient.validation.ndjson     # OperationOutcome reports
+    │   ├── Patient.validation.ndjson    # OperationOutcome reports
     │   └── Observation.validation.ndjson
     ├── dimp/
-    │   ├── Patient.ndjson.zst    # De-identified data (zstd)
-    │   └── Observation.ndjson.zst
-    └── logs.txt                  # Execution logs
+    │   ├── dimped_Patient.ndjson.zst    # De-identified data (zstd)
+    │   └── dimped_Observation.ndjson.zst
+    └── job.log                          # Execution logs
 ```
 
 **Note**: File extension is `.ndjson.zst` when compression is enabled (default) or `.ndjson` when disabled.
@@ -233,7 +232,7 @@ Persisted Results
 ### Disk Usage
 
 - One job directory per execution
-- Can clean up old jobs with `aether job delete`
+- Clean up old jobs by removing their directory (`rm -rf jobs/<job-id>`)
 - **Zstd compression** reduces file sizes by 4-7x (enabled by default)
 - Files use `.ndjson.zst` extension when compressed
 - Automatic detection of both compressed and uncompressed files for backward compatibility

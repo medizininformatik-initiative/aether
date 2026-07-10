@@ -27,6 +27,7 @@ services:
     max_polling_interval: PT30S  # default
     file_ready_retries: 10       # default
     file_ready_interval: PT10S   # default
+    download_stall_timeout: PT1M # default
 
 pipeline:
   enabled_steps:
@@ -61,3 +62,4 @@ URLs containing `/fhir/extraction/` or `/fhir/result/` are automatically recogni
 | `max_polling_interval` | duration | PT30S | Max interval (exponential backoff) |
 | `file_ready_retries` | int | 10 | Retries while waiting for files to appear after extraction completes |
 | `file_ready_interval` | duration | PT10S | Interval between file-availability checks |
+| `download_stall_timeout` | duration | PT1M | Inactivity window while streaming a result file; the download aborts only if no bytes arrive for this long. `0` uses the built-in default. |

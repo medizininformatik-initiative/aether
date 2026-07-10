@@ -14,11 +14,11 @@ Contributions follow a standard GitHub workflow:
 
 ## Full Contribution Guide
 
-For detailed instructions on development setup, workflow, code style, testing requirements, and more, please see our complete [Contributing Guide](https://medizininformatik-initiative.github.io/aether/development/contributing.html).
+For detailed instructions on development setup, workflow, code style, testing requirements, and more, please see our complete [Contributing Guide](https://medizininformatik-initiative.github.io/aether/stable/development/contributing.html).
 
 ## Prerequisites
 
-- Go 1.21+
+- Go 1.26+
 - Make
 - Git
 - Docker & Docker Compose (for integration tests)
@@ -33,9 +33,9 @@ make build
 make test
 
 # Run a specific test
-make test TEST=TestName
+go test -run TestName ./tests/unit/...
 
-# Format and lint code
+# Lint code
 make lint
 
 # Build documentation
@@ -47,7 +47,7 @@ cd docs && npm install && npm run docs:build
 - All code must be formatted with `gofmt`
 - All CI checks must pass
 - Maintain or improve test coverage
-- Follow [Coding Guidelines](https://medizininformatik-initiative.github.io/aether/development/coding-guidelines.html)
+- Follow [Coding Guidelines](https://medizininformatik-initiative.github.io/aether/stable/development/coding-guidelines.html)
 
 ## License
 

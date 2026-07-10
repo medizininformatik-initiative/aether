@@ -11,13 +11,24 @@ import (
 	"time"
 )
 
-// oauth2TokenCache stores cached OAuth2 tokens to avoid fetching a new token for every request.
-// Thread-safe for concurrent access.
-var oauth2TokenCache = struct {
-	sync.RWMutex
+// oauth2CacheKey identifies a cached token by the credentials used to obtain it.
+// Different issuers or clients must never share a token.
+type oauth2CacheKey struct {
+	issuerURI string
+	clientID  string
+}
+
+type oauth2CacheEntry struct {
 	token     string
 	expiresAt time.Time
-}{}
+}
+
+// oauth2TokenCache stores cached OAuth2 tokens per (issuerURI, clientID) to avoid
+// fetching a new token for every request. Thread-safe for concurrent access.
+var oauth2TokenCache = struct {
+	sync.RWMutex
+	entries map[oauth2CacheKey]oauth2CacheEntry
+}{entries: make(map[oauth2CacheKey]oauth2CacheEntry)}
 
 // oauth2TokenResponse represents the response from an OAuth2 token endpoint
 type oauth2TokenResponse struct {
@@ -29,12 +40,13 @@ type oauth2TokenResponse struct {
 // FetchOAuth2Token retrieves an access token using the OAuth2 client credentials flow.
 // Uses the Keycloak standard token endpoint: {issuer_uri}/protocol/openid-connect/token
 func FetchOAuth2Token(issuerURI, clientID, clientSecret string, httpClient *HTTPClient) (string, error) {
+	cacheKey := oauth2CacheKey{issuerURI: issuerURI, clientID: clientID}
+
 	// Check cache first
 	oauth2TokenCache.RLock()
-	if oauth2TokenCache.token != "" && time.Now().Before(oauth2TokenCache.expiresAt) {
-		token := oauth2TokenCache.token
+	if entry, ok := oauth2TokenCache.entries[cacheKey]; ok && entry.token != "" && time.Now().Before(entry.expiresAt) {
 		oauth2TokenCache.RUnlock()
-		return token, nil
+		return entry.token, nil
 	}
 	oauth2TokenCache.RUnlock()
 
@@ -77,23 +89,23 @@ func FetchOAuth2Token(issuerURI, clientID, clientSecret string, httpClient *HTTP
 	}
 
 	// Cache the token with a small buffer before expiration (30 seconds)
-	oauth2TokenCache.Lock()
-	oauth2TokenCache.token = tokenResp.AccessToken
+	entry := oauth2CacheEntry{token: tokenResp.AccessToken}
 	if tokenResp.ExpiresIn > 30 {
-		oauth2TokenCache.expiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn-30) * time.Second)
+		entry.expiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn-30) * time.Second)
 	} else {
 		// Token expires very soon, don't cache
-		oauth2TokenCache.expiresAt = time.Now()
+		entry.expiresAt = time.Now()
 	}
+	oauth2TokenCache.Lock()
+	oauth2TokenCache.entries[cacheKey] = entry
 	oauth2TokenCache.Unlock()
 
 	return tokenResp.AccessToken, nil
 }
 
-// ClearOAuth2TokenCache clears the cached OAuth2 token (useful for testing)
+// ClearOAuth2TokenCache clears all cached OAuth2 tokens (useful for testing)
 func ClearOAuth2TokenCache() {
 	oauth2TokenCache.Lock()
-	oauth2TokenCache.token = ""
-	oauth2TokenCache.expiresAt = time.Time{}
+	oauth2TokenCache.entries = make(map[oauth2CacheKey]oauth2CacheEntry)
 	oauth2TokenCache.Unlock()
 }

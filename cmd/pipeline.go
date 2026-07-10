@@ -149,7 +149,10 @@ Examples:
 
   # Check status first, then resume
   aether pipeline status aether.yaml abc-123-def
-  aether pipeline continue aether.yaml abc-123-def`,
+  aether pipeline continue aether.yaml abc-123-def
+
+  # Resume without progress indicators
+  aether pipeline continue aether.yaml abc-123-def --no-progress`,
 	Args: cobra.ExactArgs(2),
 	RunE: runPipelineContinue,
 }
@@ -163,6 +166,8 @@ func init() {
 	pipelineStartCmd.Flags().BoolVar(&noProgress, "no-progress", false, "Disable progress indicators")
 	pipelineStartCmd.Flags().StringVar(&localImportDir, "dir", "", "Directory for local import (overrides config)")
 	pipelineStartCmd.Flags().BoolVar(&allowHTTPCRTDL, "allow-http-crtdl", false, "Acknowledge that combining http_import with a CRTDL may not match the endpoint's data")
+
+	pipelineContinueCmd.Flags().BoolVar(&noProgress, "no-progress", false, "Disable progress indicators")
 }
 
 func runPipelineStart(cmd *cobra.Command, args []string) error {

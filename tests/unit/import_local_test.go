@@ -771,14 +771,6 @@ func TestImportFromLocalDirectory_DestinationDirectoryCreationFails(t *testing.T
 	assert.Contains(t, err.Error(), "destination directory", "Error should mention destination directory")
 }
 
-// TestImportFromLocalDirectory_SourceFileStatError tests error when source file cannot be stat'd
-func TestImportFromLocalDirectory_SourceFileStatError(t *testing.T) {
-	// This is difficult to test without mocking, but we can test the error path
-	// by trying to import a file that gets deleted between find and copy
-	// Skip this test as it's a race condition test
-	t.Skip("Skipping race condition test - covered by other tests")
-}
-
 // TestImportFromLocalDirectory_CopyFileError tests error during file copy
 func TestImportFromLocalDirectory_CopyFileError(t *testing.T) {
 	// Skip if running as root

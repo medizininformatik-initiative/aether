@@ -2,8 +2,11 @@ package unit
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
@@ -269,6 +273,115 @@ func TestStatePersistence_ConcurrentAccess(t *testing.T) {
 	loadedJob, err := services.LoadJobState(tempDir, jobID)
 	require.NoError(t, err)
 	assert.Equal(t, 90, loadedJob.TotalFiles, "Final state should have last written value")
+}
+
+// TestStatePersistence_ConcurrentWrites runs many goroutines writing distinct
+// states to the same job while others load it. The atomic temp+rename write must
+// guarantee the final on-disk state is valid JSON equal to exactly one written
+// state, and concurrent loads must never observe a torn file. Run under -race.
+func TestStatePersistence_ConcurrentWrites(t *testing.T) {
+	tempDir := t.TempDir()
+	jobID := uuid.New().String()
+
+	// Seed an initial state so concurrent readers always find a file.
+	require.NoError(t, services.SaveJobState(tempDir, createTestJob(jobID, tempDir)))
+
+	const workers = 64
+	writtenValues := make(map[int]struct{}, workers)
+	for i := 0; i < workers; i++ {
+		writtenValues[i*7] = struct{}{}
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, workers*2)
+
+	for i := 0; i < workers; i++ {
+		wg.Add(2)
+		value := i * 7
+		go func() {
+			defer wg.Done()
+			job := createTestJob(jobID, tempDir)
+			job.TotalFiles = value
+			if err := services.SaveJobState(tempDir, job); err != nil {
+				errCh <- fmt.Errorf("save: %w", err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			// A load racing an atomic rename must never see a partial file.
+			if _, err := services.LoadJobState(tempDir, jobID); err != nil {
+				errCh <- fmt.Errorf("load: %w", err)
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Errorf("concurrent operation failed: %v", err)
+	}
+
+	raw, err := os.ReadFile(services.GetStateFilePath(tempDir, jobID))
+	require.NoError(t, err)
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(raw, &decoded), "final state file must be valid JSON")
+
+	loaded, err := services.LoadJobState(tempDir, jobID)
+	require.NoError(t, err)
+	_, ok := writtenValues[loaded.TotalFiles]
+	assert.True(t, ok, "final TotalFiles %d must equal one concurrently written state", loaded.TotalFiles)
+}
+
+// TestStatePersistence_ConcurrentWritesWithLock demonstrates that wrapping a
+// read-modify-write in WithJobLock serializes access: every increment survives.
+// Without the lock, concurrent load/increment/save would lose updates.
+func TestStatePersistence_ConcurrentWritesWithLock(t *testing.T) {
+	tempDir := t.TempDir()
+	jobID := uuid.New().String()
+	logger := lib.NewLogger(lib.LogLevelError)
+
+	require.NoError(t, services.SaveJobState(tempDir, createTestJob(jobID, tempDir)))
+
+	const workers = 32
+	var wg sync.WaitGroup
+	errCh := make(chan error, workers)
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// WithJobLock is non-blocking, so retry until the exclusive lock is held.
+			for {
+				err := services.WithJobLock(tempDir, jobID, logger, func() error {
+					job, err := services.LoadJobState(tempDir, jobID)
+					if err != nil {
+						return err
+					}
+					job.TotalFiles++
+					return services.SaveJobState(tempDir, job)
+				})
+				if err == nil {
+					return
+				}
+				if !strings.Contains(err.Error(), "locked by another process") {
+					errCh <- err
+					return
+				}
+				time.Sleep(time.Millisecond)
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Errorf("locked operation failed: %v", err)
+	}
+
+	loaded, err := services.LoadJobState(tempDir, jobID)
+	require.NoError(t, err)
+	assert.Equal(t, workers, loaded.TotalFiles,
+		"serialized read-modify-write under WithJobLock must preserve every increment")
 }
 
 // TestLoadJobState_BackfillCRTDLPath verifies the legacy-state backfill branch

@@ -167,6 +167,63 @@ func TestHTTPClient_Put_CustomContentType(t *testing.T) {
 	}
 }
 
+// TestHTTPClient_ZeroMaxAttempts verifies that a retry config with zero max
+// attempts is treated as a single attempt rather than failing with an error
+// that wraps a nil cause.
+func TestHTTPClient_ZeroMaxAttempts(t *testing.T) {
+	var callCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 0, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+
+	resp, err := httpClient.Get(server.URL)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, 1, callCount, "zero max attempts should run exactly one attempt")
+}
+
+// TestHTTPClient_BodyReplayedOnRetry verifies that after a retryable 5xx on the
+// first attempt, the second attempt receives the identical request body.
+func TestHTTPClient_BodyReplayedOnRetry(t *testing.T) {
+	body := []byte(`{"resourceType":"Bundle","entry":[{"resource":{"resourceType":"Patient","id":"p1"}}]}`)
+
+	var attemptBodies [][]byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received, _ := io.ReadAll(r.Body)
+		attemptBodies = append(attemptBodies, received)
+		if len(attemptBodies) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 1, MaxBackoffMs: 5}, models.TLSConfig{}, logger)
+
+	resp, err := httpClient.Post(server.URL, "application/fhir+json", body)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	defer func() { _ = resp.Body.Close() }()
+
+	require.Len(t, attemptBodies, 2, "expected one retry after the 5xx")
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, body, attemptBodies[0], "first attempt should receive the full body")
+	assert.Equal(t, body, attemptBodies[1], "second attempt should receive the identical body")
+}
+
 // TestHTTPClient_WithInsecureSkipVerify verifies the TLS transport branch
 // where BuildTLSTransport returns a non-nil transport
 func TestHTTPClient_WithInsecureSkipVerify(t *testing.T) {

@@ -327,6 +327,8 @@ type PipelineConfig struct {
 
 // RetryConfig controls retry behavior for transient errors
 type RetryConfig struct {
+	// MaxAttempts is the total number of attempts (initial try plus retries).
+	// A value of 0 or less is treated as a single attempt with no retries.
 	MaxAttempts      int   `yaml:"max_attempts" json:"max_attempts" mapstructure:"max_attempts"`
 	InitialBackoffMs int64 `yaml:"initial_backoff_ms" json:"initial_backoff_ms" mapstructure:"initial_backoff_ms"`
 	MaxBackoffMs     int64 `yaml:"max_backoff_ms" json:"max_backoff_ms" mapstructure:"max_backoff_ms"`

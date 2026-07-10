@@ -51,10 +51,16 @@ type RetryConfig struct {
 	MaxBackoffMs     int64
 }
 
-// NewRetryConfigFrom models creates RetryConfig from models.RetryConfig
+// NewRetryConfigFrom models creates RetryConfig from models.RetryConfig.
+// A non-positive MaxAttempts is normalized to a single attempt so the retry
+// loop always runs at least once instead of failing with a nil-wrapped error.
 func NewRetryConfigFromModel(config models.RetryConfig) RetryConfig {
+	maxAttempts := config.MaxAttempts
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
 	return RetryConfig{
-		MaxAttempts:      config.MaxAttempts,
+		MaxAttempts:      maxAttempts,
 		InitialBackoffMs: config.InitialBackoffMs,
 		MaxBackoffMs:     config.MaxBackoffMs,
 	}

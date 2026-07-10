@@ -26,10 +26,13 @@ var rootCmd = &cobra.Command{
 	Short: "Aether - Data Use Process (DUP) Pipeline CLI",
 	Long: `Aether orchestrates Data Use Process (DUP) pipelines for medical FHIR data.
 
-The CLI imports TORCH-extracted FHIR data and processes it through configurable steps:
+The CLI imports FHIR data (TORCH extraction, a local directory, or an HTTP URL)
+and processes it through configurable steps:
   • DIMP pseudonymization (de-identification)
-  • Validation (placeholder - not yet implemented)
-  • Format conversion (CSV/Parquet - services not available yet)
+  • FHIR validation against a validation service
+  • Flattening FHIR to CSV via fhir-flattener (SQL-on-FHIR ViewDefinitions)
+  • Send to a FHIR server, DSF transfer server, or S3 bucket
+  • Wait checkpoints for manual inspection between steps
 
 Key Features:
   • Session-independent: Resume pipelines across terminal sessions

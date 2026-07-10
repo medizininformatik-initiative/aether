@@ -17,10 +17,11 @@ Code style and standards for Aether development. All code must follow these guid
 Use standard Go formatting tools:
 
 ```bash
-# Format code
+# Format code (and order imports via golangci-lint fmt / gci)
 gofmt -w .
+golangci-lint fmt ./...
 
-# Also handles imports and linting
+# Format, vet, and run all tests
 make check
 ```
 
@@ -38,8 +39,8 @@ import (
     "errors"
     "fmt"
 
-    "aether/internal/models"
-    "aether/internal/services"
+    "github.com/medizininformatik-initiative/aether/internal/models"
+    "github.com/medizininformatik-initiative/aether/internal/services"
 )
 
 // ImportStep processes FHIR NDJSON files.
@@ -119,20 +120,33 @@ ic := 0                            // 'ic' is unclear
 
 ### Constants
 
-- Use **UPPERCASE_WITH_UNDERSCORES** for package-level constants
-- Use **CamelCase** for local constants
+- Use **MixedCaps** (not `UPPERCASE_WITH_UNDERSCORES`) — idiomatic Go, and what
+  this codebase uses everywhere
+- Prefer **typed constants** for enumerated values (e.g. `StepName`, `StepStatus`)
+- Export with an uppercase first letter, keep package-private with lowercase
 
 ```go
 // ✅ Good
 const (
-    DEFAULT_TIMEOUT_MINUTES = 30
-    MAX_RETRY_ATTEMPTS = 5
+    DefaultTimeoutMinutes = 30
+    MaxRetryAttempts      = 5
+)
+
+// ✅ Good: typed constants for an enumerated set
+type StepName string
+
+const (
+    StepTorchImport StepName = "torch"
+    StepDIMP        StepName = "dimp"
 )
 
 func doWork() {
     const maxBundleSize = 10 * 1024 * 1024  // Local constant
     ...
 }
+
+// ❌ Bad: screaming snake case is not idiomatic Go
+const MAX_RETRY_ATTEMPTS = 5
 ```
 
 ### Interface Names
@@ -174,8 +188,8 @@ import (
     "github.com/vendor/package"
 
     // Internal packages
-    "aether/internal/models"
-    "aether/internal/services"
+    "github.com/medizininformatik-initiative/aether/internal/models"
+    "github.com/medizininformatik-initiative/aether/internal/services"
 )
 
 // Interfaces
@@ -218,14 +232,14 @@ import (
 
     "github.com/vendor/package"
 
-    "aether/internal/models"
+    "github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // ❌ Bad
 import (
     "github.com/vendor/package"
     "context"
-    "aether/internal/models"
+    "github.com/medizininformatik-initiative/aether/internal/models"
     "fmt"
 )
 ```
@@ -453,7 +467,7 @@ func ProcessEntries(entries []Entry) []Entry {
 
 ```go
 // ✅ Good
-if err := validateCRTDL.json); err != nil {
+if err := validateCRTDL(crtdlPath); err != nil {
     return fmt.Errorf("invalid CRTDL query: %w", err)
 }
 
@@ -490,7 +504,7 @@ func (e *ValidationError) Error() string {
 // Usage
 if !IsValidInput(input) {
     return &ValidationError{
-        Field:   .json",
+        Field:   "cohort",
         Message: "cohort criteria missing",
     }
 }

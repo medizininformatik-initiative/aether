@@ -355,7 +355,7 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 
 	lock, err := services.AcquireJobLock(config.JobsDir, jobID, logger)
 	if err != nil {
-		return fmt.Errorf("cannot continue pipeline: %w\n\nAnother process may be working on this job. Wait for it to complete or check job status", err)
+		return fmt.Errorf("cannot continue pipeline: %w\n\nAnother process may be working on this job. Wait for it to complete or check its status with 'pipeline status'", err)
 	}
 	defer func() {
 		if err := lock.Release(); err != nil {

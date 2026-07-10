@@ -119,7 +119,7 @@ aether job list <config>
 ```
 
 **Output columns:**
-- JOB ID - Full UUID
+- JOB ID - Job ID (`YYYYMMDD_HHMM_UUID`)
 - STATUS - completed/in_progress/failed/pending
 - STEP - Current step
 - FILES - Total files processed
@@ -148,7 +148,7 @@ aether job run <config> <job-id> --step <step-name>
 - `--step` - Step to execute (required)
 - `--force` - Re-run the step even if it has already completed
 
-**Valid steps:** `torch`, `local_import`, `http_import`, `dimp`, `validation`
+**Valid steps:** `torch`, `local_import`, `http_import`, `dimp`, `validation`, `flattening`, `send`
 
 **Re-running completed steps:** An already-completed step is not re-run unless
 `--force` is passed. Without `--force`, the command fails fast with `step
@@ -164,7 +164,7 @@ run --step` or by resuming the pipeline.
 
 **Job status after a manual run:** The job-level status is always derived from
 its steps. While a `--force` re-run runs, the job reads `in_progress` (visible in
-`aether job status`). After it finishes, the status is re-derived: the job
+`aether pipeline status`). After it finishes, the status is re-derived: the job
 returns to `completed` only if every step is completed — so re-running the last
 step completes the job, while re-running an earlier step leaves it `in_progress`
 until the invalidated downstream steps re-run. Likewise, a manual run that
@@ -201,14 +201,6 @@ aether completion bash > /etc/bash_completion.d/aether
 
 # Generate zsh completions
 aether completion zsh > "${fpath[1]}/_aether"
-```
-
-### aether version
-
-Show version information.
-
-```bash
-aether version
 ```
 
 ### aether help

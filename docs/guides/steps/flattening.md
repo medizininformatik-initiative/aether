@@ -39,12 +39,22 @@ pipeline:
 
 ## How it Works
 
-1. Parses CRTDL file to extract attribute groups
-2. Builds ViewDefinitions from lookup tables
-3. Streams FHIR resources from input files in a single pass
-4. Routes each resource to its attribute group based on `meta.profile[0]`
-5. When a group's batch exceeds `batch_size_mb`, flushes it to fhir-flattener
-6. Appends CSV output incrementally (one header, multiple data batches)
+Flattening parses the CRTDL to extract attribute groups, builds a ViewDefinition
+for each group from the lookup tables, then runs **two passes** over the input
+files:
+
+1. **Pass 1 — build the Provenance index:** scans every input file for
+   `Provenance` resources only (clinical resources are discarded to keep memory
+   low). Each Provenance maps its `target[].reference`s to an attribute-group ID,
+   taken from the `entity[].what.identifier` entry whose system is the
+   attribute-group naming system.
+2. **Pass 2 — stream, route, and flatten:** streams the clinical resources and
+   routes each one to attribute groups by looking up its `ResourceType/id`
+   reference in the Provenance index. **A resource with no matching entry in the
+   index is dropped** — it is not written to any group.
+3. When a group's batch exceeds its share of `batch_size_mb`, the batch is flushed
+   to fhir-flattener and its CSV output is appended (one header, multiple data
+   batches).
 
 Memory usage is bounded by `batch_size_mb` regardless of total dataset size — the budget is divided equally across attribute groups.
 

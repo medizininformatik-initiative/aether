@@ -9,9 +9,16 @@ services:
     # TORCH server base URL
     base_url: "http://localhost:8080"
 
-    # TORCH authentication credentials
+    # TORCH authentication credentials (Basic Auth)
     username: "test"
     password: "test"
+
+    # OAuth2 client-credentials auth (alternative to username/password).
+    # When oauth_issuer_uri is set, aether fetches a bearer token from the issuer
+    # and uses it instead of Basic Auth. Keep secrets in environment variables.
+    # oauth_issuer_uri: "${TORCH_OAUTH_ISSUER_URI}"
+    # oauth_client_id: "${TORCH_OAUTH_CLIENT_ID}"
+    # oauth_client_secret: "${TORCH_OAUTH_CLIENT_SECRET}"
 
     # Liveness window: max time to wait WITHOUT a response from TORCH, not a
     # total cap. Reset on every status response (200/202), so a long-running
@@ -158,7 +165,7 @@ services:
       # Leave empty for AWS S3
       # endpoint: "http://localhost:9000"
 
-      # AWS region (default: eu-central-1)
+      # AWS region (required for s3_upload; no default)
       region: "eu-central-1"
 
       # S3 bucket name (required for s3_upload mode)
@@ -206,7 +213,7 @@ services:
 pipeline:
   # List of steps to execute in order
   # Import step options (must be first): torch, local_import, http_import
-  # Other step options: dimp, validation, wait, flattening
+  # Other step options: dimp, validation, wait, flattening, send
   #
   # IMPORTANT: Only ONE import step should be enabled at a time!
   #   - torch: Use with CRTDL for TORCH extraction

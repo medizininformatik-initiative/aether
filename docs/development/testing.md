@@ -47,10 +47,10 @@ Unit tests validate pure functions in isolation without external dependencies.
 make test-unit
 
 # Run specific test suite
-go test -v ./internal/pipeline/...
+go test -v ./tests/unit/...
 
 # Run specific test
-go test -v ./internal/pipeline/ -run TestImportStep
+go test -v ./tests/unit/ -run TestImportStep
 ```
 
 ### Unit Test Example
@@ -102,7 +102,7 @@ for _, tc := range testCases {
 // Define interface-based mock
 type mockTORCHClient struct{}
 
-func (m *mockTORCHClient) Extract(ctx context.Context,.json string) (io.Reader, error) {
+func (m *mockTORCHClient) Extract(ctx context.Context, crtdlPath string) (io.Reader, error) {
     return strings.NewReader("sample data"), nil
 }
 
@@ -127,7 +127,7 @@ Integration tests validate the entire pipeline with real services.
 ```bash
 # Start test environment
 cd .github/test
-make services-up
+make start
 
 # In another terminal, run tests
 cd ../..
@@ -135,7 +135,7 @@ make test-integration
 
 # Stop services
 cd .github/test
-make services-down
+make stop
 ```
 
 ### Service-Specific Integration Tests
@@ -166,7 +166,7 @@ func TestTORCHIntegration(t *testing.T) {
     client := services.NewTORCHClient("http://localhost:8080")
 
     // Test with real CRTDL query
-    result, err := client.Extract(context.Background(), "queries/test.json.json")
+    result, err := client.Extract(context.Background(), "queries/test.json")
     assert.NoError(t, err)
     assert.NotNil(t, result)
 }
@@ -180,14 +180,14 @@ Contract tests verify HTTP API specifications between services.
 
 ```bash
 # Start services first
-cd .github/test && make services-up
+cd .github/test && make start
 
 # Run contract tests
 cd ../..
 make test-contract
 
 # Stop services
-cd .github/test && make services-down
+cd .github/test && make stop
 ```
 
 ### Example Contract Test
@@ -235,14 +235,14 @@ Generates coverage report in `coverage/` directory.
 
 1. **Write failing test** (RED):
    ```bash
-   vim internal/pipeline/feature_test.go
-   go test -v ./internal/pipeline/ -run TestNewFeature
+   vim tests/unit/feature_test.go
+   go test -v ./tests/unit/ -run TestNewFeature
    ```
 
 2. **Implement minimum code** (GREEN):
    ```bash
    vim internal/pipeline/feature.go
-   go test -v ./internal/pipeline/ -run TestNewFeature
+   go test -v ./tests/unit/ -run TestNewFeature
    ```
 
 3. **Refactor** (REFACTOR):
@@ -283,7 +283,7 @@ go test -v ./...
 ### Run Specific Test with Debugging
 
 ```bash
-go test -v ./internal/pipeline/ -run TestImportStep -v
+go test -v ./tests/unit/ -run TestImportStep
 ```
 
 ### Profile Test Performance
@@ -306,7 +306,7 @@ go test -race ./...
 Ensure test services are running:
 ```bash
 cd .github/test
-make services-up
+make start
 ```
 
 ### Import Tests Fail

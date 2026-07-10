@@ -50,11 +50,14 @@ services:
     base_url: "https://your-torch-server.org"
     username: "your-username"
     password: "your-password"
-    extraction_timeout: PT1H     # Default is PT30M
-    polling_interval: PT10S      # Default is PT5S
+    extraction_timeout: PT1H       # Default is PT30M
+    polling_interval: PT10S        # Default is PT5S
+    download_stall_timeout: PT2M   # Default is PT1M
 ```
 
 `extraction_timeout` is a **liveness window**, not a total cap: it bounds how long aether waits *without a response from TORCH*, and it resets on every status response (`200`/`202`). A multi-hour extraction that keeps responding never trips it, so you no longer need to size the timeout to the whole extraction — the default `PT30M` means "give up after 30 minutes of TORCH silence". See [ADR 0001](../adr/0001-extraction-timeout-liveness.md).
+
+`download_stall_timeout` (default `PT1M`) is a similar liveness window for the *download* of each result file: aether aborts a download only if no bytes arrive for this long. A large but steadily streaming NDJSON file completes regardless of total size, while a hung connection fails fast — so it never needs to be sized to the largest expected download.
 
 ### Polling Resilience
 

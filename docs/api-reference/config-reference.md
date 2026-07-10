@@ -10,9 +10,13 @@ services:
     base_url: string
     username: string
     password: string
-    extraction_timeout: duration  # default: PT30M
-    polling_interval: duration    # default: PT5S
-    max_polling_interval: duration # default: PT30S
+    oauth_issuer_uri: string        # OAuth2 client-credentials (alt to username/password)
+    oauth_client_id: string
+    oauth_client_secret: string
+    extraction_timeout: duration    # default: PT30M
+    polling_interval: duration      # default: PT5S
+    max_polling_interval: duration  # default: PT30S
+    download_stall_timeout: duration # default: PT1M
 
   dimp:
     url: string
@@ -104,16 +108,24 @@ services:
     max_polling_interval: PT30S
 ```
 
+Authenticate with either Basic Auth (`username`/`password`) or OAuth2
+client credentials (`oauth_issuer_uri`/`oauth_client_id`/`oauth_client_secret`);
+when `oauth_issuer_uri` is set, aether uses bearer tokens instead of Basic Auth.
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `base_url` | string | - | TORCH server URL (required if torch step enabled) |
-| `username` | string | - | Authentication username |
-| `password` | string | - | Authentication password |
+| `username` | string | - | Basic Auth username |
+| `password` | string | - | Basic Auth password |
+| `oauth_issuer_uri` | string | - | OAuth2 issuer URI. When set, aether fetches client-credentials bearer tokens instead of using Basic Auth. |
+| `oauth_client_id` | string | - | OAuth2 client ID |
+| `oauth_client_secret` | string | - | OAuth2 client secret |
 | `extraction_timeout` | duration | PT30M | Liveness window, not a total cap: max time to wait without a response from TORCH. Reset on every status response (200/202), so a long but responsive extraction never trips it. See [ADR 0001](../adr/0001-extraction-timeout-liveness.md). |
 | `polling_interval` | duration | PT5S | Initial status check interval |
 | `max_polling_interval` | duration | PT30S | Max interval (exponential backoff cap) |
 | `file_ready_retries` | int | 10 | Number of retries for file availability check |
 | `file_ready_interval` | duration | PT10S | Interval between file availability checks |
+| `download_stall_timeout` | duration | PT1M | Inactivity window while streaming a result file to disk: the download aborts only if no bytes arrive for this long. `0` uses the built-in default. |
 
 ### DIMP
 
@@ -469,7 +481,7 @@ uppercased, with `.` replaced by `_`:
 
 ```bash
 export AETHER_SERVICES_TORCH_BASE_URL="http://torch.internal:8080"
-export AETHER_SERVICES_DIMP_URL="http://dimp.internal:8080/fhir"
+export AETHER_SERVICES_DIMP_URL="http://dimp.internal:8080"
 export AETHER_RETRY_MAX_ATTEMPTS=8
 ```
 

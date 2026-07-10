@@ -42,8 +42,9 @@ Results are saved in:
 
 ```
 jobs/<job-id>/
-├── status.json          # Job status
-└── dimp_results.ndjson  # Pseudonymized data
+├── state.json                    # Job state and step status
+└── dimp/
+    └── dimped_<name>.ndjson.zst  # Pseudonymized data (one file per input; .ndjson when compression is disabled)
 ```
 
 ## CRTDL Preprocessing

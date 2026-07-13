@@ -93,6 +93,7 @@ export default defineConfig({
           collapsed: false,
           items: [
             { text: 'Architecture', link: '/development/architecture' },
+            { text: 'TORCH Extraction Implementation', link: '/development/torch-implementation' },
             { text: 'Testing', link: '/development/testing' },
             { text: 'Contributing', link: '/development/contributing' },
             { text: 'Coding Guidelines', link: '/development/coding-guidelines' }

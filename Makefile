@@ -155,11 +155,7 @@ vet:
 ## vuln: Run govulncheck for known vulnerabilities
 vuln:
 	@echo "Running govulncheck..."
-	@if command -v govulncheck > /dev/null; then \
-		govulncheck ./...; \
-	else \
-		echo "govulncheck not installed. Install with: go install golang.org/x/vuln/cmd/govulncheck@latest"; \
-	fi
+	$(GOCMD) tool govulncheck ./...
 
 ## lint: Run golangci-lint (requires golangci-lint installed)
 lint:

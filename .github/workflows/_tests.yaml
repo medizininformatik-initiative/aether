@@ -84,7 +84,7 @@ jobs:
       - name: Install Blazectl
         env:
           # renovate: datasource=github-release-attachments depName=samply/blazectl
-          BLAZECTL_VERSION: v1.4.0
+          BLAZECTL_VERSION: v1.5.0
           BLAZECTL_CHECKSUM: ed411d59b4856667c7817235caacdd0933c59858a342f91982141e6ce2c0e663
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: .github/scripts/install-blazectl.sh
@@ -193,7 +193,7 @@ jobs:
       - name: Install Blazectl
         env:
           # renovate: datasource=github-release-attachments depName=samply/blazectl
-          BLAZECTL_VERSION: v1.4.0
+          BLAZECTL_VERSION: v1.5.0
           BLAZECTL_CHECKSUM: ed411d59b4856667c7817235caacdd0933c59858a342f91982141e6ce2c0e663
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: .github/scripts/install-blazectl.sh

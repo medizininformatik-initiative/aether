@@ -203,7 +203,7 @@ rm ~/.config/fish/completions/aether.fish
 
 ## Development
 
-If you're developing aether and testing completions:
+If you're developing Aether and testing completions:
 
 ```bash
 # Rebuild and reinstall completions

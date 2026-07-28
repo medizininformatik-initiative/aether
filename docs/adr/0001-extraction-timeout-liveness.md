@@ -7,9 +7,9 @@ status: accepted
 TORCH extractions for large cohorts (100k+ patients) legitimately run for hours, but the
 `extraction_timeout` config (default 30 min) was a hard total cap measured from the start of each
 poll run — so a healthy long job was killed for being long, and resuming only restarted the same
-30-minute clock. We redefine `extraction_timeout` as the maximum time aether will wait **since last
+30-minute clock. We redefine `extraction_timeout` as the maximum time Aether will wait **since last
 contact with TORCH**, reset on every `202`/`200` poll response. A healthy job (polling at least every
-`max_polling_interval`) never trips it; aether only gives up when TORCH goes silent.
+`max_polling_interval`) never trips it; Aether only gives up when TORCH goes silent.
 
 ## Considered options
 
@@ -24,7 +24,7 @@ contact with TORCH**, reset on every `202`/`200` poll response. A healthy job (p
 ## Consequences
 
 - A TORCH job that stays responsive (`202`) but never completes will be polled indefinitely until
-  manually interrupted. Accepted as a TORCH-side fault, not aether's to bound.
+  manually interrupted. Accepted as a TORCH-side fault, not Aether's to bound.
 
 ## Applied again: `download_stall_timeout` (#530)
 

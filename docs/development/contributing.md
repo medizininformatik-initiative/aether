@@ -1,6 +1,6 @@
 # Contributing
 
-Contributions welcome! Please follow this guide to contribute to Aether.
+Contributions are welcome. Please follow this guide to contribute to Aether.
 
 ## How to Obtain the Software
 
@@ -133,6 +133,9 @@ make test
 
 # Check coverage
 make coverage
+
+# Lint documentation prose (only needed when you touch docs/)
+make lint-docs
 ```
 
 ## Commit Messages
@@ -359,9 +362,29 @@ vim docs/guides/torch-integration.md
 # Build docs locally to verify (if available)
 npm run docs:dev
 
+# Check prose style and terminology
+make lint-docs
+
 # Commit documentation changes
 git commit -m "docs: Update TORCH integration guide"
 ```
+
+#### Prose Linting
+
+`make lint-docs` runs [Vale](https://vale.sh/) over `docs/` and gates on
+error-level alerts, exactly as CI does. Run `vale docs` directly to also see
+warnings and suggestions, which are advisory and never block a PR.
+
+Configuration lives in `.vale.ini` (Google style, with the rules that do not fit
+this project turned off and the reason recorded inline) and `.vale/styles/aether/`:
+
+- `Terms.yml` — project terminology, including `Aether` casing, `OAuth 2.0`, and
+  `cancel` over `abort`
+- `config/vocabularies/aether/accept.txt` — domain vocabulary
+
+Vale flags unknown words, so a new domain term (a service name, a FHIR acronym)
+fails the run until you add it to `accept.txt`. That is deliberate: it keeps the
+vocabulary current instead of letting typos through.
 
 ## Code Standards
 

@@ -122,7 +122,7 @@ ic := 0                            // 'ic' is unclear
 
 - Use **MixedCaps** (not `UPPERCASE_WITH_UNDERSCORES`) — idiomatic Go, and what
   this codebase uses everywhere
-- Prefer **typed constants** for enumerated values (e.g. `StepName`, `StepStatus`)
+- Prefer **typed constants** for enumerated values (for example, `StepName`, `StepStatus`)
 - Export with an uppercase first letter, keep package-private with lowercase
 
 ```go
@@ -463,7 +463,7 @@ func ProcessEntries(entries []Entry) []Entry {
 
 - Be **specific** about what went wrong
 - Include **context** for debugging
-- Use **fmt.Errorf** with **%w** for wrapping
+- Use `fmt.Errorf` with `%w` for wrapping
 
 ```go
 // ✅ Good

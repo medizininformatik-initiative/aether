@@ -5,7 +5,7 @@ De-identifies FHIR data using a DIMP service.
 ## What it does
 
 - Sends FHIR Bundles to DIMP service
-- Automatically splits large Bundles (>10MB by default)
+- Automatically splits large Bundles (>10 MB by default)
 - Saves pseudonymized data
 
 ## Configuration

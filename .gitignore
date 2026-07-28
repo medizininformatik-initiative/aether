@@ -61,3 +61,8 @@ docs/.vitepress/cache/
 # Patch coverage
 coverage.xml
 patch-coverage.html
+
+# Vale style packages (downloaded via `vale sync`; config and custom rules are committed)
+.vale/styles/*
+!.vale/styles/config/
+!.vale/styles/aether/

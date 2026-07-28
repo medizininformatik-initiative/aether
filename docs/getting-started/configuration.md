@@ -38,7 +38,7 @@ services:
     # oauth_client_secret: "${TORCH_OAUTH_CLIENT_SECRET}"
     extraction_timeout: PT30M         # liveness window (silence before giving up)
     polling_interval: PT5S
-    download_stall_timeout: PT1M      # abort a result download after this much inactivity
+    download_stall_timeout: PT1M      # cancel a result download after this much inactivity
 ```
 
 ### DIMP
@@ -193,7 +193,7 @@ retry:
 
 ## CRTDL Preprocessing
 
-Enriches CRTDL files with extra attributes (e.g. pseudonymisation identifiers) before sending them to TORCH. Disabled by default.
+Enriches CRTDL files with extra attributes (for example, pseudonymization identifiers) before sending them to TORCH. Disabled by default.
 
 ```yaml
 services:
@@ -215,7 +215,7 @@ services:
 
 ## Environment Variables
 
-aether supports two independent environment-variable mechanisms.
+Aether supports two independent environment-variable mechanisms.
 
 ### In-file substitution: `${VAR}`
 

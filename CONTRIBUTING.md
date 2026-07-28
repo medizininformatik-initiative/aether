@@ -38,6 +38,9 @@ go test -run TestName ./tests/unit/...
 # Lint code
 make lint
 
+# Lint documentation prose
+make lint-docs
+
 # Build documentation
 cd docs && npm install && npm run docs:build
 ```

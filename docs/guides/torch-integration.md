@@ -55,17 +55,17 @@ services:
     download_stall_timeout: PT2M   # Default is PT1M
 ```
 
-`extraction_timeout` is a **liveness window**, not a total cap: it bounds how long aether waits *without a response from TORCH*, and it resets on every status response (`200`/`202`). A multi-hour extraction that keeps responding never trips it, so you no longer need to size the timeout to the whole extraction — the default `PT30M` means "give up after 30 minutes of TORCH silence". See [ADR 0001](../adr/0001-extraction-timeout-liveness.md).
+`extraction_timeout` is a **liveness window**, not a total cap: it bounds how long Aether waits *without a response from TORCH*, and it resets on every status response (`200`/`202`). A multi-hour extraction that keeps responding never trips it, so you no longer need to size the timeout to the whole extraction — the default `PT30M` means "give up after 30 minutes of TORCH silence". See [ADR 0001](../adr/0001-extraction-timeout-liveness.md).
 
-`download_stall_timeout` (default `PT1M`) is a similar liveness window for the *download* of each result file: aether aborts a download only if no bytes arrive for this long. A large but steadily streaming NDJSON file completes regardless of total size, while a hung connection fails fast — so it never needs to be sized to the largest expected download.
+`download_stall_timeout` (default `PT1M`) is a similar liveness window for the *download* of each result file: Aether cancels a download only if no bytes arrive for this long. A large but steadily streaming NDJSON file completes regardless of total size, while a hung connection fails fast — so it never needs to be sized to the largest expected download.
 
 ### Polling Resilience
 
-During status polling, transient HTTP errors (timeouts, connection resets) and transient TORCH responses (`503`/`429`/`408`) are treated as recoverable: aether logs a warning and keeps polling with exponential backoff rather than failing the extraction. A `500` is a terminal job failure and fails fast. Because the timeout is a liveness window (reset on every `200`/`202`), polling only stops when TORCH stays silent for longer than `extraction_timeout`.
+During status polling, transient HTTP errors (timeouts, connection resets) and transient TORCH responses (`503`/`429`/`408`) are treated as recoverable: Aether logs a warning and keeps polling with exponential backoff rather than failing the extraction. A `500` is a terminal job failure and fails fast. Because the timeout is a liveness window (reset on every `200`/`202`), polling only stops when TORCH stays silent for longer than `extraction_timeout`.
 
 ### Resuming an Interrupted Extraction
 
-When aether submits an extraction it persists the TORCH **job handle** (job ID + status URL) to disk *before* the long poll. If aether is interrupted (process killed, connection lost, timeout), `aether pipeline continue <job-id>` **re-attaches** to the same in-flight TORCH job and resumes polling — it does not re-submit the CRTDL, so the source FHIR server is not extracted twice. If the handle is no longer valid on TORCH (`404`/`410`, i.e. the job was cancelled or deleted), aether logs a warning, clears the stale handle, and submits a fresh extraction.
+When Aether submits an extraction it persists the TORCH **job handle** (job ID + status URL) to disk *before* the long poll. If Aether is interrupted (process killed, connection lost, timeout), `aether pipeline continue <job-id>` **re-attaches** to the same in-flight TORCH job and resumes polling — it does not re-submit the CRTDL, so the source FHIR server is not extracted twice. If the handle is no longer valid on TORCH (`404`/`410`, that is, the job was cancelled or deleted), Aether logs a warning, clears the stale handle, and submits a fresh extraction.
 
 ### Direct TORCH URL Import
 
@@ -90,8 +90,8 @@ This is useful when:
 
 URLs must contain one of these path segments to be recognized as TORCH URLs:
 
-- `/fhir/extraction/` — e.g., `https://torch.example.com/fhir/extraction/result-123`
-- `/fhir/result/` — e.g., `https://torch.example.com/fhir/result/abc-xyz`
+- `/fhir/extraction/` — for example, `https://torch.example.com/fhir/extraction/result-123`
+- `/fhir/result/` — for example, `https://torch.example.com/fhir/result/abc-xyz`
 
 All other HTTP(S) URLs are treated as plain [HTTP imports](./steps/http-import.md) (single-file download, no polling).
 

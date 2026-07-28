@@ -18,7 +18,7 @@ discovery of `./aether.yaml` or `~/.config/aether/aether.yaml`.
 
 ## Pipeline Commands
 
-### aether pipeline start
+### `aether pipeline start`
 
 Start a new pipeline job.
 
@@ -61,7 +61,7 @@ aether pipeline start aether.yaml crtdl.json https://example.com/fhir/data.ndjso
 aether pipeline start aether.yaml crtdl.json --no-progress
 ```
 
-### aether pipeline status
+### `aether pipeline status`
 
 Check pipeline job status.
 
@@ -80,7 +80,7 @@ aether pipeline status <config> <job-id>
 aether pipeline status aether.yaml abc-123-def
 ```
 
-### aether pipeline continue
+### `aether pipeline continue`
 
 Resume a paused or failed pipeline.
 
@@ -110,7 +110,7 @@ aether pipeline continue aether.yaml abc-123-def --no-progress
 
 ## Job Commands
 
-### aether job list
+### `aether job list`
 
 List all pipeline jobs.
 
@@ -136,7 +136,7 @@ aether job list <config>
 aether job list aether.yaml
 ```
 
-### aether job run
+### `aether job run`
 
 Execute a specific pipeline step manually.
 
@@ -184,7 +184,7 @@ aether job run aether.yaml abc-123-def --step dimp --force
 
 ## Other Commands
 
-### aether completion
+### `aether completion`
 
 Generate shell completion scripts.
 
@@ -203,7 +203,7 @@ aether completion bash > /etc/bash_completion.d/aether
 aether completion zsh > "${fpath[1]}/_aether"
 ```
 
-### aether help
+### `aether help`
 
 Show help information.
 
@@ -221,7 +221,7 @@ aether help pipeline start
 ## Configuration Loading
 
 The path to `aether.yaml` is the first positional argument of every command
-that needs configuration; aether does not auto-discover it. CLI flags and
+that needs configuration; Aether does not auto-discover it. CLI flags and
 `AETHER_*` environment variables still override individual values from the
 file.
 

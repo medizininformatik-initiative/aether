@@ -107,7 +107,7 @@ pipeline:
 
 `access_key_id` and `secret_access_key` authenticate to the S3 API itself.
 
-The optional top-level `auth` block is reused as **proxy authentication** for environments where the S3 endpoint sits behind an HTTP proxy that requires its own credentials. When `auth.username` and `auth.password` are set in `s3_upload` mode, aether attaches a `Proxy-Authorization: Basic …` header to every S3 request without disturbing the AWS SDK's own `Authorization` signing header.
+The optional top-level `auth` block is reused as **proxy authentication** for environments where the S3 endpoint sits behind an HTTP proxy that requires its own credentials. When `auth.username` and `auth.password` are set in `s3_upload` mode, Aether attaches a `Proxy-Authorization: Basic …` header to every S3 request without disturbing the AWS SDK's own `Authorization` signing header.
 
 ```yaml
 services:
@@ -150,7 +150,7 @@ The S3 client classifies AWS responses such as `SlowDown`, `ServiceUnavailable`,
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `s3.bucket` | string | — | Target bucket name (required) |
-| `s3.region` | string | — | AWS region (required, e.g. `eu-central-1`) |
+| `s3.region` | string | — | AWS region (required, for example `eu-central-1`) |
 | `s3.access_key_id` | string | — | S3 access key (required) |
 | `s3.secret_access_key` | string | — | S3 secret key (required) |
 | `s3.endpoint` | string | — | Custom endpoint URL for S3-compatible stores. Leave empty for AWS S3. Must be `http://` or `https://`. |
@@ -168,7 +168,7 @@ auth:
   password: "${FHIR_PASSWORD}"
 ```
 
-**OAuth2 Client Credentials:**
+**OAuth 2.0 Client Credentials:**
 ```yaml
 auth:
   oauth_issuer_uri: "${OAUTH_ISSUER}"

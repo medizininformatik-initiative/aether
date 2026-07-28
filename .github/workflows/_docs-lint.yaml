@@ -1,0 +1,38 @@
+name: Docs Lint
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  vale:
+    name: Vale
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install Vale
+        env:
+          # renovate: datasource=github-release-attachments depName=errata-ai/vale
+          VALE_VERSION: v3.15.2
+          VALE_CHECKSUM: fc72e64454d6bd7af91905d4faebbf411bae3eec17bb572f4101311212bc0d9e
+        run: .github/scripts/install-vale.sh
+
+      # Downloads the Google style package declared in .vale.ini. The custom
+      # aether style and vocabulary are committed, so only this is fetched.
+      - name: Sync Vale styles
+        run: vale sync
+
+      # Gates on error-level rules only: terminology (aether.Terms) and Google's
+      # mechanical checks. Warning-level rules stay visible in `make lint-docs`
+      # without blocking a PR.
+      - name: Run Vale
+        run: vale --minAlertLevel=error --glob='!**/node_modules/**' docs

@@ -37,7 +37,7 @@ Aether drives the FHIR controller through three phases:
 3. **Download** — Aether downloads each output file.
 
 The extraction job is identified by a **TORCH job ID** (a UUID, distinct from the
-aether pipeline job ID). Aether persists a **job handle** — the job ID plus its
+Aether pipeline job ID). Aether persists a **job handle** — the job ID plus its
 status URL — so it can re-attach to an in-flight job after a crash or restart
 instead of re-submitting (see *Handle persistence and resume* below).
 The `CONTEXT.md` glossary at the repository root defines the domain terms
@@ -125,7 +125,7 @@ copies the input CRTDL into the job directory as `crtdl.json`, or — when CRTDL
 preprocessing is enabled with at least one enrichment — writes an enriched
 `enriched-crtdl.json`. It repoints `job.CRTDLPath` at that file so every
 downstream step shares one effective CRTDL. Enrichment adds attributes DIMP
-needs (e.g. `Patient.identifier`) that the original query may omit.
+needs (for example, `Patient.identifier`) that the original query may omit.
 
 ### 2. Submission
 
@@ -154,7 +154,7 @@ poll begins:
 
 - `job.TORCHExtractionURL` — the status URL to poll.
 - `job.TORCHJobID` — the URL's trailing path segment (`JobIDFromStatusURL`),
-  e.g. `.../fhir/__status/{jobId}`.
+  for example `.../fhir/__status/{jobId}`.
 
 Both are written to `state.json` via `UpdateJob`, so a crash mid-extraction
 leaves a recoverable handle. On resume, `executeTORCHExtraction` sees a non-empty
@@ -242,11 +242,11 @@ inherit `base_url`'s scheme (`prependBaseScheme`).
   `Accept: application/fhir+ndjson` and optional zstd compression on write.
 
 **Stall watchdog.** Downloads use a dedicated `http.Client` (`downloadClient`)
-with **no whole-request deadline**, so an arbitrarily large but steadily-flowing
+with **no whole-request deadline**, so an arbitrarily large but steadily flowing
 NDJSON completes regardless of total size. Inactivity is bounded instead by a
 `stallGuardReader`: each read re-arms a `time.AfterFunc` timer, and if no bytes
 arrive within `download_stall_timeout` the timer cancels the request context. The
-abort is reported as `errDownloadStalled` rather than a generic
+cancellation is reported as `errDownloadStalled` rather than a generic
 "context canceled". The watchdog is armed before even an error body is read, so a
 proxy that flushes `4xx`/`5xx` headers then goes silent is bounded too.
 
@@ -302,9 +302,9 @@ Sentinel errors: `ErrExtractionTimeout`, `ErrHandleDead`, `ErrInvalidCRTDL`.
 |-------|---------|--------|
 | `base_url` | — | TORCH server base URL (required when the torch step is enabled) |
 | `username` / `password` | — | Basic auth (takes precedence over OAuth) |
-| `oauth_issuer_uri` / `oauth_client_id` / `oauth_client_secret` | — | OAuth2 client-credentials auth |
+| `oauth_issuer_uri` / `oauth_client_id` / `oauth_client_secret` | — | OAuth 2.0 client-credentials auth |
 | `extraction_timeout` | `30m` | Liveness window — max time to wait **without** a response; reset on every `200`/`202` |
-| `polling_interval` | `5s` | Initial status poll interval (must be ≥ 1s) |
+| `polling_interval` | `5s` | Initial status poll interval (must be ≥ `1s`) |
 | `max_polling_interval` | `30s` | Backoff cap (must be ≥ `polling_interval`) |
 | `file_ready_retries` | `10` | Availability checks before download; `0` disables the check |
 | `file_ready_interval` | `10s` | Delay between availability checks |

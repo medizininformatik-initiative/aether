@@ -26,6 +26,10 @@ jobs:
     uses: ./.github/workflows/_lint.yaml
     secrets: inherit
 
+  docs-lint:
+    name: Docs Lint
+    uses: ./.github/workflows/_docs-lint.yaml
+
   codeql:
     name: CodeQL
     uses: ./.github/workflows/_codeql.yaml

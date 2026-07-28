@@ -25,7 +25,7 @@ LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 PLATFORMS := linux darwin
 ARCHITECTURES := amd64 arm64
 
-.PHONY: all build build-all build-linux build-mac build-mac-arm build-windows build-windows-arm clean test test-unit test-integration test-contract coverage fmt vet vuln install help release
+.PHONY: all build build-all build-linux build-mac build-mac-arm build-windows build-windows-arm clean test test-unit test-integration test-contract coverage fmt vet vuln lint lint-docs install help release
 
 # Default target
 all: clean fmt vet test build
@@ -164,6 +164,15 @@ lint:
 		golangci-lint run ./...; \
 	else \
 		echo "golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+	fi
+
+## lint-docs: Run Vale prose linter on docs, gating on the same level as CI (requires vale installed)
+lint-docs:
+	@echo "Running vale..."
+	@if command -v vale > /dev/null; then \
+		vale sync && vale --minAlertLevel=error --glob='!**/node_modules/**' docs; \
+	else \
+		echo "vale not installed. See https://vale.sh/docs/install"; \
 	fi
 
 ## install: Install binary to /usr/local/bin (requires sudo)

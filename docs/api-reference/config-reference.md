@@ -108,24 +108,24 @@ services:
     max_polling_interval: PT30S
 ```
 
-Authenticate with either Basic Auth (`username`/`password`) or OAuth2
+Authenticate with either Basic Auth (`username`/`password`) or OAuth 2.0
 client credentials (`oauth_issuer_uri`/`oauth_client_id`/`oauth_client_secret`);
-when `oauth_issuer_uri` is set, aether uses bearer tokens instead of Basic Auth.
+when `oauth_issuer_uri` is set, Aether uses bearer tokens instead of Basic Auth.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `base_url` | string | - | TORCH server URL (required if torch step enabled) |
 | `username` | string | - | Basic Auth username |
 | `password` | string | - | Basic Auth password |
-| `oauth_issuer_uri` | string | - | OAuth2 issuer URI. When set, aether fetches client-credentials bearer tokens instead of using Basic Auth. |
-| `oauth_client_id` | string | - | OAuth2 client ID |
-| `oauth_client_secret` | string | - | OAuth2 client secret |
+| `oauth_issuer_uri` | string | - | OAuth 2.0 issuer URI. When set, Aether fetches client-credentials bearer tokens instead of using Basic Auth. |
+| `oauth_client_id` | string | - | OAuth 2.0 client ID |
+| `oauth_client_secret` | string | - | OAuth 2.0 client secret |
 | `extraction_timeout` | duration | PT30M | Liveness window, not a total cap: max time to wait without a response from TORCH. Reset on every status response (200/202), so a long but responsive extraction never trips it. See [ADR 0001](../adr/0001-extraction-timeout-liveness.md). |
 | `polling_interval` | duration | PT5S | Initial status check interval |
 | `max_polling_interval` | duration | PT30S | Max interval (exponential backoff cap) |
 | `file_ready_retries` | int | 10 | Number of retries for file availability check |
 | `file_ready_interval` | duration | PT10S | Interval between file availability checks |
-| `download_stall_timeout` | duration | PT1M | Inactivity window while streaming a result file to disk: the download aborts only if no bytes arrive for this long. `0` uses the built-in default. |
+| `download_stall_timeout` | duration | PT1M | Inactivity window while streaming a result file to disk: the download is canceled only if no bytes arrive for this long. `0` uses the built-in default. |
 
 ### DIMP
 
@@ -231,7 +231,7 @@ services:
 | Option | Description |
 |--------|-------------|
 | `auth.username` + `auth.password` | Basic authentication |
-| `auth.oauth_issuer_uri` + `oauth_client_id` + `oauth_client_secret` | OAuth2 client credentials |
+| `auth.oauth_issuer_uri` + `oauth_client_id` + `oauth_client_secret` | OAuth 2.0 client credentials |
 
 In `s3_upload` mode the `auth` block is optional and used only as upstream proxy authentication (basic auth via `Proxy-Authorization`); the S3 API itself is authenticated via `s3.access_key_id` / `s3.secret_access_key`.
 
@@ -247,7 +247,7 @@ In `s3_upload` mode the `auth` block is optional and used only as upstream proxy
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `s3.bucket` | string | - | Target bucket name (required) |
-| `s3.region` | string | - | AWS region, e.g. `eu-central-1` (required) |
+| `s3.region` | string | - | AWS region, for example `eu-central-1` (required) |
 | `s3.access_key_id` | string | - | S3 access key (required) |
 | `s3.secret_access_key` | string | - | S3 secret key (required) |
 | `s3.endpoint` | string | - | Custom endpoint URL (MinIO, Ceph, etc.). Leave empty for AWS S3. |
@@ -292,7 +292,7 @@ services:
 
 ### CRTDL Preprocessing
 
-Enriches CRTDL documents with additional attributes before sending to TORCH. This is required when using DIMP pseudonymization, which needs certain identifier attributes (e.g., `Patient.identifier`) to be present in the CRTDL extraction query.
+Enriches CRTDL documents with additional attributes before sending to TORCH. This is required when using DIMP pseudonymization, which needs certain identifier attributes (for example, `Patient.identifier`) to be present in the CRTDL extraction query.
 
 ```yaml
 services:
@@ -356,7 +356,7 @@ A shorter syntax is also supported for group creation:
 }
 ```
 
-When `addGroupIfNotExists` is `true`, the group name is automatically derived from the last segment of the profile URL (e.g., `"Patient"` from the URL above). Use `createIfNotExists` with an explicit `groupName` if you need a custom name.
+When `addGroupIfNotExists` is `true`, the group name is automatically derived from the last segment of the profile URL (for example, `"Patient"` from the preceding URL). Use `createIfNotExists` with an explicit `groupName` if you need a custom name.
 
 > **Note:** `addGroupIfNotExists` and `createIfNotExists` are mutually exclusive. Unknown fields in the JSON file will produce an error.
 
@@ -458,7 +458,7 @@ Directory for job state and data files.
 
 ## Environment Variables
 
-aether exposes two independent environment-variable mechanisms.
+Aether exposes two independent environment-variable mechanisms.
 
 ### In-file substitution (`${VAR}`)
 

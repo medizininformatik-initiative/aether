@@ -135,7 +135,7 @@ The S3 client classifies AWS responses such as `SlowDown`, `ServiceUnavailable`,
 |--------|------|---------|-------------|
 | `send_as` | string | — | `direct_resource_load`, `transfer_load`, or `s3_upload` (required) |
 | `url` | string | — | FHIR server root URL. Required for `direct_resource_load` and `transfer_load`. Do not include `/fhir` — the client appends it. Ignored for `s3_upload`. |
-| `batch_size` | int | 100 | Resources per transaction (`direct_resource_load` only, 0–1000) |
+| `batch_size` | int | 100 | Resources per transaction (`direct_resource_load` only, 0-1000) |
 | `auth` | object | — | Authentication (see below) |
 
 ### `transfer` (transfer_load only)

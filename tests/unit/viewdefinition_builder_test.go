@@ -1127,6 +1127,96 @@ func TestBuildViewDefinitionWithOverlappingAttributes(t *testing.T) {
 	})
 }
 
+func TestParentAndChildAttributeRefsWithoutParentLinks(t *testing.T) {
+	t.Run("child ref is skipped even when lookup has no parent links", func(t *testing.T) {
+		// Mirrors issue #619: the lookup resolves the child through the parent's
+		// children list, but the child element itself has no Parent link, so the
+		// ancestry-based skip cannot detect the overlap.
+		lookupTables := []models.LookupTable{
+			newLookupTable("https://example.com/Encounter", "Encounter", map[string]models.LookupElement{
+				"Encounter.extension:Aufnahmegrund": {
+					Children: []string{"Encounter.extension:Aufnahmegrund.extension:ErsteUndZweiteStelle"},
+					ViewDefinition: models.ViewDefSnippet{
+						ForEachOrNull: "extension.where(url = 'aufnahmegrund')",
+					},
+				},
+				"Encounter.extension:Aufnahmegrund.extension:ErsteUndZweiteStelle": {
+					ViewDefinition: models.ViewDefSnippet{
+						ForEachOrNull: "extension.where(url = 'ErsteUndZweiteStelle')",
+						Column: []models.ColumnDefinition{
+							{Name: "aufnahmegrund_stelle12_code", Path: "value.code"},
+						},
+					},
+				},
+			}),
+		}
+
+		group := newAttributeGroup("Encounter", "https://example.com/Encounter",
+			"Encounter.extension:Aufnahmegrund",
+			"Encounter.extension:Aufnahmegrund.extension:ErsteUndZweiteStelle",
+		)
+
+		viewDef := buildAndAssertViewDef(t, lookupTables, group)
+
+		columnNames := services.ExtractColumnNames(*viewDef)
+		assert.Equal(t, 1, countOccurrences(columnNames, "aufnahmegrund_stelle12_code"),
+			"aufnahmegrund_stelle12_code should appear exactly once")
+	})
+
+	t.Run("child ref is kept when the parent ref is missing from the lookup", func(t *testing.T) {
+		// The parent produces no columns, so skipping the child would lose
+		// its data entirely.
+		lookupTables := []models.LookupTable{
+			newLookupTable("https://example.com/Encounter", "Encounter", map[string]models.LookupElement{
+				"Encounter.extension:Aufnahmegrund.extension:ErsteUndZweiteStelle": {
+					ViewDefinition: models.ViewDefSnippet{
+						ForEachOrNull: "extension.where(url = 'ErsteUndZweiteStelle')",
+						Column: []models.ColumnDefinition{
+							{Name: "aufnahmegrund_stelle12_code", Path: "value.code"},
+						},
+					},
+				},
+			}),
+		}
+
+		group := newAttributeGroup("Encounter", "https://example.com/Encounter",
+			"Encounter.extension:Aufnahmegrund",
+			"Encounter.extension:Aufnahmegrund.extension:ErsteUndZweiteStelle",
+		)
+
+		viewDef := buildAndAssertViewDef(t, lookupTables, group)
+
+		columnNames := services.ExtractColumnNames(*viewDef)
+		assert.Contains(t, columnNames, "aufnahmegrund_stelle12_code")
+	})
+
+	t.Run("sibling ref sharing a string prefix is not skipped", func(t *testing.T) {
+		// "Encounter.classHistory" starts with "Encounter.class" as a string,
+		// but it is a sibling, not a child, so both must produce columns.
+		lookupTables := []models.LookupTable{
+			newLookupTable("https://example.com/Encounter", "Encounter", map[string]models.LookupElement{
+				"Encounter.class": {
+					ViewDefinition: newViewDefSnippet(newSelectClause("class_code", "class.code")),
+				},
+				"Encounter.classHistory": {
+					ViewDefinition: newViewDefSnippet(newSelectClause("class_history_code", "classHistory.class.code")),
+				},
+			}),
+		}
+
+		group := newAttributeGroup("Encounter", "https://example.com/Encounter",
+			"Encounter.class",
+			"Encounter.classHistory",
+		)
+
+		viewDef := buildAndAssertViewDef(t, lookupTables, group)
+
+		columnNames := services.ExtractColumnNames(*viewDef)
+		assert.Contains(t, columnNames, "class_code")
+		assert.Contains(t, columnNames, "class_history_code")
+	})
+}
+
 // TestCloneSelectClause tests the cloneSelectClause function
 func TestCloneSelectClause(t *testing.T) {
 	t.Run("parent with forEach in select clause wraps child correctly", func(t *testing.T) {

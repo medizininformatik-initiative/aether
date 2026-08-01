@@ -54,7 +54,7 @@ func (b *ViewDefinitionBuilder) BuildViewDefinition(group models.AttributeGroup)
 	for _, attr := range group.Attributes {
 		// Skip if this element's parent (or any ancestor) is already in the attribute list
 		// Parent's downward traversal will include this child automatically
-		if isParentInAttributeList(lookup, attr.AttributeRef, attrRefSet) {
+		if hasAncestorRef(lookup, attr.AttributeRef, attrRefSet) || isParentInAttributeList(lookup, attr.AttributeRef, attrRefSet) {
 			continue
 		}
 
@@ -68,6 +68,20 @@ func (b *ViewDefinitionBuilder) BuildViewDefinition(group models.AttributeGroup)
 
 	viewDef.Select = selectClauses
 	return &viewDef, nil
+}
+
+// hasAncestorRef checks if any prefix of ref that ends at a "." boundary is in the
+// attribute list (e.g. "Encounter.extension:A" is an ancestor of
+// "Encounter.extension:A.extension:B"). Unlike isParentInAttributeList, this works
+// without Parent links in the lookup table. The ancestor must resolve in the
+// lookup table — otherwise it produces no columns and the child must stay.
+func hasAncestorRef(lookup *models.LookupTable, ref string, attrRefs map[string]bool) bool {
+	for i := len(ref) - 1; i > 0; i-- {
+		if ref[i] == '.' && attrRefs[ref[:i]] && GetElement(lookup, ref[:i]) != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // isParentInAttributeList checks if the element's parent (or any ancestor) is in the attribute list.

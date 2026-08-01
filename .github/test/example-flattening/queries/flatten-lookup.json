@@ -87,7 +87,6 @@
                 ]
             },
             "Condition.code.coding:sct": {
-                "parent": "Condition.code",
                 "viewDefinition": {
                     "forEachOrNull": "coding.where(system = 'http://snomed.info/sct')",
                     "select": [

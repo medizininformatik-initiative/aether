@@ -68,7 +68,6 @@
         }
       },
       "Patient.name.family": {
-        "parent": "Patient.name",
         "viewDefinition": {
           "select": [
             {
@@ -80,7 +79,6 @@
         }
       },
       "Patient.name.given": {
-        "parent": "Patient.name",
         "viewDefinition": {
           "select": [
             {
@@ -135,7 +133,6 @@
         }
       },
       "Condition.coding.icd10": {
-        "parent": "Condition.coding",
         "viewDefinition": {
           "select": [
             {
@@ -149,7 +146,6 @@
         }
       },
       "Condition.coding.snomed": {
-        "parent": "Condition.coding",
         "viewDefinition": {
           "select": [
             {

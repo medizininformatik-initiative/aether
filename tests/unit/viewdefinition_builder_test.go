@@ -1127,11 +1127,11 @@ func TestBuildViewDefinitionWithOverlappingAttributes(t *testing.T) {
 	})
 }
 
-func TestParentAndChildAttributeRefsWithoutParentLinks(t *testing.T) {
-	t.Run("child ref is skipped even when lookup has no parent links", func(t *testing.T) {
-		// Mirrors issue #619: the lookup resolves the child through the parent's
-		// children list, but the child element itself has no Parent link, so the
-		// ancestry-based skip cannot detect the overlap.
+func TestParentChildRefsFromChildrenListOnly(t *testing.T) {
+	t.Run("child ref is skipped when the parent ref is also in the group", func(t *testing.T) {
+		// The lookup declares the child only through the parent's children list.
+		// Normalization backfills the Parent link, so the parent-based skip
+		// detects the overlap.
 		lookupTables := []models.LookupTable{
 			newLookupTable("https://example.com/Encounter", "Encounter", map[string]models.LookupElement{
 				"Encounter.extension:Aufnahmegrund": {
@@ -1150,6 +1150,7 @@ func TestParentAndChildAttributeRefsWithoutParentLinks(t *testing.T) {
 				},
 			}),
 		}
+		require.NoError(t, services.NormalizeLookupTables(lookupTables, nil))
 
 		group := newAttributeGroup("Encounter", "https://example.com/Encounter",
 			"Encounter.extension:Aufnahmegrund",
@@ -1161,6 +1162,44 @@ func TestParentAndChildAttributeRefsWithoutParentLinks(t *testing.T) {
 		columnNames := services.ExtractColumnNames(*viewDef)
 		assert.Equal(t, 1, countOccurrences(columnNames, "aufnahmegrund_stelle12_code"),
 			"aufnahmegrund_stelle12_code should appear exactly once")
+	})
+
+	t.Run("child-only ref gets the parent forEach wrap after normalization", func(t *testing.T) {
+		// The lookup fills only the children direction. Without normalization the
+		// child resolves at the resource root and its columns stay empty. After
+		// normalization the backfilled Parent link wraps it in the parent context.
+		lookupTables := []models.LookupTable{
+			newLookupTable("https://example.com/Encounter", "Encounter", map[string]models.LookupElement{
+				"Encounter.extension:Aufnahmegrund": {
+					Children: []string{"Encounter.extension:Aufnahmegrund.extension:ErsteUndZweiteStelle"},
+					ViewDefinition: models.ViewDefSnippet{
+						ForEachOrNull: "extension.where(url = 'aufnahmegrund')",
+					},
+				},
+				"Encounter.extension:Aufnahmegrund.extension:ErsteUndZweiteStelle": {
+					ViewDefinition: models.ViewDefSnippet{
+						ForEachOrNull: "extension.where(url = 'ErsteUndZweiteStelle')",
+						Column: []models.ColumnDefinition{
+							{Name: "aufnahmegrund_stelle12_code", Path: "value.code"},
+						},
+					},
+				},
+			}),
+		}
+		require.NoError(t, services.NormalizeLookupTables(lookupTables, nil))
+
+		group := newAttributeGroup("Encounter", "https://example.com/Encounter",
+			"Encounter.extension:Aufnahmegrund.extension:ErsteUndZweiteStelle",
+		)
+
+		viewDef := buildAndAssertViewDef(t, lookupTables, group)
+
+		require.Len(t, viewDef.Select, 2)
+		wrapper := viewDef.Select[1]
+		assert.Equal(t, "extension.where(url = 'aufnahmegrund')", wrapper.ForEachOrNull,
+			"child must be wrapped in the parent forEach context")
+		require.Len(t, wrapper.Select, 1)
+		assert.Equal(t, "extension.where(url = 'ErsteUndZweiteStelle')", wrapper.Select[0].ForEachOrNull)
 	})
 
 	t.Run("child ref is kept when the parent ref is missing from the lookup", func(t *testing.T) {

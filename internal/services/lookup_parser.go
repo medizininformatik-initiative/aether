@@ -4,13 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 
+	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // LoadLookupTables loads the lookup tables from a JSON file
 // The file contains an array of LookupTable objects
-func LoadLookupTables(path string) ([]models.LookupTable, error) {
+// A nil logger suppresses the deprecation warning for authored parent fields.
+func LoadLookupTables(path string, logger *lib.Logger) ([]models.LookupTable, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read lookup file: %w", err)
@@ -34,7 +37,54 @@ func LoadLookupTables(path string) ([]models.LookupTable, error) {
 		}
 	}
 
+	if err := NormalizeLookupTables(tables, logger); err != nil {
+		return nil, err
+	}
+
 	return tables, nil
+}
+
+// NormalizeLookupTables derives every Parent link from the Children lists.
+// Authored parent values are ignored: each Parent is cleared and set to the
+// element whose Children list names it. A child that two elements claim is an error.
+// Authored parent fields are deprecated; when logger is non-nil, each profile
+// that sets them produces one warning.
+func NormalizeLookupTables(tables []models.LookupTable, logger *lib.Logger) error {
+	for _, table := range tables {
+		var authored []string
+		for elementID, element := range table.Elements {
+			if element.Parent != "" {
+				authored = append(authored, elementID)
+				element.Parent = ""
+				table.Elements[elementID] = element
+			}
+		}
+		if len(authored) > 0 && logger != nil {
+			sort.Strings(authored)
+			logger.Warn("lookup table sets deprecated 'parent' fields; the values are ignored and derived from 'children' lists instead, and the field will be removed in a future flatten-lookup version",
+				"profile", table.URL,
+				"elements", authored)
+		}
+
+		claimedBy := make(map[string]string)
+		for elementID, element := range table.Elements {
+			for _, childID := range element.Children {
+				if parentID, claimed := claimedBy[childID]; claimed && parentID != elementID {
+					return fmt.Errorf("element '%s' is listed as child of both '%s' and '%s' in profile '%s'",
+						childID, parentID, elementID, table.URL)
+				}
+				claimedBy[childID] = elementID
+
+				child, exists := table.Elements[childID]
+				if !exists {
+					continue
+				}
+				child.Parent = elementID
+				table.Elements[childID] = child
+			}
+		}
+	}
+	return nil
 }
 
 // GetProfileLookup finds a LookupTable by profile URL
@@ -79,7 +129,9 @@ func GetElementChildren(table *models.LookupTable, elementID string) []models.Lo
 	return children
 }
 
-// ValidateLookupTables performs additional validation on the lookup tables
+// ValidateLookupTables performs additional validation on the lookup tables.
+// It expects tables that NormalizeLookupTables has processed, so Parent links
+// are derived and need no check of their own.
 // Checks for:
 // - Duplicate profile URLs
 // - Circular references in children
@@ -104,7 +156,45 @@ func ValidateLookupTables(tables []models.LookupTable) error {
 				}
 			}
 		}
+		if err := detectChildrenCycle(table); err != nil {
+			return err
+		}
 	}
 
+	return nil
+}
+
+// detectChildrenCycle reports an error when the Children lists of a table form a cycle.
+// The builder recurses over Children and Parent links, so a cycle would not terminate.
+func detectChildrenCycle(table models.LookupTable) error {
+	const inProgress, done = 1, 2
+	state := make(map[string]int)
+
+	var visit func(elementID string) error
+	visit = func(elementID string) error {
+		switch state[elementID] {
+		case inProgress:
+			return fmt.Errorf("circular children reference involving element '%s' in profile '%s'",
+				elementID, table.URL)
+		case done:
+			return nil
+		}
+		state[elementID] = inProgress
+		// A childID that is not in Elements is rejected by ValidateLookupTables
+		// before this runs; visiting it is a harmless no-op (no children).
+		for _, childID := range table.Elements[elementID].Children {
+			if err := visit(childID); err != nil {
+				return err
+			}
+		}
+		state[elementID] = done
+		return nil
+	}
+
+	for elementID := range table.Elements {
+		if err := visit(elementID); err != nil {
+			return err
+		}
+	}
 	return nil
 }

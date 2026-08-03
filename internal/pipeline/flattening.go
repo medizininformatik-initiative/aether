@@ -73,7 +73,7 @@ func (flatteningStep) Run(ctx *StepContext) (StepResult, error) {
 	// Load lookup tables
 	lookupPath := job.Config.Services.Flattening.LookupPath
 	logger.Debug("Loading lookup tables", "path", lookupPath)
-	lookupTables, err := services.LoadLookupTables(lookupPath)
+	lookupTables, err := services.LoadLookupTables(lookupPath, logger)
 	if err != nil {
 		return StepResult{}, fmt.Errorf("failed to load lookup tables: %w", err)
 	}

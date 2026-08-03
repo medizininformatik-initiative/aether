@@ -294,6 +294,26 @@ func TestLoadLookupTablesNormalizesParentLinks(t *testing.T) {
 		assert.Empty(t, child.Parent)
 	})
 
+	t.Run("skips a child ID that is not in the elements map", func(t *testing.T) {
+		tables := []models.LookupTable{
+			{
+				URL:          "https://example.com/Encounter",
+				ResourceType: "Encounter",
+				Elements: map[string]models.LookupElement{
+					"Encounter.extension:A": {
+						Children: []string{"Encounter.extension:A.extension:Missing", "Encounter.extension:A.extension:B"},
+					},
+					"Encounter.extension:A.extension:B": {},
+				},
+			},
+		}
+
+		err := services.NormalizeLookupTables(tables)
+		require.NoError(t, err)
+		assert.Equal(t, "Encounter.extension:A", tables[0].Elements["Encounter.extension:A.extension:B"].Parent)
+		assert.NotContains(t, tables[0].Elements, "Encounter.extension:A.extension:Missing")
+	})
+
 	t.Run("rejects a child claimed by two parents", func(t *testing.T) {
 		tempDir := t.TempDir()
 		lookupPath := filepath.Join(tempDir, "lookup.json")
@@ -360,6 +380,23 @@ func TestValidateLookupTables(t *testing.T) {
 		err := services.ValidateLookupTables(tables)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "non-existent child")
+	})
+
+	t.Run("valid nested children hierarchy", func(t *testing.T) {
+		tables := []models.LookupTable{
+			{
+				URL:          "https://example.com/Patient",
+				ResourceType: "Patient",
+				Elements: map[string]models.LookupElement{
+					"Patient.a":     {Children: []string{"Patient.a.b", "Patient.a.c"}},
+					"Patient.a.b":   {Children: []string{"Patient.a.b.d"}},
+					"Patient.a.c":   {},
+					"Patient.a.b.d": {},
+				},
+			},
+		}
+		err := services.ValidateLookupTables(tables)
+		assert.NoError(t, err)
 	})
 
 	t.Run("circular children reference", func(t *testing.T) {

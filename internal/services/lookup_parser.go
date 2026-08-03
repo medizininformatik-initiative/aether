@@ -172,10 +172,9 @@ func detectChildrenCycle(table models.LookupTable) error {
 			return nil
 		}
 		state[elementID] = inProgress
+		// A childID that is not in Elements is rejected by ValidateLookupTables
+		// before this runs; visiting it is a harmless no-op (no children).
 		for _, childID := range table.Elements[elementID].Children {
-			if _, exists := table.Elements[childID]; !exists {
-				continue
-			}
 			if err := visit(childID); err != nil {
 				return err
 			}

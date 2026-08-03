@@ -72,6 +72,10 @@
             "mustHave": true
           },
           {
+            "attributeRef": "Condition.code.coding:sct",
+            "mustHave": false
+          },
+          {
             "attributeRef": "Condition.recordedDate",
             "mustHave": false
           },

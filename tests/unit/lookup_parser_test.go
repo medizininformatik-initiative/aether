@@ -208,6 +208,125 @@ func TestLoadLookupTablesMissingElements(t *testing.T) {
 	})
 }
 
+func TestLoadLookupTablesNormalizesParentLinks(t *testing.T) {
+	t.Run("backfills missing parent link from children list", func(t *testing.T) {
+		tempDir := t.TempDir()
+		lookupPath := filepath.Join(tempDir, "lookup.json")
+		lookupJSON := `[
+			{
+				"url": "https://example.com/Encounter",
+				"resourceType": "Encounter",
+				"elements": {
+					"Encounter.extension:A": {
+						"children": ["Encounter.extension:A.extension:B"],
+						"viewDefinition": {"forEachOrNull": "extension.where(url = 'A')"}
+					},
+					"Encounter.extension:A.extension:B": {
+						"viewDefinition": {
+							"forEachOrNull": "extension.where(url = 'B')",
+							"column": [{"name": "b_code", "path": "value.code"}]
+						}
+					}
+				}
+			}
+		]`
+		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
+		require.NoError(t, err)
+
+		tables, err := services.LoadLookupTables(lookupPath)
+		require.NoError(t, err)
+		child := tables[0].Elements["Encounter.extension:A.extension:B"]
+		assert.Equal(t, "Encounter.extension:A", child.Parent)
+	})
+
+	t.Run("overwrites authored parent link from children list", func(t *testing.T) {
+		tempDir := t.TempDir()
+		lookupPath := filepath.Join(tempDir, "lookup.json")
+		lookupJSON := `[
+			{
+				"url": "https://example.com/Encounter",
+				"resourceType": "Encounter",
+				"elements": {
+					"Encounter.extension:A": {
+						"children": ["Encounter.extension:A.extension:B"],
+						"viewDefinition": {"forEachOrNull": "extension.where(url = 'A')"}
+					},
+					"Encounter.extension:A.extension:B": {
+						"parent": "Encounter.extension:Other",
+						"viewDefinition": {"forEachOrNull": "extension.where(url = 'B')"}
+					}
+				}
+			}
+		]`
+		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
+		require.NoError(t, err)
+
+		tables, err := services.LoadLookupTables(lookupPath)
+		require.NoError(t, err)
+		child := tables[0].Elements["Encounter.extension:A.extension:B"]
+		assert.Equal(t, "Encounter.extension:A", child.Parent)
+	})
+
+	t.Run("clears authored parent link that no children list confirms", func(t *testing.T) {
+		tempDir := t.TempDir()
+		lookupPath := filepath.Join(tempDir, "lookup.json")
+		lookupJSON := `[
+			{
+				"url": "https://example.com/Encounter",
+				"resourceType": "Encounter",
+				"elements": {
+					"Encounter.extension:A": {
+						"viewDefinition": {"forEachOrNull": "extension.where(url = 'A')"}
+					},
+					"Encounter.extension:A.extension:B": {
+						"parent": "Encounter.extension:A",
+						"viewDefinition": {"forEachOrNull": "extension.where(url = 'B')"}
+					}
+				}
+			}
+		]`
+		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
+		require.NoError(t, err)
+
+		tables, err := services.LoadLookupTables(lookupPath)
+		require.NoError(t, err)
+		child := tables[0].Elements["Encounter.extension:A.extension:B"]
+		assert.Empty(t, child.Parent)
+	})
+
+	t.Run("rejects a child claimed by two parents", func(t *testing.T) {
+		tempDir := t.TempDir()
+		lookupPath := filepath.Join(tempDir, "lookup.json")
+		lookupJSON := `[
+			{
+				"url": "https://example.com/Encounter",
+				"resourceType": "Encounter",
+				"elements": {
+					"Encounter.extension:A": {
+						"children": ["Encounter.extension:A.extension:C"],
+						"viewDefinition": {"forEachOrNull": "extension.where(url = 'A')"}
+					},
+					"Encounter.extension:B": {
+						"children": ["Encounter.extension:A.extension:C"],
+						"viewDefinition": {"forEachOrNull": "extension.where(url = 'B')"}
+					},
+					"Encounter.extension:A.extension:C": {
+						"viewDefinition": {"forEachOrNull": "extension.where(url = 'C')"}
+					}
+				}
+			}
+		]`
+		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
+		require.NoError(t, err)
+
+		_, err = services.LoadLookupTables(lookupPath)
+		require.Error(t, err)
+		// Map order decides which parent backfills first and which one the
+		// error names, so assert only the child ID.
+		assert.Contains(t, err.Error(), "Encounter.extension:A.extension:C")
+	})
+}
+
 func TestValidateLookupTables(t *testing.T) {
 	t.Run("valid tables", func(t *testing.T) {
 		tables := []models.LookupTable{
@@ -241,5 +360,51 @@ func TestValidateLookupTables(t *testing.T) {
 		err := services.ValidateLookupTables(tables)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "non-existent child")
+	})
+
+	t.Run("circular children reference", func(t *testing.T) {
+		tables := []models.LookupTable{
+			{
+				URL:          "https://example.com/Patient",
+				ResourceType: "Patient",
+				Elements: map[string]models.LookupElement{
+					"Patient.a": {Children: []string{"Patient.b"}},
+					"Patient.b": {Children: []string{"Patient.a"}},
+				},
+			},
+		}
+		err := services.ValidateLookupTables(tables)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "circular")
+	})
+
+	t.Run("self-referencing children entry", func(t *testing.T) {
+		tables := []models.LookupTable{
+			{
+				URL:          "https://example.com/Patient",
+				ResourceType: "Patient",
+				Elements: map[string]models.LookupElement{
+					"Patient.a": {Children: []string{"Patient.a"}},
+				},
+			},
+		}
+		err := services.ValidateLookupTables(tables)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "circular")
+	})
+
+	t.Run("invalid parent reference", func(t *testing.T) {
+		tables := []models.LookupTable{
+			{
+				URL:          "https://example.com/Patient",
+				ResourceType: "Patient",
+				Elements: map[string]models.LookupElement{
+					"Patient.name.family": {Parent: "Patient.nonexistent"},
+				},
+			},
+		}
+		err := services.ValidateLookupTables(tables)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "non-existent parent")
 	})
 }

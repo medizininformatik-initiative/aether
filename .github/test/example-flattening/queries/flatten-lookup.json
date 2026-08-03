@@ -108,7 +108,6 @@
                 }
             },
             "Condition.code.coding:icd10-gm": {
-                "parent": "Condition.code",
                 "viewDefinition": {
                     "forEachOrNull": "coding.where(system = 'http://fhir.de/CodeSystem/bfarm/icd-10-gm')",
                     "select": [
@@ -130,7 +129,6 @@
                 }
             },
             "Condition.code.coding:alpha-id": {
-                "parent": "Condition.code",
                 "viewDefinition": {
                     "forEachOrNull": "coding.where(system = 'http://fhir.de/CodeSystem/bfarm/alpha-id')",
                     "select": [
@@ -152,7 +150,6 @@
                 }
             },
             "Condition.code.coding:orphanet": {
-                "parent": "Condition.code",
                 "viewDefinition": {
                     "forEachOrNull": "coding.where(system = 'http://www.orpha.net')",
                     "select": [
@@ -263,7 +260,6 @@
                 ]
             },
             "Procedure.code.coding:ops": {
-                "parent": "Procedure.code",
                 "viewDefinition": {
                     "forEachOrNull": "coding.where(system = 'http://fhir.de/CodeSystem/bfarm/ops')",
                     "select": [
@@ -283,7 +279,6 @@
                 }
             },
             "Procedure.code.coding:sct": {
-                "parent": "Procedure.code",
                 "viewDefinition": {
                     "forEachOrNull": "coding.where(system = 'http://snomed.info/sct')",
                     "select": [

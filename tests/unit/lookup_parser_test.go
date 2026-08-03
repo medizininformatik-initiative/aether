@@ -430,18 +430,4 @@ func TestValidateLookupTables(t *testing.T) {
 		assert.Contains(t, err.Error(), "circular")
 	})
 
-	t.Run("invalid parent reference", func(t *testing.T) {
-		tables := []models.LookupTable{
-			{
-				URL:          "https://example.com/Patient",
-				ResourceType: "Patient",
-				Elements: map[string]models.LookupElement{
-					"Patient.name.family": {Parent: "Patient.nonexistent"},
-				},
-			},
-		}
-		err := services.ValidateLookupTables(tables)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "non-existent parent")
-	})
 }

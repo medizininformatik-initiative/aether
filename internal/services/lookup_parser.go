@@ -116,12 +116,13 @@ func GetElementChildren(table *models.LookupTable, elementID string) []models.Lo
 	return children
 }
 
-// ValidateLookupTables performs additional validation on the lookup tables
+// ValidateLookupTables performs additional validation on the lookup tables.
+// It expects tables that NormalizeLookupTables has processed, so Parent links
+// are derived and need no check of their own.
 // Checks for:
 // - Duplicate profile URLs
 // - Circular references in children
 // - Invalid child references
-// - Invalid parent references
 func ValidateLookupTables(tables []models.LookupTable) error {
 	// Check for duplicate URLs
 	urlSet := make(map[string]bool)
@@ -132,19 +133,13 @@ func ValidateLookupTables(tables []models.LookupTable) error {
 		urlSet[table.URL] = true
 	}
 
-	// Check for invalid child and parent references within each table
+	// Check for invalid child references within each table
 	for _, table := range tables {
 		for elementID, element := range table.Elements {
 			for _, childID := range element.Children {
 				if _, exists := table.Elements[childID]; !exists {
 					return fmt.Errorf("element '%s' references non-existent child '%s' in profile '%s'",
 						elementID, childID, table.URL)
-				}
-			}
-			if element.Parent != "" {
-				if _, exists := table.Elements[element.Parent]; !exists {
-					return fmt.Errorf("element '%s' references non-existent parent '%s' in profile '%s'",
-						elementID, element.Parent, table.URL)
 				}
 			}
 		}

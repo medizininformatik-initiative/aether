@@ -4,13 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 
+	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // LoadLookupTables loads the lookup tables from a JSON file
 // The file contains an array of LookupTable objects
-func LoadLookupTables(path string) ([]models.LookupTable, error) {
+// A nil logger suppresses the deprecation warning for authored parent fields.
+func LoadLookupTables(path string, logger *lib.Logger) ([]models.LookupTable, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read lookup file: %w", err)
@@ -34,7 +37,7 @@ func LoadLookupTables(path string) ([]models.LookupTable, error) {
 		}
 	}
 
-	if err := NormalizeLookupTables(tables); err != nil {
+	if err := NormalizeLookupTables(tables, logger); err != nil {
 		return nil, err
 	}
 
@@ -44,13 +47,23 @@ func LoadLookupTables(path string) ([]models.LookupTable, error) {
 // NormalizeLookupTables derives every Parent link from the Children lists.
 // Authored parent values are ignored: each Parent is cleared and set to the
 // element whose Children list names it. A child that two elements claim is an error.
-func NormalizeLookupTables(tables []models.LookupTable) error {
+// Authored parent fields are deprecated; when logger is non-nil, each profile
+// that sets them produces one warning.
+func NormalizeLookupTables(tables []models.LookupTable, logger *lib.Logger) error {
 	for _, table := range tables {
+		var authored []string
 		for elementID, element := range table.Elements {
 			if element.Parent != "" {
+				authored = append(authored, elementID)
 				element.Parent = ""
 				table.Elements[elementID] = element
 			}
+		}
+		if len(authored) > 0 && logger != nil {
+			sort.Strings(authored)
+			logger.Warn("lookup table sets deprecated 'parent' fields; the values are ignored and derived from 'children' lists instead, and the field will be removed in a future flatten-lookup version",
+				"profile", table.URL,
+				"elements", authored)
 		}
 
 		claimedBy := make(map[string]string)

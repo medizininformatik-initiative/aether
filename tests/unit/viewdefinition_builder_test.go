@@ -1150,7 +1150,7 @@ func TestParentChildRefsFromChildrenListOnly(t *testing.T) {
 				},
 			}),
 		}
-		require.NoError(t, services.NormalizeLookupTables(lookupTables))
+		require.NoError(t, services.NormalizeLookupTables(lookupTables, nil))
 
 		group := newAttributeGroup("Encounter", "https://example.com/Encounter",
 			"Encounter.extension:Aufnahmegrund",
@@ -1186,7 +1186,7 @@ func TestParentChildRefsFromChildrenListOnly(t *testing.T) {
 				},
 			}),
 		}
-		require.NoError(t, services.NormalizeLookupTables(lookupTables))
+		require.NoError(t, services.NormalizeLookupTables(lookupTables, nil))
 
 		group := newAttributeGroup("Encounter", "https://example.com/Encounter",
 			"Encounter.extension:Aufnahmegrund.extension:ErsteUndZweiteStelle",

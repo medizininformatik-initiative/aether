@@ -70,17 +70,12 @@ func (flatteningStep) Run(ctx *StepContext) (StepResult, error) {
 		return StepResult{}, fmt.Errorf("failed to parse CRTDL file: %w", err)
 	}
 
-	// Load lookup tables
+	// Load lookup tables (LoadLookupTables normalizes and validates them)
 	lookupPath := job.Config.Services.Flattening.LookupPath
 	logger.Debug("Loading lookup tables", "path", lookupPath)
 	lookupTables, err := services.LoadLookupTables(lookupPath, logger)
 	if err != nil {
 		return StepResult{}, fmt.Errorf("failed to load lookup tables: %w", err)
-	}
-
-	// Validate lookup tables
-	if err := services.ValidateLookupTables(lookupTables); err != nil {
-		return StepResult{}, fmt.Errorf("invalid lookup tables: %w", err)
 	}
 
 	inputDir := ctx.Layout.InputDir(stepName)

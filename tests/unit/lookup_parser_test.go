@@ -106,6 +106,27 @@ func TestLoadLookupTables(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to parse lookup file")
 	})
+
+	t.Run("rejects circular children references", func(t *testing.T) {
+		tempDir := t.TempDir()
+		lookupPath := filepath.Join(tempDir, "lookup.json")
+		lookupJSON := `[
+			{
+				"url": "https://example.com/Patient",
+				"resourceType": "Patient",
+				"elements": {
+					"Patient.a": {"children": ["Patient.b"]},
+					"Patient.b": {"children": ["Patient.a"]}
+				}
+			}
+		]`
+		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
+		require.NoError(t, err)
+
+		_, err = services.LoadLookupTables(lookupPath, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "circular")
+	})
 }
 
 func TestGetProfileLookup(t *testing.T) {

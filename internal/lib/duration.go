@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"time"
@@ -18,11 +19,15 @@ func ParseDuration(s string) (time.Duration, error) {
 		return 0, nil
 	}
 
-	if d, ok := parseISO8601Duration(s); ok {
+	d, ok, err := parseISO8601Duration(s)
+	if err != nil {
+		return 0, err
+	}
+	if ok {
 		return d, nil
 	}
 
-	d, err := time.ParseDuration(s)
+	d, err = time.ParseDuration(s)
 	if err != nil {
 		return 0, fmt.Errorf("invalid duration %q: must be ISO 8601 (e.g. PT30M) or Go format (e.g. 30m)", s)
 	}
@@ -30,37 +35,59 @@ func ParseDuration(s string) (time.Duration, error) {
 }
 
 // parseISO8601Duration attempts to parse an ISO 8601 duration string.
-// Returns the duration and true if successful, or zero and false if the string
-// is not in ISO 8601 format.
-func parseISO8601Duration(s string) (time.Duration, bool) {
+// Returns ok=false if the string is not in ISO 8601 format, or an error if it
+// matches the format but the value does not fit in a time.Duration.
+func parseISO8601Duration(s string) (time.Duration, bool, error) {
 	matches := iso8601Pattern.FindStringSubmatch(s)
 	if matches == nil {
-		return 0, false
+		return 0, false, nil
 	}
 
 	// Reject bare "P" or "PT" with no components
 	if matches[1] == "" && matches[2] == "" && matches[3] == "" && matches[4] == "" {
-		return 0, false
+		return 0, false, nil
 	}
+
+	errOutOfRange := fmt.Errorf("invalid duration %q: value out of range", s)
 
 	var d time.Duration
 
-	if matches[1] != "" {
-		days, _ := strconv.Atoi(matches[1])
-		d += time.Duration(days) * 24 * time.Hour
+	components := []struct {
+		value string
+		unit  time.Duration
+	}{
+		{matches[1], 24 * time.Hour},
+		{matches[2], time.Hour},
+		{matches[3], time.Minute},
 	}
-	if matches[2] != "" {
-		hours, _ := strconv.Atoi(matches[2])
-		d += time.Duration(hours) * time.Hour
-	}
-	if matches[3] != "" {
-		minutes, _ := strconv.Atoi(matches[3])
-		d += time.Duration(minutes) * time.Minute
-	}
-	if matches[4] != "" {
-		seconds, _ := strconv.ParseFloat(matches[4], 64)
-		d += time.Duration(seconds * float64(time.Second))
+	for _, c := range components {
+		if c.value == "" {
+			continue
+		}
+		n, err := strconv.ParseInt(c.value, 10, 64)
+		if err != nil || n > int64(math.MaxInt64/c.unit) {
+			return 0, false, errOutOfRange
+		}
+		scaled := time.Duration(n) * c.unit
+		if d > math.MaxInt64-scaled {
+			return 0, false, errOutOfRange
+		}
+		d += scaled
 	}
 
-	return d, true
+	if matches[4] != "" {
+		seconds, err := strconv.ParseFloat(matches[4], 64)
+		// Reject before converting to time.Duration: float-to-integer
+		// conversion is implementation-defined when the value overflows.
+		if err != nil || seconds > float64(math.MaxInt64/time.Second) {
+			return 0, false, errOutOfRange
+		}
+		scaled := time.Duration(seconds * float64(time.Second))
+		if d > math.MaxInt64-scaled {
+			return 0, false, errOutOfRange
+		}
+		d += scaled
+	}
+
+	return d, true, nil
 }

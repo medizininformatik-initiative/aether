@@ -1,0 +1,44 @@
+name: Cleanup PR Artifacts
+
+# pull_request_target gives a write token, which a fork pull request does not
+# get from pull_request. The job checks out no code and only calls the REST API.
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  cleanup:
+    name: Delete Build Artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: write
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Delete build artifacts of the pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          ARTIFACT_NAME: build-artifacts-pr-${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          ids="$(gh api --paginate \
+            "/repos/$REPO/actions/artifacts?name=$ARTIFACT_NAME" \
+            --jq '.artifacts[].id')"
+
+          if [ -z "$ids" ]; then
+            echo "No artifacts named $ARTIFACT_NAME"
+            exit 0
+          fi
+
+          for id in $ids; do
+            echo "Deleting artifact $id ($ARTIFACT_NAME)"
+            gh api -X DELETE "/repos/$REPO/actions/artifacts/$id"
+          done

@@ -44,6 +44,11 @@ jobs:
     uses: ./.github/workflows/_vuln.yaml
     secrets: inherit
 
+  build:
+    name: Build
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    uses: ./.github/workflows/_build.yaml
+
   tests:
     name: Tests
     needs: [lint]

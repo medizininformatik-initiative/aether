@@ -62,9 +62,9 @@ func TestExecuteFlatteningStep_FullPipeline(t *testing.T) {
 	// Create a mock fhir-flattener server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
-			w.Header().Set("Content-Type", "text/csv")
+			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("1,John Doe,1990-01-15\n"))
+			_, _ = w.Write([]byte(`{"id":"1","name":"John Doe"}` + "\n"))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -477,9 +477,9 @@ func TestExecuteFlatteningStep_NonBundleStreamRouting(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			flushed = true
-			w.Header().Set("Content-Type", "text/csv")
+			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("1,Alice\n2,Bob\n"))
+			_, _ = w.Write([]byte(`{"id":"1","name":"Alice"}` + "\n" + `{"id":"2","name":"Bob"}` + "\n"))
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)

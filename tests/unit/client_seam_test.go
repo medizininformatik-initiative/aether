@@ -156,7 +156,7 @@ func TestImportStep_TorchExtraction_UsesFakeExtractor(t *testing.T) {
 // TestFlatteningStep_UsesFakeFlattener drives the flattening step through a fake
 // Flattener and asserts the step's orchestration: the CRTDL group is compiled
 // into a ViewDefinition, the provenance-linked resource is routed and batched to
-// the flattener, and the flattener's CSV output is written to disk. The fake
+// the flattener, and the flattener's rows are written to disk as CSV. The fake
 // stands in for the HTTP flattener service.
 func TestFlatteningStep_UsesFakeFlattener(t *testing.T) {
 	var (
@@ -164,10 +164,10 @@ func TestFlatteningStep_UsesFakeFlattener(t *testing.T) {
 		gotCount   int
 	)
 	fake := &servicestest.MockFlattener{
-		FlattenFunc: func(vd models.ViewDefinition, resources []map[string]any) (string, error) {
+		FlattenFunc: func(vd models.ViewDefinition, resources []map[string]any) ([][]string, error) {
 			gotViewDef = vd
 			gotCount = len(resources)
-			return "flattened-patient\n", nil
+			return [][]string{{"flattened-patient"}}, nil
 		},
 	}
 	pipeline.SetFlattenerFactoryForTesting(
@@ -216,4 +216,19 @@ func TestFlatteningStep_UsesFakeFlattener(t *testing.T) {
 	content, err := os.ReadFile(csvFiles[0])
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "flattened-patient")
+}
+
+// The zero value of MockFlattener must be usable: a step under test that only
+// needs the call count gets no rows and no error.
+func TestMockFlattener_WithoutFlattenFuncReturnsNoRows(t *testing.T) {
+	mock := &servicestest.MockFlattener{}
+
+	rows, err := mock.Flatten(
+		models.ViewDefinition{Name: "patients", Resource: "Patient"},
+		[]map[string]any{{"resourceType": "Patient", "id": "1"}},
+	)
+
+	require.NoError(t, err)
+	assert.Nil(t, rows)
+	assert.Equal(t, 1, mock.Calls)
 }

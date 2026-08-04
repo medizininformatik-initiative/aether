@@ -3,9 +3,12 @@ package services
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
@@ -45,17 +48,20 @@ func NewFlattenerClient(config models.FlatteningConfig, retryConfig models.Retry
 	}
 }
 
-// Flatten sends resources to the fhir-flattener service and returns CSV data.
-// The API returns a CSV body WITHOUT header - the caller builds the header from
-// the ViewDefinition. Transient errors (network + HTTP 5xx) are retried by the
-// shared HTTPClient.
-func (c *FlattenerClient) Flatten(viewDef models.ViewDefinition, resources []map[string]any) (string, error) {
+// Flatten sends resources to the fhir-flattener service and returns the
+// flattened rows in ViewDefinition column order. The service responds with
+// NDJSON (one JSON object per row); values are mapped to columns by name, so
+// a change of column order upstream cannot mislabel columns. Transient errors
+// (network + HTTP 5xx) are retried by the shared HTTPClient.
+func (c *FlattenerClient) Flatten(viewDef models.ViewDefinition, resources []map[string]any) ([][]string, error) {
 	if len(resources) == 0 {
 		c.logger.Debug("No resources to flatten", "viewDefinition", viewDef.Name)
-		return "", nil
+		return nil, nil
 	}
 
-	url := c.baseURL + "/fhir/ViewDefinition/$run"
+	// _format=ndjson is redundant with the Accept header today (flattener
+	// 0.1.0-alpha.7 only reads Accept) but is sent for robustness.
+	url := c.baseURL + "/fhir/ViewDefinition/$run?_format=ndjson"
 
 	c.logger.Debug("Sending resources to flattener",
 		"viewDefinition", viewDef.Name,
@@ -66,34 +72,105 @@ func (c *FlattenerClient) Flatten(viewDef models.ViewDefinition, resources []map
 	request := models.NewFlatteningRequest(viewDef, resources)
 	jsonBody, err := json.Marshal(request)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewReader(jsonBody))
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/fhir+json")
-	req.Header.Set("Accept", "text/csv")
+	req.Header.Set("Accept", "application/x-ndjson")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		c.logger.Error("Flattener HTTP request failed", "viewDefinition", viewDef.Name, "error", err)
-		return "", fmt.Errorf("request failed: %w", err)
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
-		return "", classifyHTTPResponse("Flattener", resp)
+		return nil, classifyHTTPResponse("Flattener", resp)
 	}
 
-	bodyBytes, err := io.ReadAll(resp.Body)
+	rows, err := c.decodeNDJSONRows(resp.Body, ExtractColumnNames(viewDef), len(resources), viewDef.Name)
 	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
+		return nil, err
 	}
 
-	c.logger.Debug("Flattener returned CSV data", "viewDefinition", viewDef.Name, "bytes", len(bodyBytes))
-	return string(bodyBytes), nil
+	c.logger.Debug("Flattener returned rows", "viewDefinition", viewDef.Name, "rows", len(rows))
+	return rows, nil
+}
+
+// decodeNDJSONRows streams the NDJSON response body and maps each object to a
+// CSV row by column name. A column absent from an object becomes an empty
+// cell; absent columns are reported once per batch as a warning. sizeHint
+// pre-sizes the row slice (the resource count is a good lower bound).
+func (c *FlattenerClient) decodeNDJSONRows(body io.Reader, columns []string, sizeHint int, viewDefName string) ([][]string, error) {
+	decoder := json.NewDecoder(body)
+	decoder.UseNumber()
+
+	rows := make([][]string, 0, sizeHint)
+	missing := make([]bool, len(columns))
+	obj := make(map[string]any)
+	for {
+		clear(obj)
+		if err := decoder.Decode(&obj); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, fmt.Errorf("failed to parse NDJSON from flattener (row %d): %w", len(rows)+1, err)
+		}
+
+		row := make([]string, len(columns))
+		for i, col := range columns {
+			value, ok := obj[col]
+			if !ok {
+				missing[i] = true
+				continue
+			}
+			row[i] = renderCSVCell(value)
+		}
+		rows = append(rows, row)
+	}
+
+	var missingNames []string
+	for i, wasMissing := range missing {
+		if wasMissing {
+			missingNames = append(missingNames, columns[i])
+		}
+	}
+	if len(missingNames) > 0 {
+		c.logger.Warn("Flattener response is missing columns; cells left empty",
+			"viewDefinition", viewDefName,
+			"columns", strings.Join(missingNames, ","))
+	}
+
+	return rows, nil
+}
+
+// renderCSVCell renders a decoded JSON value as a CSV cell:
+// null becomes an empty cell, a string stays verbatim, a number keeps its
+// source text (json.Number), a boolean becomes "true"/"false", and a nested
+// object or array becomes compact JSON.
+func renderCSVCell(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case json.Number:
+		return v.String()
+	case bool:
+		return strconv.FormatBool(v)
+	default:
+		encoded, err := json.Marshal(v)
+		if err != nil {
+			// Unreachable for values that encoding/json itself decoded.
+			return fmt.Sprint(v)
+		}
+		return string(encoded)
+	}
 }
 
 // HealthCheck verifies the flattener service is available. Transient errors are
@@ -120,7 +197,7 @@ func (c *FlattenerClient) HealthCheck() error {
 // Flattener is the seam the flattener client satisfies so pipeline steps can be
 // tested against a fake adapter.
 type Flattener interface {
-	Flatten(viewDef models.ViewDefinition, resources []map[string]any) (string, error)
+	Flatten(viewDef models.ViewDefinition, resources []map[string]any) ([][]string, error)
 }
 
 var _ Flattener = (*FlattenerClient)(nil)

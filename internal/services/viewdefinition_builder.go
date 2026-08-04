@@ -289,8 +289,9 @@ func viewDefSnippetToSelectClause(snippet models.ViewDefSnippet) models.SelectCl
 	}
 }
 
-// ExtractColumnNames traverses a ViewDefinition and extracts all column names in order
-// This is used to construct the CSV header since the flattener API returns data without headers
+// ExtractColumnNames traverses a ViewDefinition and extracts all column names in order.
+// This is used to construct the CSV header and to map the flattener's NDJSON
+// rows to columns by name.
 func ExtractColumnNames(viewDef models.ViewDefinition) []string {
 	var names []string
 	for _, sel := range viewDef.Select {

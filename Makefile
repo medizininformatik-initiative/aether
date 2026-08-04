@@ -25,7 +25,7 @@ LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 PLATFORMS := linux darwin
 ARCHITECTURES := amd64 arm64
 
-.PHONY: all build build-all build-linux build-mac build-mac-arm build-windows build-windows-arm clean test test-unit test-integration test-contract coverage fmt vet vuln lint lint-docs install help release
+.PHONY: all build build-all build-linux build-mac build-mac-arm build-windows build-windows-arm clean test test-unit test-integration test-contract test-fuzz coverage fmt vet vuln lint lint-docs install help release
 
 # Default target
 all: clean fmt vet test build
@@ -126,6 +126,17 @@ test-integration-coverage:
 test-contract:
 	@echo "Running contract tests..."
 	$(GOTEST) -v ./tests/contract/...
+
+## test-fuzz: Run one fuzz target (FUZZ=FuzzName, FUZZTIME=60s)
+test-fuzz:
+	@if [ -z "$(FUZZ)" ]; then \
+		echo "Set FUZZ to one target, for example: make test-fuzz FUZZ=FuzzParseDuration"; \
+		echo "Available targets:"; \
+		grep -rho 'func Fuzz[A-Za-z0-9_]*' ./tests | sed 's/func /  /' | sort -u; \
+		exit 1; \
+	fi
+	@echo "Fuzzing $(FUZZ) for $(or $(FUZZTIME),60s)..."
+	$(GOTEST) ./tests/unit/ -run='^$(FUZZ)$$' -fuzz='^$(FUZZ)$$' -fuzztime=$(or $(FUZZTIME),60s)
 
 ## coverage: Run tests with coverage report
 coverage:

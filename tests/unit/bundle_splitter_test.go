@@ -3,6 +3,7 @@ package unit
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -235,6 +236,54 @@ func TestConvertChunkToBundle(t *testing.T) {
 	assert.NotEmpty(t, bundle["timestamp"]) // Should have timestamp
 }
 
+// TestMaxChunkWrapperSize verifies the wrapper size matches the serialized
+// Bundle that ConvertChunkToBundle produces: wrapper bytes plus entry bytes
+// plus one separator per entry after the first equals the full chunk payload
+// size. The bound is exact here because the id and total digit counts of the
+// tested chunk match the bound's digit counts.
+func TestMaxChunkWrapperSize(t *testing.T) {
+	testCases := []struct {
+		name     string
+		metadata models.BundleMetadata
+	}{
+		{
+			name:     "collection without timestamp",
+			metadata: models.BundleMetadata{ID: "original-bundle", Type: "collection"},
+		},
+		{
+			name:     "searchset with timestamp includes total",
+			metadata: models.BundleMetadata{ID: "original-bundle", Type: "searchset", Timestamp: time.Now()},
+		},
+	}
+
+	entries := []map[string]any{
+		{"resource": map[string]any{"resourceType": "Patient", "id": "patient-1"}},
+		{"resource": map[string]any{"resourceType": "Condition", "id": "condition-1"}},
+		{"resource": map[string]any{"resourceType": "Observation", "id": "observation-1"}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			wrapperSize := models.MaxChunkWrapperSize(tc.metadata, len(entries))
+
+			entryBytes := 0
+			for _, entry := range entries {
+				entrySize, err := models.CalculateJSONSize(entry)
+				require.NoError(t, err)
+				entryBytes += entrySize
+			}
+			separatorBytes := len(entries) - 1
+
+			chunk, err := models.CreateBundleChunk(tc.metadata, entries, 0, 1)
+			require.NoError(t, err)
+			serialized, err := json.Marshal(models.ConvertChunkToBundle(chunk))
+			require.NoError(t, err)
+
+			assert.Equal(t, len(serialized), wrapperSize+entryBytes+separatorBytes)
+		})
+	}
+}
+
 // TestExtractEntriesFromBundle verifies entry extraction
 func TestExtractEntriesFromBundle(t *testing.T) {
 	bundle := CreateTestBundle(5, 1)
@@ -307,18 +356,40 @@ func TestPartitionEntriesGreedyAlgorithm(t *testing.T) {
 func TestSplitBundleChunksStayWithinThreshold(t *testing.T) {
 	testCases := []struct {
 		name           string
+		bundleID       string
+		bundleType     string
+		withTimestamp  bool
 		entryCount     int
 		thresholdBytes int
 	}{
 		{
 			name:           "many tiny entries with small threshold",
+			bundleID:       "tiny-entry-bundle",
+			bundleType:     "collection",
 			entryCount:     4000,
 			thresholdBytes: 4000,
 		},
 		{
 			name:           "many tiny entries with large threshold",
+			bundleID:       "tiny-entry-bundle",
+			bundleType:     "collection",
 			entryCount:     20000,
 			thresholdBytes: 100000,
+		},
+		{
+			name:           "long Bundle id enlarges the chunk wrapper",
+			bundleID:       strings.Repeat("very-long-bundle-id-", 15),
+			bundleType:     "collection",
+			entryCount:     4000,
+			thresholdBytes: 4000,
+		},
+		{
+			name:           "searchset with timestamp adds total and timestamp to the wrapper",
+			bundleID:       "tiny-entry-bundle",
+			bundleType:     "searchset",
+			withTimestamp:  true,
+			entryCount:     4000,
+			thresholdBytes: 4000,
 		},
 	}
 
@@ -332,9 +403,12 @@ func TestSplitBundleChunksStayWithinThreshold(t *testing.T) {
 			}
 			bundle := map[string]any{
 				"resourceType": "Bundle",
-				"id":           "tiny-entry-bundle",
-				"type":         "collection",
+				"id":           tc.bundleID,
+				"type":         tc.bundleType,
 				"entry":        entries,
+			}
+			if tc.withTimestamp {
+				bundle["timestamp"] = time.Now().Format(time.RFC3339)
 			}
 
 			result, err := services.SplitBundle(bundle, tc.thresholdBytes)

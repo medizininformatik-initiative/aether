@@ -82,6 +82,8 @@ func ShouldSplit(bundleSizeBytes int, thresholdBytes int) bool {
 //
 //	entries - Array of Bundle entry objects (must not be empty)
 //	thresholdBytes - Maximum size per chunk in bytes
+//	wrapperBytes - Serialized size of the Bundle wrapper the caller puts around
+//	               each partition (e.g. from models.MaxChunkWrapperSize)
 //
 // Returns:
 //
@@ -90,7 +92,7 @@ func ShouldSplit(bundleSizeBytes int, thresholdBytes int) bool {
 //
 // WHY: Maximizes chunk sizes (fewer HTTP requests) while respecting threshold
 // WHY: Simple greedy algorithm over complex bin-packing (KISS principle)
-func PartitionEntries(entries []map[string]any, thresholdBytes int) ([][]map[string]any, error) {
+func PartitionEntries(entries []map[string]any, thresholdBytes int, wrapperBytes int) ([][]map[string]any, error) {
 	if len(entries) == 0 {
 		return nil, fmt.Errorf("cannot partition empty entry array")
 	}
@@ -98,10 +100,6 @@ func PartitionEntries(entries []map[string]any, thresholdBytes int) ([][]map[str
 	var partitions [][]map[string]any
 	currentPartition := []map[string]any{}
 	currentSize := 0
-
-	// Bundle wrapper overhead (approximate fixed cost per chunk)
-	// Includes: resourceType, id, type, timestamp, total fields
-	const bundleOverheadBytes = 200
 
 	for i, entry := range entries {
 		// Calculate size of this entry
@@ -111,7 +109,7 @@ func PartitionEntries(entries []map[string]any, thresholdBytes int) ([][]map[str
 		}
 
 		// Check if single entry exceeds threshold (cannot be split)
-		if entrySize+bundleOverheadBytes > thresholdBytes {
+		if entrySize+wrapperBytes > thresholdBytes {
 			// Extract resource info for error message
 			resourceType := "Unknown"
 			resourceID := "unknown"
@@ -143,7 +141,7 @@ func PartitionEntries(entries []map[string]any, thresholdBytes int) ([][]map[str
 
 		// Check if adding this entry (plus the JSON separator preceding it
 		// in the serialized entry array) would exceed threshold
-		if len(currentPartition) > 0 && currentSize+1+entrySize+bundleOverheadBytes > thresholdBytes {
+		if len(currentPartition) > 0 && currentSize+1+entrySize+wrapperBytes > thresholdBytes {
 			// Current chunk would exceed limit - start new chunk
 			partitions = append(partitions, currentPartition)
 			currentPartition = []map[string]any{}
@@ -242,8 +240,10 @@ func SplitBundle(bundle map[string]any, thresholdBytes int) (models.SplitResult,
 		return models.SplitResult{}, fmt.Errorf("failed to extract entries: %w", err)
 	}
 
+	wrapperBytes := models.MaxChunkWrapperSize(metadata, len(entries))
+
 	// Partition entries using greedy algorithm
-	partitions, err := PartitionEntries(entries, thresholdBytes)
+	partitions, err := PartitionEntries(entries, thresholdBytes, wrapperBytes)
 	if err != nil {
 		return models.SplitResult{}, fmt.Errorf("failed to partition entries: %w", err)
 	}

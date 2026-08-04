@@ -387,7 +387,9 @@ func chunkResources(resources []map[string]any, thresholdBytes int, logger *lib.
 		}
 	}
 
-	partitions, err := services.PartitionEntries(entries, thresholdBytes)
+	wrapperBytes := validationWrapperBytes()
+
+	partitions, err := services.PartitionEntries(entries, thresholdBytes, wrapperBytes)
 	if err != nil {
 		// Handle oversized resources: isolate them in their own chunk
 		var oversizedErr *models.OversizedResourceError
@@ -397,7 +399,7 @@ func chunkResources(resources []map[string]any, thresholdBytes int, logger *lib.
 				"resourceID", oversizedErr.ResourceID,
 				"size", oversizedErr.Size,
 				"threshold", oversizedErr.Threshold)
-			return chunkResourcesWithOversized(entries, thresholdBytes, logger)
+			return chunkResourcesWithOversized(entries, thresholdBytes, wrapperBytes, logger)
 		}
 		return nil, err
 	}
@@ -414,9 +416,18 @@ func isOversized(err error, target **models.OversizedResourceError) bool {
 	return false
 }
 
+// validationWrapperBytes returns the serialized size of the empty collection
+// Bundle that buildCollectionBundle wraps around each validation chunk.
+func validationWrapperBytes() int {
+	// The empty collection Bundle holds only constant strings and an empty
+	// slice, so json.Marshal cannot fail here.
+	size, _ := models.CalculateJSONSize(buildCollectionBundle([]map[string]any{}))
+	return size
+}
+
 // chunkResourcesWithOversized handles the case where some resources exceed the threshold.
 // Oversized resources are placed in their own single-entry chunks.
-func chunkResourcesWithOversized(entries []map[string]any, thresholdBytes int, logger *lib.Logger) ([][]map[string]any, error) {
+func chunkResourcesWithOversized(entries []map[string]any, thresholdBytes int, wrapperBytes int, logger *lib.Logger) ([][]map[string]any, error) {
 	var partitions [][]map[string]any
 	var normalEntries []map[string]any
 
@@ -426,11 +437,10 @@ func chunkResourcesWithOversized(entries []map[string]any, thresholdBytes int, l
 			return nil, fmt.Errorf("failed to calculate entry size: %w", err)
 		}
 
-		// ~200 bytes Bundle overhead, same constant as PartitionEntries
-		if entrySize+200 > thresholdBytes {
+		if entrySize+wrapperBytes > thresholdBytes {
 			// Flush accumulated normal entries first
 			if len(normalEntries) > 0 {
-				subPartitions, err := services.PartitionEntries(normalEntries, thresholdBytes)
+				subPartitions, err := services.PartitionEntries(normalEntries, thresholdBytes, wrapperBytes)
 				if err != nil {
 					return nil, fmt.Errorf("failed to partition normal entries: %w", err)
 				}
@@ -456,7 +466,7 @@ func chunkResourcesWithOversized(entries []map[string]any, thresholdBytes int, l
 
 	// Flush remaining normal entries
 	if len(normalEntries) > 0 {
-		subPartitions, err := services.PartitionEntries(normalEntries, thresholdBytes)
+		subPartitions, err := services.PartitionEntries(normalEntries, thresholdBytes, wrapperBytes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to partition remaining entries: %w", err)
 		}

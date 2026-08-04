@@ -170,6 +170,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y jq ripgrep
 
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
       - name: Build aether
         run: make build
 

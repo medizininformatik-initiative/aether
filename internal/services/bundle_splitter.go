@@ -168,7 +168,7 @@ func PartitionEntries(entries []map[string]any, thresholdBytes int) ([][]map[str
 // Process:
 //  1. Calculate Bundle size
 //  2. Check if splitting needed (size > threshold)
-//  3. If not needed, return single-chunk result
+//  3. If not needed, return single-chunk result (zero chunks for a Bundle without entries)
 //  4. If needed, extract metadata and entries
 //  5. Partition entries using greedy algorithm
 //  6. Create Bundle chunks from partitions
@@ -205,6 +205,16 @@ func SplitBundle(bundle map[string]any, thresholdBytes int) (models.SplitResult,
 		entries, err := lib.ExtractEntriesFromBundle(bundle)
 		if err != nil {
 			return models.SplitResult{}, fmt.Errorf("failed to extract entries: %w", err)
+		}
+
+		// A Bundle without entries has nothing to chunk - return it unchanged
+		if len(entries) == 0 {
+			return models.SplitResult{
+				Metadata:     metadata,
+				WasSplit:     false,
+				OriginalSize: bundleSize,
+				TotalChunks:  0,
+			}, nil
 		}
 
 		chunk, err := models.CreateBundleChunk(metadata, entries, 0, 1)

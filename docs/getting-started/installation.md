@@ -40,6 +40,31 @@ export PATH="$HOME/.local/bin:$PATH"
 
 2. Extract and move to a directory in your PATH
 
+## Development Builds
+
+`install-dev.sh` installs an unsigned build from a pull request or from `main`. Use it to test a change before it is released. Do not use it in production.
+
+The script requires the [GitHub CLI](https://github.com/cli/cli), because a workflow artifact needs an authenticated request.
+
+```bash
+# Newest main build
+curl -sSfL https://raw.githubusercontent.com/medizininformatik-initiative/aether/main/install-dev.sh | sh
+
+# Build of pull request 663
+curl -sSfL https://raw.githubusercontent.com/medizininformatik-initiative/aether/main/install-dev.sh | sh -s -- 663
+
+sudo mv aether /usr/local/bin/
+```
+
+With the repository checked out, call the script directly:
+
+```bash
+./install-dev.sh main
+./install-dev.sh 663
+```
+
+A build artifact expires after 14 days. Closing a pull request deletes its artifact immediately.
+
 ## Verify
 
 ```bash

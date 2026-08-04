@@ -12,6 +12,8 @@ import (
 
 // LoadLookupTables loads the lookup tables from a JSON file
 // The file contains an array of LookupTable objects
+// The tables are normalized and validated; a file whose children lists form
+// a cycle is rejected here, so every loaded table set is safe for the builder.
 // A nil logger suppresses the deprecation warning for authored parent fields.
 func LoadLookupTables(path string, logger *lib.Logger) ([]models.LookupTable, error) {
 	data, err := os.ReadFile(path)
@@ -38,6 +40,10 @@ func LoadLookupTables(path string, logger *lib.Logger) ([]models.LookupTable, er
 	}
 
 	if err := NormalizeLookupTables(tables, logger); err != nil {
+		return nil, err
+	}
+
+	if err := ValidateLookupTables(tables); err != nil {
 		return nil, err
 	}
 

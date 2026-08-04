@@ -389,7 +389,8 @@ func TestExecuteFlatteningStep_ConfigValidationError(t *testing.T) {
 	assert.Contains(t, err.Error(), "service_url is required")
 }
 
-// TestExecuteFlatteningStep_LookupValidationError tests line 71-75
+// TestExecuteFlatteningStep_LookupValidationError verifies that the step
+// rejects a lookup file that fails validation at load time.
 func TestExecuteFlatteningStep_LookupValidationError(t *testing.T) {
 	tempDir := t.TempDir()
 	jobDir := filepath.Join(tempDir, "jobs", "test-job")
@@ -421,7 +422,7 @@ func TestExecuteFlatteningStep_LookupValidationError(t *testing.T) {
 
 	err = runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid lookup tables")
+	assert.Contains(t, err.Error(), "failed to load lookup tables")
 	assert.Contains(t, err.Error(), "duplicate profile URL")
 }
 

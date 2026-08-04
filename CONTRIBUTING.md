@@ -45,6 +45,17 @@ make lint-docs
 cd docs && npm install && npm run docs:build
 ```
 
+## Testing a Development Build
+
+CI builds a binary for every pull request and for every push to `main`. `install-dev.sh` downloads such a build, so a reviewer does not have to compile the code:
+
+```bash
+./install-dev.sh 663   # build of pull request 663
+./install-dev.sh main  # newest main build
+```
+
+The script requires the [GitHub CLI](https://github.com/cli/cli). These builds are unsigned and are for tests only. Use `install.sh` to install a release.
+
 ## Requirements for Acceptable Contributions
 
 - All code must be formatted with `gofmt`

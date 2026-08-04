@@ -66,6 +66,39 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: medizininformatik-initiative/aether
 
+  lookup-compat:
+    name: Flattening Lookup Compatibility
+    runs-on: ubuntu-24.04
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.code == 'true'
+    timeout-minutes: 10
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Download flattening lookup release
+        env:
+          # renovate: datasource=github-release-attachments depName=medizininformatik-initiative/fhir-ontology-generator
+          FLATTENING_VERSION: v4.2.0
+          FLATTENING_CHECKSUM: a730537bde612b04cbc7920e80c9fc8455b6ef9279bff3546e4877f85d45561e
+        run: .github/scripts/download-flattening-lookup.sh
+
+      - name: Run lookup compatibility test
+        env:
+          COMPAT_FLATTENING_LOOKUP: ${{ github.workspace }}/flattening-lookup/flatteningLookup.json
+        run: go test ./tests/compat/...
+
   e2e-test:
     name: E2E Tests
     runs-on: ubuntu-24.04
@@ -429,7 +462,7 @@ jobs:
   test-status:
     name: Test Status
     runs-on: ubuntu-24.04
-    needs: [detect-changes, e2e-test, e2e-test-direct-load, e2e-test-flattening, e2e-test-validation]
+    needs: [detect-changes, lookup-compat, e2e-test, e2e-test-direct-load, e2e-test-flattening, e2e-test-validation]
     if: always()
     timeout-minutes: 5
     steps:
@@ -440,6 +473,7 @@ jobs:
 
       - name: Check test results
         run: |
+          echo "Lookup Compatibility Result: ${{ needs.lookup-compat.result }}"
           echo "E2E Tests Result: ${{ needs.e2e-test.result }}"
           echo "E2E Direct Load Tests Result: ${{ needs.e2e-test-direct-load.result }}"
           echo "E2E Flattening Tests Result: ${{ needs.e2e-test-flattening.result }}"
@@ -447,10 +481,15 @@ jobs:
           echo "Code Changed: ${{ needs.detect-changes.outputs.code }}"
 
           # Pass if all e2e tests succeeded or were skipped (docs-only changes)
+          COMPAT_OK=false
           E2E_OK=false
           DIRECT_OK=false
           FLAT_OK=false
           VAL_OK=false
+
+          if [[ "${{ needs.lookup-compat.result }}" == "success" ]] || [[ "${{ needs.lookup-compat.result }}" == "skipped" ]]; then
+            COMPAT_OK=true
+          fi
 
           if [[ "${{ needs.e2e-test.result }}" == "success" ]] || [[ "${{ needs.e2e-test.result }}" == "skipped" ]]; then
             E2E_OK=true
@@ -468,7 +507,7 @@ jobs:
             VAL_OK=true
           fi
 
-          if [[ "$E2E_OK" == "true" ]] && [[ "$DIRECT_OK" == "true" ]] && [[ "$FLAT_OK" == "true" ]] && [[ "$VAL_OK" == "true" ]]; then
+          if [[ "$COMPAT_OK" == "true" ]] && [[ "$E2E_OK" == "true" ]] && [[ "$DIRECT_OK" == "true" ]] && [[ "$FLAT_OK" == "true" ]] && [[ "$VAL_OK" == "true" ]]; then
             echo "Tests passed or were not required"
             exit 0
           else

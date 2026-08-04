@@ -17,10 +17,10 @@ func IsCompressedFile(filename string) bool {
 	return strings.HasSuffix(strings.ToLower(filename), CompressedFileExtension)
 }
 
-// GetUncompressedFilename strips the .zst extension if present.
+// GetUncompressedFilename strips the .zst extension (any case) if present.
 func GetUncompressedFilename(filename string) string {
 	if IsCompressedFile(filename) {
-		return strings.TrimSuffix(filename, CompressedFileExtension)
+		return filename[:len(filename)-len(CompressedFileExtension)]
 	}
 	return filename
 }

@@ -40,12 +40,28 @@ func IsSafePath(path string) bool {
 	return true
 }
 
+// trimSuffixFold removes suffix from s if it matches case-insensitively,
+// reporting whether a match was found.
+func trimSuffixFold(s, suffix string) (string, bool) {
+	if len(s) >= len(suffix) && strings.EqualFold(s[len(s)-len(suffix):], suffix) {
+		return s[:len(s)-len(suffix)], true
+	}
+	return s, false
+}
+
 // GetNormalizedBaseName returns the base filename without compression extension.
+// The .zst and .ndjson extensions are matched case-insensitively and lowercased
+// in the result; the case of the file stem is preserved.
 // Example: "Patient.ndjson.zst" -> "Patient.ndjson"
-// Example: "Patient.ndjson" -> "Patient.ndjson"
+// Example: "Patient.NDJSON.ZST" -> "Patient.ndjson"
+// Example: "patient.ndjson" -> "patient.ndjson"
 func GetNormalizedBaseName(filename string) string {
 	base := filepath.Base(filename)
-	return strings.TrimSuffix(base, ".zst")
+	base, _ = trimSuffixFold(base, ".zst")
+	if stem, ok := trimSuffixFold(base, ".ndjson"); ok {
+		base = stem + ".ndjson"
+	}
+	return base
 }
 
 // DetectDuplicateFHIRFiles checks if there are files with both compressed and

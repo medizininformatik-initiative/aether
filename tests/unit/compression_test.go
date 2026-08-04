@@ -108,6 +108,21 @@ func TestGetUncompressedFilename(t *testing.T) {
 			input:    "data",
 			expected: "data",
 		},
+		{
+			name:     "Uppercase extension",
+			input:    "Patient.ndjson.ZST",
+			expected: "Patient.ndjson",
+		},
+		{
+			name:     "Mixed case extension",
+			input:    "data.Zst",
+			expected: "data",
+		},
+		{
+			name:     "Empty string",
+			input:    "",
+			expected: "",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -718,8 +733,6 @@ func TestGetCompressedFilename_EdgeCases(t *testing.T) {
 }
 
 // TestGetUncompressedFilename_EdgeCases verifies edge cases in filename handling
-// Note: GetUncompressedFilename only trims the lowercase ".zst" suffix
-// while IsCompressedFile does case-insensitive matching
 func TestGetUncompressedFilename_EdgeCases(t *testing.T) {
 	testCases := []struct {
 		name     string

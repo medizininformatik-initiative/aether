@@ -265,6 +265,26 @@ func TestGetNormalizedBaseName(t *testing.T) {
 			input:    "data.backup.ndjson.zst",
 			expected: "data.backup.ndjson",
 		},
+		{
+			name:     "Uppercase extensions",
+			input:    "Patient.NDJSON.ZST",
+			expected: "Patient.ndjson",
+		},
+		{
+			name:     "Mixed case extensions",
+			input:    "Patient.NdJson.Zst",
+			expected: "Patient.ndjson",
+		},
+		{
+			name:     "Stem case preserved",
+			input:    "patient.NDJSON",
+			expected: "patient.ndjson",
+		},
+		{
+			name:     "No extension",
+			input:    "Patient",
+			expected: "Patient",
+		},
 	}
 
 	for _, tt := range tests {
@@ -337,6 +357,23 @@ func TestDetectDuplicateFHIRFiles(t *testing.T) {
 			},
 			wantErr: true,
 			errMsg:  "Patient.ndjson",
+		},
+		{
+			name: "Duplicate - compressed version with uppercase extensions",
+			files: []string{
+				"/path/Patient.ndjson",
+				"/path/Patient.NDJSON.ZST",
+			},
+			wantErr: true,
+			errMsg:  "found duplicate FHIR files",
+		},
+		{
+			name: "No duplicates - stems differ only in case",
+			files: []string{
+				"/path/Patient.ndjson",
+				"/path/patient.ndjson",
+			},
+			wantErr: false,
 		},
 		{
 			name:    "Empty file list",

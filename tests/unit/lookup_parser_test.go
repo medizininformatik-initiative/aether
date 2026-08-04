@@ -368,6 +368,33 @@ func TestLoadLookupTablesNormalizesParentLinks(t *testing.T) {
 		// error names, so assert only the child ID.
 		assert.Contains(t, err.Error(), "Encounter.extension:A.extension:C")
 	})
+
+	t.Run("rejects a children list that names the same child twice", func(t *testing.T) {
+		tempDir := t.TempDir()
+		lookupPath := filepath.Join(tempDir, "lookup.json")
+		lookupJSON := `[
+			{
+				"url": "https://example.com/Encounter",
+				"resourceType": "Encounter",
+				"elements": {
+					"Encounter.extension:A": {
+						"children": ["Encounter.extension:A.extension:B", "Encounter.extension:A.extension:B"],
+						"viewDefinition": {"forEachOrNull": "extension.where(url = 'A')"}
+					},
+					"Encounter.extension:A.extension:B": {
+						"viewDefinition": {"forEachOrNull": "extension.where(url = 'B')"}
+					}
+				}
+			}
+		]`
+		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
+		require.NoError(t, err)
+
+		_, err = services.LoadLookupTables(lookupPath, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "Encounter.extension:A.extension:B")
+		assert.Contains(t, err.Error(), "listed more than once")
+	})
 }
 
 func TestLoadLookupTablesWarnsOnAuthoredParentFields(t *testing.T) {

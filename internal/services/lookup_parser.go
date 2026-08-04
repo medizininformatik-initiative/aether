@@ -52,7 +52,8 @@ func LoadLookupTables(path string, logger *lib.Logger) ([]models.LookupTable, er
 
 // NormalizeLookupTables derives every Parent link from the Children lists.
 // Authored parent values are ignored: each Parent is cleared and set to the
-// element whose Children list names it. A child that two elements claim is an error.
+// element whose Children list names it. A child that two elements claim, or
+// that one Children list names twice, is an error.
 // Authored parent fields are deprecated; when logger is non-nil, each profile
 // that sets them produces one warning.
 func NormalizeLookupTables(tables []models.LookupTable, logger *lib.Logger) error {
@@ -75,7 +76,11 @@ func NormalizeLookupTables(tables []models.LookupTable, logger *lib.Logger) erro
 		claimedBy := make(map[string]string)
 		for elementID, element := range table.Elements {
 			for _, childID := range element.Children {
-				if parentID, claimed := claimedBy[childID]; claimed && parentID != elementID {
+				if parentID, claimed := claimedBy[childID]; claimed {
+					if parentID == elementID {
+						return fmt.Errorf("element '%s' is listed more than once in the children of '%s' in profile '%s'",
+							childID, elementID, table.URL)
+					}
 					return fmt.Errorf("element '%s' is listed as child of both '%s' and '%s' in profile '%s'",
 						childID, parentID, elementID, table.URL)
 				}

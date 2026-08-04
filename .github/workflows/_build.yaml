@@ -34,3 +34,4 @@ jobs:
           name: build-artifacts-${{ github.run_id }}
           path: bin/aether-*
           retention-days: 7
+          if-no-files-found: error

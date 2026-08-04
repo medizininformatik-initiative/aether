@@ -170,6 +170,65 @@ func TestSplitBundle_InvalidEntries(t *testing.T) {
 	assert.Contains(t, err.Error(), "extract entries")
 }
 
+// TestSplitBundle_NoEntries tests that a Bundle without entries passes through unchanged
+func TestSplitBundle_NoEntries(t *testing.T) {
+	testCases := []struct {
+		name   string
+		bundle map[string]any
+	}{
+		{
+			name: "Empty collection bundle",
+			bundle: map[string]any{
+				"resourceType": "Bundle",
+				"id":           "empty-collection",
+				"type":         "collection",
+				"entry":        []any{},
+			},
+		},
+		{
+			name: "Empty searchset bundle with total 0",
+			bundle: map[string]any{
+				"resourceType": "Bundle",
+				"id":           "empty-searchset",
+				"type":         "searchset",
+				"total":        0,
+				"entry":        []any{},
+			},
+		},
+	}
+
+	thresholdBytes := 10 * 1024 * 1024
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := services.SplitBundle(tc.bundle, thresholdBytes)
+
+			require.NoError(t, err, "Bundle without entries should not error")
+			assert.False(t, result.WasSplit, "Bundle without entries should not be split")
+			assert.Equal(t, 0, result.TotalChunks, "Bundle without entries should produce no chunks")
+			assert.Empty(t, result.Chunks, "Bundle without entries should produce no chunks")
+			assert.Greater(t, result.OriginalSize, 0, "Original size should be recorded")
+			assert.Equal(t, tc.bundle["id"], result.Metadata.ID)
+			assert.Equal(t, tc.bundle["type"], result.Metadata.Type)
+		})
+	}
+}
+
+// TestSplitBundle_MissingEntryKey tests that a Bundle without an entry field is rejected
+func TestSplitBundle_MissingEntryKey(t *testing.T) {
+	bundle := map[string]any{
+		"resourceType": "Bundle",
+		"id":           "no-entry-field",
+		"type":         "collection",
+	}
+
+	thresholdBytes := 10 * 1024 * 1024
+
+	_, err := services.SplitBundle(bundle, thresholdBytes)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "extract entries")
+}
+
 // TestSplitBundle_OversizedSingleEntry tests bundle with single oversized entry
 func TestSplitBundle_OversizedSingleEntry(t *testing.T) {
 	// Create bundle with single oversized entry

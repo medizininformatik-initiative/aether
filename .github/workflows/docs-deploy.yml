@@ -23,8 +23,9 @@ on:
         type: boolean
         default: false
 
+# Declare default permissions as read only.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: "pages"
@@ -34,6 +35,9 @@ jobs:
   deploy:
     name: Build and Deploy Documentation
     runs-on: ubuntu-24.04
+    permissions:
+      # Needed to push the built docs to the gh-pages branch.
+      contents: write
     if: >-
       ${{
         !(github.event_name == 'release' && github.event.release.prerelease)

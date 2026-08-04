@@ -57,7 +57,7 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260708182218-49f421fb7959 // indirect
 	golang.org/x/term v0.44.0 // indirect
-	golang.org/x/text v0.28.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	golang.org/x/tools v0.48.0 // indirect
 	golang.org/x/vuln v1.6.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

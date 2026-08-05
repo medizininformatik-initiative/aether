@@ -1,7 +1,6 @@
 package unit
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,7 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
@@ -35,7 +33,7 @@ func TestLoadLookupTables(t *testing.T) {
 		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
 		require.NoError(t, err)
 
-		tables, err := services.LoadLookupTables(lookupPath, nil)
+		tables, err := services.LoadLookupTables(lookupPath)
 		require.NoError(t, err)
 		assert.Len(t, tables, 1)
 		assert.Equal(t, "https://example.com/Patient", tables[0].URL)
@@ -61,7 +59,7 @@ func TestLoadLookupTables(t *testing.T) {
 		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
 		require.NoError(t, err)
 
-		tables, err := services.LoadLookupTables(lookupPath, nil)
+		tables, err := services.LoadLookupTables(lookupPath)
 		require.NoError(t, err)
 		assert.Len(t, tables, 2)
 	})
@@ -73,7 +71,7 @@ func TestLoadLookupTables(t *testing.T) {
 		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
 		require.NoError(t, err)
 
-		_, err = services.LoadLookupTables(lookupPath, nil)
+		_, err = services.LoadLookupTables(lookupPath)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "missing 'url' field")
 	})
@@ -85,13 +83,13 @@ func TestLoadLookupTables(t *testing.T) {
 		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
 		require.NoError(t, err)
 
-		_, err = services.LoadLookupTables(lookupPath, nil)
+		_, err = services.LoadLookupTables(lookupPath)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "missing 'resourceType' field")
 	})
 
 	t.Run("file not found", func(t *testing.T) {
-		_, err := services.LoadLookupTables("/nonexistent/path/lookup.json", nil)
+		_, err := services.LoadLookupTables("/nonexistent/path/lookup.json")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to read lookup file")
 	})
@@ -102,7 +100,7 @@ func TestLoadLookupTables(t *testing.T) {
 		err := os.WriteFile(lookupPath, []byte("not valid json"), 0644)
 		require.NoError(t, err)
 
-		_, err = services.LoadLookupTables(lookupPath, nil)
+		_, err = services.LoadLookupTables(lookupPath)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to parse lookup file")
 	})
@@ -123,7 +121,7 @@ func TestLoadLookupTables(t *testing.T) {
 		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
 		require.NoError(t, err)
 
-		_, err = services.LoadLookupTables(lookupPath, nil)
+		_, err = services.LoadLookupTables(lookupPath)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "circular")
 	})
@@ -225,7 +223,7 @@ func TestLoadLookupTablesMissingElements(t *testing.T) {
 		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
 		require.NoError(t, err)
 
-		_, err = services.LoadLookupTables(lookupPath, nil)
+		_, err = services.LoadLookupTables(lookupPath)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "missing 'elements' field")
 	})
@@ -256,7 +254,7 @@ func TestLoadLookupTablesNormalizesParentLinks(t *testing.T) {
 		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
 		require.NoError(t, err)
 
-		tables, err := services.LoadLookupTables(lookupPath, nil)
+		tables, err := services.LoadLookupTables(lookupPath)
 		require.NoError(t, err)
 		child := tables[0].Elements["Encounter.extension:A.extension:B"]
 		assert.Equal(t, "Encounter.extension:A", child.Parent)
@@ -284,7 +282,7 @@ func TestLoadLookupTablesNormalizesParentLinks(t *testing.T) {
 		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
 		require.NoError(t, err)
 
-		tables, err := services.LoadLookupTables(lookupPath, nil)
+		tables, err := services.LoadLookupTables(lookupPath)
 		require.NoError(t, err)
 		child := tables[0].Elements["Encounter.extension:A.extension:B"]
 		assert.Equal(t, "Encounter.extension:A", child.Parent)
@@ -311,7 +309,7 @@ func TestLoadLookupTablesNormalizesParentLinks(t *testing.T) {
 		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
 		require.NoError(t, err)
 
-		tables, err := services.LoadLookupTables(lookupPath, nil)
+		tables, err := services.LoadLookupTables(lookupPath)
 		require.NoError(t, err)
 		child := tables[0].Elements["Encounter.extension:A.extension:B"]
 		assert.Empty(t, child.Parent)
@@ -331,7 +329,7 @@ func TestLoadLookupTablesNormalizesParentLinks(t *testing.T) {
 			},
 		}
 
-		err := services.NormalizeLookupTables(tables, nil)
+		err := services.NormalizeLookupTables(tables)
 		require.NoError(t, err)
 		assert.Equal(t, "Encounter.extension:A", tables[0].Elements["Encounter.extension:A.extension:B"].Parent)
 		assert.NotContains(t, tables[0].Elements, "Encounter.extension:A.extension:Missing")
@@ -362,7 +360,7 @@ func TestLoadLookupTablesNormalizesParentLinks(t *testing.T) {
 		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
 		require.NoError(t, err)
 
-		_, err = services.LoadLookupTables(lookupPath, nil)
+		_, err = services.LoadLookupTables(lookupPath)
 		require.Error(t, err)
 		// Map order decides which parent backfills first and which one the
 		// error names, so assert only the child ID.
@@ -390,75 +388,10 @@ func TestLoadLookupTablesNormalizesParentLinks(t *testing.T) {
 		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
 		require.NoError(t, err)
 
-		_, err = services.LoadLookupTables(lookupPath, nil)
+		_, err = services.LoadLookupTables(lookupPath)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Encounter.extension:A.extension:B")
 		assert.Contains(t, err.Error(), "listed more than once")
-	})
-}
-
-func TestLoadLookupTablesWarnsOnAuthoredParentFields(t *testing.T) {
-	t.Run("warns once per profile that sets deprecated parent fields", func(t *testing.T) {
-		tempDir := t.TempDir()
-		lookupPath := filepath.Join(tempDir, "lookup.json")
-		lookupJSON := `[
-			{
-				"url": "https://example.com/Encounter",
-				"resourceType": "Encounter",
-				"elements": {
-					"Encounter.extension:A": {
-						"children": ["Encounter.extension:A.extension:B"],
-						"viewDefinition": {"forEachOrNull": "extension.where(url = 'A')"}
-					},
-					"Encounter.extension:A.extension:B": {
-						"parent": "Encounter.extension:A",
-						"viewDefinition": {"forEachOrNull": "extension.where(url = 'B')"}
-					}
-				}
-			}
-		]`
-		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
-		require.NoError(t, err)
-
-		var logBuf bytes.Buffer
-		logger := lib.NewLoggerWithWriter(lib.LogLevelWarn, &logBuf)
-
-		_, err = services.LoadLookupTables(lookupPath, logger)
-		require.NoError(t, err)
-
-		logOutput := logBuf.String()
-		assert.Contains(t, logOutput, "deprecated")
-		assert.Contains(t, logOutput, "https://example.com/Encounter")
-		assert.Contains(t, logOutput, "Encounter.extension:A.extension:B")
-	})
-
-	t.Run("stays silent when no parent fields are set", func(t *testing.T) {
-		tempDir := t.TempDir()
-		lookupPath := filepath.Join(tempDir, "lookup.json")
-		lookupJSON := `[
-			{
-				"url": "https://example.com/Encounter",
-				"resourceType": "Encounter",
-				"elements": {
-					"Encounter.extension:A": {
-						"children": ["Encounter.extension:A.extension:B"],
-						"viewDefinition": {"forEachOrNull": "extension.where(url = 'A')"}
-					},
-					"Encounter.extension:A.extension:B": {
-						"viewDefinition": {"forEachOrNull": "extension.where(url = 'B')"}
-					}
-				}
-			}
-		]`
-		err := os.WriteFile(lookupPath, []byte(lookupJSON), 0644)
-		require.NoError(t, err)
-
-		var logBuf bytes.Buffer
-		logger := lib.NewLoggerWithWriter(lib.LogLevelWarn, &logBuf)
-
-		_, err = services.LoadLookupTables(lookupPath, logger)
-		require.NoError(t, err)
-		assert.Empty(t, logBuf.String())
 	})
 }
 

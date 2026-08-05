@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
@@ -119,6 +120,12 @@ func (flatteningStep) Run(ctx *StepContext) (StepResult, error) {
 	csvWriter := services.NewCSVWriter(outputDir)
 	viewDefWriter := services.NewViewDefinitionWriter(viewDefDir)
 
+	// Drop stale partial files from an earlier failed run, so a retry never
+	// keeps or reports rows it did not write
+	if err := csvWriter.RemovePartials(); err != nil {
+		return StepResult{}, err
+	}
+
 	attributeGroups := services.GetAttributeGroups(crtdl)
 	fmt.Printf("Processing %d attribute group(s)...\n\n", len(attributeGroups))
 
@@ -168,7 +175,7 @@ func (flatteningStep) Run(ctx *StepContext) (StepResult, error) {
 		job.Config.Services.Flattening.GetBatchSizeBytes(),
 	)
 	if err != nil {
-		return StepResult{}, err
+		return StepResult{}, annotateWithPartialFiles(err, csvWriter)
 	}
 
 	// Print per-group progress
@@ -216,7 +223,6 @@ func scanProvenanceIndex(files []string) (models.ProvenanceIndex, error) {
 	return mergedIndex, nil
 }
 
-// streamAndFlattenResources performs single-pass streaming over all input files,
 // perGroupBudget splits the total batch byte budget evenly across attribute groups,
 // clamping to one byte so a tiny budget spread over many groups never yields a
 // zero threshold that would flush after every single resource.
@@ -228,6 +234,7 @@ func perGroupBudget(batchSizeBytes, numGroups int) int {
 	return perGroupBytes
 }
 
+// streamAndFlattenResources performs single-pass streaming over all input files,
 // routing each resource to per-group batches via provenance index and flushing
 // when the byte threshold is exceeded. Returns per-group resource totals.
 func streamAndFlattenResources(
@@ -327,7 +334,28 @@ func streamAndFlattenResources(
 		}
 	}
 
+	// Publish complete files under their final names. A group whose batch
+	// never flushed has no file to publish.
+	for i := range batches {
+		if batches[i].isFirstBatch {
+			continue
+		}
+		if err := csvWriter.Finalize(filenames[i]); err != nil {
+			return nil, fmt.Errorf("failed to finalize CSV for group '%s': %w", groups[i].Name, err)
+		}
+	}
+
 	return totals, nil
+}
+
+// annotateWithPartialFiles names the partial CSV files that a failed run left
+// behind, so nobody mistakes them for complete exports.
+func annotateWithPartialFiles(err error, csvWriter *services.CSVWriter) error {
+	partials, listErr := csvWriter.PartialFiles()
+	if listErr != nil || len(partials) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w (incomplete output kept as: %s)", err, strings.Join(partials, ", "))
 }
 
 // routeResourceToGroups determines which groups a resource belongs to based on

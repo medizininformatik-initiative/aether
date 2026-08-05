@@ -350,6 +350,24 @@ func writeTestLookupTable(t *testing.T, path string, profileURL, resourceType st
 	require.NoError(t, os.WriteFile(path, data, 0644))
 }
 
+// makeLargePatientBundles builds enough large Bundles with Provenance to
+// exceed a 1MB batch threshold, so the step makes more than one flattener call
+func makeLargePatientBundles(profileURL, groupID string) []map[string]any {
+	longName := strings.Repeat("Y", 10000)
+	var bundles []map[string]any
+	for i := 0; i < 110; i++ {
+		patientID := fmt.Sprintf("p%d", i)
+		patient := map[string]any{
+			"resourceType": "Patient", "id": patientID,
+			"meta": map[string]any{"profile": []any{profileURL}},
+			"name": []any{map[string]any{"family": fmt.Sprintf("%s_%d", longName, i)}},
+		}
+		prov := makeProvenance(fmt.Sprintf("prov-%d", i), "Patient/"+patientID, groupID)
+		bundles = append(bundles, makeBundle(fmt.Sprintf("b-%d", i), patient, prov))
+	}
+	return bundles
+}
+
 // TestExecuteFlatteningStep_ConfigValidationError tests line 36-40
 func TestExecuteFlatteningStep_ConfigValidationError(t *testing.T) {
 	tempDir := t.TempDir()
@@ -721,10 +739,14 @@ func TestExecuteFlatteningStep_MultipleBatches(t *testing.T) {
 	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
 
-	// Verify CSV file was created
+	// Verify CSV file was created and no partial file remains
 	csvFiles, err := filepath.Glob(filepath.Join(jobDir, "csv", "*.csv"))
 	require.NoError(t, err)
 	assert.Len(t, csvFiles, 1)
+
+	partialFiles, err := filepath.Glob(filepath.Join(jobDir, "csv", "*"+services.PartialSuffix))
+	require.NoError(t, err)
+	assert.Empty(t, partialFiles)
 
 	// Read the CSV and verify it has header + data rows
 	content, err := os.ReadFile(csvFiles[0])
@@ -734,6 +756,375 @@ func TestExecuteFlatteningStep_MultipleBatches(t *testing.T) {
 	assert.Contains(t, lines[0], "id")
 	// Should have at least 1 data line (header + flattener response)
 	assert.GreaterOrEqual(t, len(lines), 2)
+}
+
+// TestExecuteFlatteningStep_FailedBatchLeavesPartialFile verifies that a batch
+// failure leaves only a .partial file, never a file under the final name, and
+// that the step error names the partial file
+func TestExecuteFlatteningStep_FailedBatchLeavesPartialFile(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/fhir/ViewDefinition/$run" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		callCount++
+		if callCount == 1 {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"patient-from-first-batch"}` + "\n"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("service error"))
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	jobID := "test-partial-on-failure"
+	jobDir := filepath.Join(tempDir, "jobs", jobID)
+	inputDir := filepath.Join(jobDir, "import")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+
+	profileURL := "https://example.com/Patient"
+	groupID := "group-patient"
+	crtdlPath := filepath.Join(tempDir, "test.json")
+	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
+
+	lookupPath := filepath.Join(tempDir, "lookup.json")
+	writeTestLookupTable(t, lookupPath, profileURL, "Patient")
+
+	writeTestNDJSON(t, filepath.Join(inputDir, "patients.ndjson"), makeLargePatientBundles(profileURL, groupID))
+
+	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
+	job.Config.Services.Flattening.BatchSizeMB = 1
+	logger := createFlatteningTestLogger()
+
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
+	require.Error(t, err)
+	require.GreaterOrEqual(t, callCount, 2, "test needs at least two batches")
+	assert.Contains(t, err.Error(), "Patient.csv"+services.PartialSuffix)
+
+	csvDir := filepath.Join(jobDir, "csv")
+	assert.NoFileExists(t, filepath.Join(csvDir, "Patient.csv"))
+	assert.FileExists(t, filepath.Join(csvDir, "Patient.csv"+services.PartialSuffix))
+}
+
+// TestExecuteFlatteningStep_RerunAfterFailureDoesNotDoubleRows verifies that a
+// rerun into the same job directory replaces the rows of the failed run
+func TestExecuteFlatteningStep_RerunAfterFailureDoesNotDoubleRows(t *testing.T) {
+	callCount := 0
+	failSecondCall := true
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/fhir/ViewDefinition/$run" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		callCount++
+		if failSecondCall && callCount > 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("service error"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.WriteHeader(http.StatusOK)
+		if failSecondCall {
+			_, _ = w.Write([]byte(`{"id":"row-from-run1"}` + "\n"))
+		} else {
+			_, _ = w.Write([]byte(`{"id":"row-from-run2"}` + "\n"))
+		}
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	jobID := "test-rerun-no-doubling"
+	jobDir := filepath.Join(tempDir, "jobs", jobID)
+	inputDir := filepath.Join(jobDir, "import")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+
+	profileURL := "https://example.com/Patient"
+	groupID := "group-patient"
+	crtdlPath := filepath.Join(tempDir, "test.json")
+	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
+
+	lookupPath := filepath.Join(tempDir, "lookup.json")
+	writeTestLookupTable(t, lookupPath, profileURL, "Patient")
+
+	writeTestNDJSON(t, filepath.Join(inputDir, "patients.ndjson"), makeLargePatientBundles(profileURL, groupID))
+
+	logger := createFlatteningTestLogger()
+
+	// Run 1 fails on the second batch and leaves a partial file
+	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
+	job.Config.Services.Flattening.BatchSizeMB = 1
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
+	require.Error(t, err)
+	require.GreaterOrEqual(t, callCount, 2, "test needs at least two batches")
+
+	// Run 2 succeeds into the same job directory
+	failSecondCall = false
+	job = createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
+	job.Config.Services.Flattening.BatchSizeMB = 1
+	err = runPipelineStep(models.StepFlattening, job, jobDir, logger)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(filepath.Join(jobDir, "csv", "Patient.csv"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(content), "row-from-run1")
+	assert.Contains(t, string(content), "row-from-run2")
+
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+	headerLine := lines[0]
+	assert.Contains(t, headerLine, "id")
+	assert.Equal(t, 1, strings.Count(string(content), headerLine+"\n"), "header must appear once")
+
+	partialFiles, err := filepath.Glob(filepath.Join(jobDir, "csv", "*"+services.PartialSuffix))
+	require.NoError(t, err)
+	assert.Empty(t, partialFiles)
+}
+
+// TestExecuteFlatteningStep_SiblingGroupFailureKeepsPartial verifies that when
+// one group fails, the flushed file of a sibling group stays a .partial file
+// and the step error names it
+func TestExecuteFlatteningStep_SiblingGroupFailureKeepsPartial(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/fhir/ViewDefinition/$run" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		callCount++
+		if callCount == 1 {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"alpha-row"}` + "\n"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("service error"))
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	jobID := "test-sibling-group-failure"
+	jobDir := filepath.Join(tempDir, "jobs", jobID)
+	inputDir := filepath.Join(jobDir, "import")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+
+	urlAlpha := "https://example.com/PatientAlpha"
+	urlBeta := "https://example.com/PatientBeta"
+
+	crtdl := map[string]any{
+		"dataExtraction": map[string]any{
+			"attributeGroups": []map[string]any{
+				{
+					"id": "g-alpha", "name": "Alpha", "groupReference": urlAlpha,
+					"attributes": []map[string]any{{"attributeRef": "Patient.id", "mustHave": true}},
+				},
+				{
+					"id": "g-beta", "name": "Beta", "groupReference": urlBeta,
+					"attributes": []map[string]any{{"attributeRef": "Patient.id", "mustHave": true}},
+				},
+			},
+		},
+	}
+	crtdlPath := filepath.Join(tempDir, "test.json")
+	crtdlData, err := json.Marshal(crtdl)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(crtdlPath, crtdlData, 0644))
+
+	lookup := []map[string]any{}
+	for _, url := range []string{urlAlpha, urlBeta} {
+		lookup = append(lookup, map[string]any{
+			"url": url, "resourceType": "Patient",
+			"elements": map[string]any{
+				"Patient.id": map[string]any{
+					"viewDefinition": map[string]any{
+						"select": []map[string]any{
+							{"column": []map[string]any{{"name": "id", "path": "id"}}},
+						},
+					},
+				},
+			},
+		})
+	}
+	lookupPath := filepath.Join(tempDir, "lookup.json")
+	lookupData, err := json.Marshal(lookup)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(lookupPath, lookupData, 0644))
+
+	// One patient per group, routed via provenance
+	patientAlpha := map[string]any{
+		"resourceType": "Patient", "id": "pa",
+		"meta": map[string]any{"profile": []any{urlAlpha}},
+	}
+	patientBeta := map[string]any{
+		"resourceType": "Patient", "id": "pb",
+		"meta": map[string]any{"profile": []any{urlBeta}},
+	}
+	bundle := makeBundle("b1",
+		patientAlpha, makeProvenance("prov-a", "Patient/pa", "g-alpha"),
+		patientBeta, makeProvenance("prov-b", "Patient/pb", "g-beta"),
+	)
+	writeTestNDJSON(t, filepath.Join(inputDir, "test.ndjson"), []map[string]any{bundle})
+
+	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
+	logger := createFlatteningTestLogger()
+
+	err = runPipelineStep(models.StepFlattening, job, jobDir, logger)
+	require.Error(t, err)
+	require.Equal(t, 2, callCount, "test needs one call per group")
+	assert.Contains(t, err.Error(), "Alpha.csv"+services.PartialSuffix)
+
+	csvDir := filepath.Join(jobDir, "csv")
+	assert.FileExists(t, filepath.Join(csvDir, "Alpha.csv"+services.PartialSuffix))
+	assert.NoFileExists(t, filepath.Join(csvDir, "Alpha.csv"))
+	assert.NoFileExists(t, filepath.Join(csvDir, "Beta.csv"))
+}
+
+// TestExecuteFlatteningStep_RemovesStalePartialFile verifies that a rerun
+// removes a stale .partial file, also when the group gets no new data
+func TestExecuteFlatteningStep_RemovesStalePartialFile(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	jobID := "test-stale-partial"
+	jobDir := filepath.Join(tempDir, "jobs", jobID)
+	inputDir := filepath.Join(jobDir, "import")
+	csvDir := filepath.Join(jobDir, "csv")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+	require.NoError(t, os.MkdirAll(csvDir, 0755))
+
+	profileURL := "https://example.com/Patient"
+	groupID := "group-patient"
+	crtdlPath := filepath.Join(tempDir, "test.json")
+	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
+
+	lookupPath := filepath.Join(tempDir, "lookup.json")
+	writeTestLookupTable(t, lookupPath, profileURL, "Patient")
+
+	// A stale partial file from an earlier failed run
+	stalePartial := filepath.Join(csvDir, "Patient.csv"+services.PartialSuffix)
+	require.NoError(t, os.WriteFile(stalePartial, []byte("id\nstale-row\n"), 0644))
+
+	// The input routes no resources to the group, so the group never flushes
+	patient := map[string]any{
+		"resourceType": "Patient", "id": "1",
+		"meta": map[string]any{"profile": []any{profileURL}},
+	}
+	prov := makeProvenance("prov-1", "Patient/1", "unrelated-group")
+	bundle := makeBundle("b1", patient, prov)
+	writeTestNDJSON(t, filepath.Join(inputDir, "test.ndjson"), []map[string]any{bundle})
+
+	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
+	logger := createFlatteningTestLogger()
+
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
+	require.NoError(t, err)
+
+	assert.NoFileExists(t, stalePartial)
+	assert.NoFileExists(t, filepath.Join(csvDir, "Patient.csv"))
+}
+
+// TestExecuteFlatteningStep_RemoveStalePartialError verifies that the step
+// fails when it cannot clear a stale partial file, rather than appending to it
+func TestExecuteFlatteningStep_RemoveStalePartialError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("Cannot test permission errors as root")
+	}
+
+	tempDir := t.TempDir()
+	jobID := "test-stale-partial-error"
+	jobDir := filepath.Join(tempDir, "jobs", jobID)
+	inputDir := filepath.Join(jobDir, "import")
+	csvDir := filepath.Join(jobDir, "csv")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+	require.NoError(t, os.MkdirAll(csvDir, 0755))
+
+	profileURL := "https://example.com/Patient"
+	crtdlPath := filepath.Join(tempDir, "test.json")
+	writeTestCRTDL(t, crtdlPath, "group-patient", "Patient", profileURL)
+
+	lookupPath := filepath.Join(tempDir, "lookup.json")
+	writeTestLookupTable(t, lookupPath, profileURL, "Patient")
+
+	ndjsonContent := `{"resourceType":"Patient","id":"1","meta":{"profile":["https://example.com/Patient"]}}`
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte(ndjsonContent), 0644))
+
+	// A stale partial file in a directory that no longer allows writes
+	stalePartial := filepath.Join(csvDir, "Patient.csv"+services.PartialSuffix)
+	require.NoError(t, os.WriteFile(stalePartial, []byte("id\nstale-row\n"), 0644))
+	require.NoError(t, os.Chmod(csvDir, 0555))
+	t.Cleanup(func() { _ = os.Chmod(csvDir, 0755) })
+
+	job := createFlatteningTestJob("http://localhost:8080", lookupPath, crtdlPath)
+	logger := createFlatteningTestLogger()
+
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to remove stale partial CSV file")
+
+	// The stale rows stay untouched, so no retry reports them as its own
+	content, readErr := os.ReadFile(stalePartial)
+	require.NoError(t, readErr)
+	assert.Equal(t, "id\nstale-row\n", string(content))
+}
+
+// TestExecuteFlatteningStep_FinalizeError verifies that a failed rename keeps
+// the output as .partial and names it, instead of reporting a complete export
+func TestExecuteFlatteningStep_FinalizeError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/fhir/ViewDefinition/$run" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `{"id":"patient-1"}`+"\n")
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	jobID := "test-finalize-error"
+	jobDir := filepath.Join(tempDir, "jobs", jobID)
+	inputDir := filepath.Join(jobDir, "import")
+	csvDir := filepath.Join(jobDir, "csv")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+	require.NoError(t, os.MkdirAll(csvDir, 0755))
+
+	profileURL := "https://example.com/Patient"
+	groupID := "group-patient"
+	crtdlPath := filepath.Join(tempDir, "test.json")
+	writeTestCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
+
+	lookupPath := filepath.Join(tempDir, "lookup.json")
+	writeTestLookupTable(t, lookupPath, profileURL, "Patient")
+
+	patient := map[string]any{
+		"resourceType": "Patient", "id": "1",
+		"meta": map[string]any{"profile": []any{profileURL}},
+	}
+	prov := makeProvenance("prov-1", "Patient/1", groupID)
+	bundle := makeBundle("b1", patient, prov)
+	writeTestNDJSON(t, filepath.Join(inputDir, "test.ndjson"), []map[string]any{bundle})
+
+	// A directory sits at the final name, so the rename of the partial fails
+	finalPath := filepath.Join(csvDir, "Patient.csv")
+	require.NoError(t, os.MkdirAll(finalPath, 0755))
+
+	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
+	logger := createFlatteningTestLogger()
+
+	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to finalize CSV for group 'Patient'")
+
+	// The rows stay under the .partial name, never under the final name
+	assert.FileExists(t, filepath.Join(csvDir, "Patient.csv"+services.PartialSuffix))
 }
 
 // TestExecuteFlatteningStep_FlattenerError verifies fail-fast on flattener error
@@ -1096,19 +1487,7 @@ func TestExecuteFlatteningStep_FlattenerErrorDuringFlush(t *testing.T) {
 		inputDir := filepath.Join(jobDir, "import")
 		require.NoError(t, os.MkdirAll(inputDir, 0755))
 
-		// Create enough Bundles with Provenance to exceed 1MB batch threshold
-		var bundles []map[string]any
-		for i := 0; i < 110; i++ {
-			patientID := fmt.Sprintf("p%d", i)
-			patient := map[string]any{
-				"resourceType": "Patient", "id": patientID,
-				"meta": map[string]any{"profile": []any{profileURL}},
-				"name": []any{map[string]any{"family": fmt.Sprintf("%s_%d", longName, i)}},
-			}
-			prov := makeProvenance(fmt.Sprintf("prov-%d", i), "Patient/"+patientID, groupID)
-			bundles = append(bundles, makeBundle(fmt.Sprintf("b-%d", i), patient, prov))
-		}
-		writeTestNDJSON(t, filepath.Join(inputDir, "patients.ndjson"), bundles)
+		writeTestNDJSON(t, filepath.Join(inputDir, "patients.ndjson"), makeLargePatientBundles(profileURL, groupID))
 
 		job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
 		job.Config.Services.Flattening.BatchSizeMB = 1

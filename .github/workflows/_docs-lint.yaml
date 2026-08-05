@@ -22,8 +22,8 @@ jobs:
       - name: Install Vale
         env:
           # renovate: datasource=github-release-attachments depName=errata-ai/vale
-          VALE_VERSION: v3.17.0
-          VALE_CHECKSUM: a903f1f60c3293fac643e0137f599a462881cc691ee19d6120dcfc786f1be86d
+          VALE_VERSION: v3.17.1
+          VALE_CHECKSUM: db947f89f2292e6a0381a61de155f6a5f5cb4cb460ca178ea412ef605559cefd
         run: .github/scripts/install-vale.sh
 
       # Downloads the Google style package declared in .vale.ini. The custom

@@ -1,8 +1,13 @@
 [
   {
+    "version": "v0.16.0",
+    "path": "/aether/v0.16.0/",
+    "latest": true
+  },
+  {
     "version": "v0.15.0",
     "path": "/aether/v0.15.0/",
-    "latest": true
+    "latest": false
   },
   {
     "version": "v0.14.0",

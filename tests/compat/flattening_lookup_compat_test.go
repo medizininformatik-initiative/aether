@@ -29,7 +29,7 @@ func TestReleasedFlatteningLookup(t *testing.T) {
 		t.Skipf("%s not set; set it to a flatteningLookup.json from a fhir-ontology-generator release", lookupPathEnv)
 	}
 
-	tables, err := services.LoadLookupTables(path, nil)
+	tables, err := services.LoadLookupTables(path)
 	require.NoError(t, err, "released lookup file must load")
 	require.NotEmpty(t, tables, "released lookup file must contain profiles")
 

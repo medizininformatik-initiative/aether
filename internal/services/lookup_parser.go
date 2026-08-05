@@ -4,9 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
 
-	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
@@ -14,8 +12,7 @@ import (
 // The file contains an array of LookupTable objects
 // The tables are normalized and validated; a file whose children lists form
 // a cycle is rejected here, so every loaded table set is safe for the builder.
-// A nil logger suppresses the deprecation warning for authored parent fields.
-func LoadLookupTables(path string, logger *lib.Logger) ([]models.LookupTable, error) {
+func LoadLookupTables(path string) ([]models.LookupTable, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read lookup file: %w", err)
@@ -39,7 +36,7 @@ func LoadLookupTables(path string, logger *lib.Logger) ([]models.LookupTable, er
 		}
 	}
 
-	if err := NormalizeLookupTables(tables, logger); err != nil {
+	if err := NormalizeLookupTables(tables); err != nil {
 		return nil, err
 	}
 
@@ -54,23 +51,15 @@ func LoadLookupTables(path string, logger *lib.Logger) ([]models.LookupTable, er
 // Authored parent values are ignored: each Parent is cleared and set to the
 // element whose Children list names it. A child that two elements claim, or
 // that one Children list names twice, is an error.
-// Authored parent fields are deprecated; when logger is non-nil, each profile
-// that sets them produces one warning.
-func NormalizeLookupTables(tables []models.LookupTable, logger *lib.Logger) error {
+// Authored parent fields are deprecated and dropped without a warning; the
+// field will be removed in a future flatten-lookup version.
+func NormalizeLookupTables(tables []models.LookupTable) error {
 	for _, table := range tables {
-		var authored []string
 		for elementID, element := range table.Elements {
 			if element.Parent != "" {
-				authored = append(authored, elementID)
 				element.Parent = ""
 				table.Elements[elementID] = element
 			}
-		}
-		if len(authored) > 0 && logger != nil {
-			sort.Strings(authored)
-			logger.Warn("lookup table sets deprecated 'parent' fields; the values are ignored and derived from 'children' lists instead, and the field will be removed in a future flatten-lookup version",
-				"profile", table.URL,
-				"elements", authored)
 		}
 
 		claimedBy := make(map[string]string)

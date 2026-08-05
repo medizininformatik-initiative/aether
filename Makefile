@@ -141,7 +141,7 @@ test-fuzz:
 ## coverage: Run tests with coverage report
 coverage:
 	@echo "Running tests with coverage..."
-	$(GOTEST) -coverpkg=./internal/... -coverprofile=coverage.out ./tests/...
+	$(GOTEST) -coverpkg=./internal/... -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 

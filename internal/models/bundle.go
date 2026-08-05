@@ -99,23 +99,16 @@ func CreateBundleChunk(metadata BundleMetadata, entries []map[string]any,
 		return BundleChunk{}, fmt.Errorf("chunk must contain at least one entry")
 	}
 
-	chunkID := fmt.Sprintf("%s-chunk-%d", metadata.ID, index)
+	id := chunkID(metadata.ID, index)
 
 	// Calculate estimated size of chunk
-	estimatedSize, err := CalculateJSONSize(map[string]any{
-		"resourceType": "Bundle",
-		"id":           chunkID,
-		"type":         metadata.Type,
-		"timestamp":    metadata.Timestamp.Format(time.RFC3339),
-		"total":        len(entries),
-		"entry":        entries,
-	})
+	estimatedSize, err := CalculateJSONSize(chunkBundle(id, metadata, toAnySlice(entries), len(entries)))
 	if err != nil {
 		return BundleChunk{}, fmt.Errorf("failed to calculate chunk size: %w", err)
 	}
 
 	chunk := BundleChunk{
-		ChunkID:       chunkID,
+		ChunkID:       id,
 		Index:         index,
 		TotalChunks:   totalChunks,
 		OriginalID:    metadata.ID,
@@ -127,32 +120,59 @@ func CreateBundleChunk(metadata BundleMetadata, entries []map[string]any,
 	return chunk, nil
 }
 
+// MaxChunkWrapperSize returns an upper bound for the serialized size in bytes
+// of the Bundle wrapper that ConvertChunkToBundle puts around a chunk's entries
+// — everything except the entries themselves and the separators between them.
+// Splitting entryCount entries produces at most entryCount chunks, so sizing
+// the chunk id "{originalID}-chunk-{index}" and the total field of
+// searchset/history Bundles with entryCount makes the bound hold for every chunk.
+func MaxChunkWrapperSize(metadata BundleMetadata, entryCount int) int {
+	// The wrapper holds only strings, an int and an empty slice — the timestamp
+	// is formatted to a string first — so json.Marshal cannot fail here.
+	size, _ := CalculateJSONSize(chunkBundle(chunkID(metadata.ID, entryCount-1), metadata, []any{}, entryCount))
+	return size
+}
+
 // ConvertChunkToBundle converts a BundleChunk into a valid FHIR Bundle JSON object
 // suitable for sending to DIMP or other FHIR-compliant services
 func ConvertChunkToBundle(chunk BundleChunk) map[string]any {
-	// Convert []map[string]any to []any for FHIR Bundle entry field
-	entries := make([]any, len(chunk.Entries))
-	for i, entry := range chunk.Entries {
-		entries[i] = entry
-	}
+	return chunkBundle(chunk.ChunkID, chunk.Metadata, toAnySlice(chunk.Entries), len(chunk.Entries))
+}
 
+// chunkID builds the id of a chunk Bundle from the original Bundle id
+func chunkID(bundleID string, index int) string {
+	return fmt.Sprintf("%s-chunk-%d", bundleID, index)
+}
+
+// toAnySlice converts entries to []any for the FHIR Bundle entry field
+func toAnySlice(entries []map[string]any) []any {
+	converted := make([]any, len(entries))
+	for i, entry := range entries {
+		converted[i] = entry
+	}
+	return converted
+}
+
+// chunkBundle builds the FHIR Bundle JSON object around a chunk's entry array.
+// totalEntries sizes the total field independently of the entry array, so the
+// wrapper size can be computed with an empty array.
+func chunkBundle(id string, metadata BundleMetadata, entries []any, totalEntries int) map[string]any {
 	bundle := map[string]any{
 		"resourceType": "Bundle",
-		"id":           chunk.ChunkID,
-		"type":         chunk.Metadata.Type,
+		"id":           id,
+		"type":         metadata.Type,
 		"entry":        entries,
 	}
 
 	// Add timestamp if present
-	if !chunk.Metadata.Timestamp.IsZero() {
-		bundle["timestamp"] = chunk.Metadata.Timestamp.Format(time.RFC3339)
+	if !metadata.Timestamp.IsZero() {
+		bundle["timestamp"] = metadata.Timestamp.Format(time.RFC3339)
 	}
 
 	// Add total field ONLY for searchset and history bundles (FHIR R4 invariant: "total only when a search or history")
 	// For collection/document bundles, the total field must NOT be present
-	bundleType := chunk.Metadata.Type
-	if bundleType == "searchset" || bundleType == "history" {
-		bundle["total"] = len(chunk.Entries)
+	if metadata.Type == "searchset" || metadata.Type == "history" {
+		bundle["total"] = totalEntries
 	}
 
 	return bundle

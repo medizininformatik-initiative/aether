@@ -12,12 +12,16 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
+// testWrapperBytes is a representative Bundle wrapper size for partitioning tests
+// that exercise the greedy algorithm rather than the wrapper computation
+const testWrapperBytes = 200
+
 // TestPartitionEntries_EmptyArray tests error handling for empty entry array
 func TestPartitionEntries_EmptyArray(t *testing.T) {
 	entries := []map[string]any{}
 	thresholdBytes := 10 * 1024 * 1024
 
-	_, err := services.PartitionEntries(entries, thresholdBytes)
+	_, err := services.PartitionEntries(entries, thresholdBytes, testWrapperBytes)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty entry array")
 }
@@ -38,7 +42,7 @@ func TestPartitionEntries_OversizedEntry(t *testing.T) {
 	entries := []map[string]any{largeEntry}
 	thresholdBytes := 10 * 1024 * 1024 // 10MB
 
-	_, err := services.PartitionEntries(entries, thresholdBytes)
+	_, err := services.PartitionEntries(entries, thresholdBytes, testWrapperBytes)
 	require.Error(t, err)
 
 	// Should be an OversizedResourceError
@@ -73,7 +77,7 @@ func TestPartitionEntries_MultipleOversizedEntries(t *testing.T) {
 
 	thresholdBytes := 10 * 1024 * 1024
 
-	_, err := services.PartitionEntries(entries, thresholdBytes)
+	_, err := services.PartitionEntries(entries, thresholdBytes, testWrapperBytes)
 	require.Error(t, err)
 
 	// Should fail on the first oversized entry
@@ -101,7 +105,7 @@ func TestPartitionEntries_OversizedEntryWithoutResourceInfo(t *testing.T) {
 
 	thresholdBytes := 10 * 1024 * 1024
 
-	_, err := services.PartitionEntries(entries, thresholdBytes)
+	_, err := services.PartitionEntries(entries, thresholdBytes, testWrapperBytes)
 	require.Error(t, err)
 
 	oversizedErr, ok := err.(*models.OversizedResourceError)
@@ -706,6 +710,36 @@ func TestSplitBundle_BundleExactlyAtThreshold(t *testing.T) {
 	assert.Equal(t, 1, result.TotalChunks)
 }
 
+// TestPartitionEntries_WrapperBudgetCountsAgainstThreshold tests that an entry
+// only fits a chunk when entry size plus wrapper size stay within the threshold
+func TestPartitionEntries_WrapperBudgetCountsAgainstThreshold(t *testing.T) {
+	entries := []map[string]any{
+		{
+			"resource": map[string]any{
+				"resourceType": "Patient",
+				"id":           "pat-1",
+			},
+		},
+	}
+	entrySize, err := models.CalculateJSONSize(entries[0])
+	require.NoError(t, err)
+	thresholdBytes := entrySize + 10
+
+	t.Run("entry fits with small wrapper", func(t *testing.T) {
+		partitions, err := services.PartitionEntries(entries, thresholdBytes, 10)
+		require.NoError(t, err)
+		assert.Len(t, partitions, 1)
+	})
+
+	t.Run("entry is oversized with large wrapper", func(t *testing.T) {
+		_, err := services.PartitionEntries(entries, thresholdBytes, 11)
+		require.Error(t, err)
+		var oversizedErr *models.OversizedResourceError
+		require.True(t, errors.As(err, &oversizedErr))
+		assert.Equal(t, "Patient", oversizedErr.ResourceType)
+	})
+}
+
 // TestPartitionEntries_SingleEntry tests error path with single small entry
 func TestPartitionEntries_SingleEntry(t *testing.T) {
 	entries := []map[string]any{
@@ -723,7 +757,7 @@ func TestPartitionEntries_SingleEntry(t *testing.T) {
 
 	thresholdBytes := 10 * 1024 * 1024
 
-	partitions, err := services.PartitionEntries(entries, thresholdBytes)
+	partitions, err := services.PartitionEntries(entries, thresholdBytes, testWrapperBytes)
 
 	// Should succeed
 	require.NoError(t, err)
@@ -756,7 +790,7 @@ func TestPartitionEntries_EntryAtBoundary(t *testing.T) {
 
 	thresholdBytes := 10 * 1024 * 1024 // 10MB - should fit first entry with second
 
-	partitions, err := services.PartitionEntries(entries, thresholdBytes)
+	partitions, err := services.PartitionEntries(entries, thresholdBytes, testWrapperBytes)
 
 	require.NoError(t, err)
 	assert.Len(t, partitions, 1, "Both entries should fit in single partition under 10MB threshold")
@@ -781,7 +815,7 @@ func TestPartitionEntries_MultiplePartitions(t *testing.T) {
 
 	thresholdBytes := 5 * 1024 * 1024 // 5MB - should split entries into multiple partitions
 
-	partitions, err := services.PartitionEntries(entries, thresholdBytes)
+	partitions, err := services.PartitionEntries(entries, thresholdBytes, testWrapperBytes)
 
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(partitions), 2, "Should create at least 2 partitions")

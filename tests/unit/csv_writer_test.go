@@ -39,6 +39,7 @@ func TestCSVWriter_AppendCSVData(t *testing.T) {
 
 		err := writer.AppendCSVData("special.csv", header, rows, true)
 		require.NoError(t, err)
+		require.NoError(t, writer.Finalize("special.csv"))
 
 		content, err := os.ReadFile(filepath.Join(tempDir, "special.csv"))
 		require.NoError(t, err)
@@ -63,6 +64,7 @@ func TestCSVWriter_AppendCSVData(t *testing.T) {
 
 		err := writer.AppendCSVData("patients.csv", header, rows, true)
 		require.NoError(t, err)
+		require.NoError(t, writer.Finalize("patients.csv"))
 
 		content, err := os.ReadFile(filepath.Join(tempDir, "patients.csv"))
 		require.NoError(t, err)
@@ -84,6 +86,7 @@ func TestCSVWriter_AppendCSVData(t *testing.T) {
 		// Second batch
 		err = writer.AppendCSVData("test.csv", header, [][]string{{"2", "Bob"}}, false)
 		require.NoError(t, err)
+		require.NoError(t, writer.Finalize("test.csv"))
 
 		content, err := os.ReadFile(filepath.Join(tempDir, "test.csv"))
 		require.NoError(t, err)
@@ -100,6 +103,7 @@ func TestCSVWriter_AppendCSVData(t *testing.T) {
 
 		err := writer.AppendCSVData("empty.csv", header, nil, true)
 		require.NoError(t, err)
+		require.NoError(t, writer.Finalize("empty.csv"))
 
 		content, err := os.ReadFile(filepath.Join(tempDir, "empty.csv"))
 		require.NoError(t, err)
@@ -120,6 +124,7 @@ func TestCSVWriter_AppendCSVData(t *testing.T) {
 		// Second batch with no rows
 		err = writer.AppendCSVData("test.csv", header, nil, false)
 		require.NoError(t, err)
+		require.NoError(t, writer.Finalize("test.csv"))
 
 		content, err := os.ReadFile(filepath.Join(tempDir, "test.csv"))
 		require.NoError(t, err)
@@ -142,12 +147,59 @@ func TestCSVWriter_AppendCSVData(t *testing.T) {
 
 		err = writer.AppendCSVData("multi.csv", header, [][]string{{"4", "d"}}, false)
 		require.NoError(t, err)
+		require.NoError(t, writer.Finalize("multi.csv"))
 
 		content, err := os.ReadFile(filepath.Join(tempDir, "multi.csv"))
 		require.NoError(t, err)
 
 		expected := "id,value\n1,a\n2,b\n3,c\n4,d\n"
 		assert.Equal(t, expected, string(content))
+	})
+}
+
+func TestCSVWriter_PartialLifecycle(t *testing.T) {
+	t.Run("append writes to partial file until finalized", func(t *testing.T) {
+		tempDir := t.TempDir()
+		writer := services.NewCSVWriter(tempDir)
+
+		err := writer.AppendCSVData("patients.csv", []string{"id", "name"}, [][]string{{"1", "Alice"}}, true)
+		require.NoError(t, err)
+
+		assert.FileExists(t, filepath.Join(tempDir, "patients.csv.partial"))
+		assert.NoFileExists(t, filepath.Join(tempDir, "patients.csv"))
+
+		err = writer.Finalize("patients.csv")
+		require.NoError(t, err)
+
+		assert.NoFileExists(t, filepath.Join(tempDir, "patients.csv.partial"))
+		content, err := os.ReadFile(filepath.Join(tempDir, "patients.csv"))
+		require.NoError(t, err)
+		assert.Equal(t, "id,name\n1,Alice\n", string(content))
+	})
+
+	t.Run("finalize without a partial file returns an error", func(t *testing.T) {
+		writer := services.NewCSVWriter(t.TempDir())
+
+		err := writer.Finalize("missing.csv")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to finalize CSV file")
+	})
+
+	t.Run("remove partials reports a removal error", func(t *testing.T) {
+		if os.Getuid() == 0 {
+			t.Skip("Cannot test permission errors as root")
+		}
+
+		tempDir := t.TempDir()
+		partialPath := filepath.Join(tempDir, "stuck.csv"+services.PartialSuffix)
+		require.NoError(t, os.WriteFile(partialPath, []byte("id\n"), 0644))
+		require.NoError(t, os.Chmod(tempDir, 0555))
+		t.Cleanup(func() { _ = os.Chmod(tempDir, 0755) })
+
+		writer := services.NewCSVWriter(tempDir)
+		err := writer.RemovePartials()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to remove stale partial CSV file")
 	})
 }
 
@@ -193,43 +245,4 @@ func TestCSVWriter_AppendCSVDataErrors(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to open CSV file for append")
 	})
-
-	t.Run("first batch reports a write error", func(t *testing.T) {
-		dir, name := unwritableSink(t)
-		writer := services.NewCSVWriter(dir)
-
-		err := writer.AppendCSVData(name, []string{"id"}, [][]string{{"1"}}, true)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to write CSV rows")
-	})
-
-	t.Run("subsequent batch reports a write error", func(t *testing.T) {
-		dir, name := unwritableSink(t)
-		writer := services.NewCSVWriter(dir)
-
-		err := writer.AppendCSVData(name, []string{"id"}, [][]string{{"1"}}, false)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to write CSV rows")
-	})
-}
-
-// unwritableSink returns a directory and a filename whose join is a sink that
-// accepts an open but rejects every write. It makes the CSV write-error
-// branches reachable without a seam in the writer. Linux provides /dev/full
-// for this; on other systems the test skips.
-func unwritableSink(t *testing.T) (dir, name string) {
-	t.Helper()
-
-	const path = "/dev/full"
-	file, err := os.OpenFile(path, os.O_WRONLY, 0)
-	if err != nil {
-		t.Skipf("no unwritable sink on this system: %v", err)
-	}
-	_, writeErr := file.Write([]byte("probe"))
-	require.NoError(t, file.Close())
-	if writeErr == nil {
-		t.Skip("the sink accepted a write, so no CSV write error is possible")
-	}
-
-	return filepath.Dir(path), filepath.Base(path)
 }

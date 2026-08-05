@@ -560,9 +560,9 @@ func TestExecuteFlatteningStep_ViewDefinitionWriteError(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
-			w.Header().Set("Content-Type", "text/csv")
+			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("1\n"))
+			_, _ = w.Write([]byte(`{"id":"1"}` + "\n"))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -619,9 +619,9 @@ func TestExecuteFlatteningStep_CSVWriteError(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
-			w.Header().Set("Content-Type", "text/csv")
+			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("1,John Doe\n"))
+			_, _ = w.Write([]byte(`{"id":"1"}` + "\n"))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -673,10 +673,10 @@ func TestExecuteFlatteningStep_MultipleBatches(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			callCount++
-			w.Header().Set("Content-Type", "text/csv")
+			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
-			// Return a simple CSV row per call
-			_, _ = fmt.Fprintf(w, "patient-%d\n", callCount)
+			// Return a simple NDJSON row per call
+			_, _ = fmt.Fprintf(w, `{"id":"patient-%d"}`+"\n", callCount)
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -784,9 +784,9 @@ func TestExecuteFlatteningStep_FlattenerError(t *testing.T) {
 func TestExecuteFlatteningStep_BundleExtraction(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
-			w.Header().Set("Content-Type", "text/csv")
+			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("bundled-patient\n"))
+			_, _ = w.Write([]byte(`{"id":"bundled-patient"}` + "\n"))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -840,9 +840,9 @@ func TestExecuteFlatteningStep_StreamingEdgeCases(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			flattenCalls++
-			w.Header().Set("Content-Type", "text/csv")
+			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("valid-patient\n"))
+			_, _ = w.Write([]byte(`{"id":"valid-patient"}` + "\n"))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -905,9 +905,9 @@ func TestExecuteFlatteningStep_BatchFlushOnThreshold(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			callCount++
-			w.Header().Set("Content-Type", "text/csv")
+			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
-			_, _ = fmt.Fprintf(w, "row-%d\n", callCount)
+			_, _ = fmt.Fprintf(w, `{"id":"row-%d"}`+"\n", callCount)
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -1196,9 +1196,9 @@ func TestExecuteFlatteningStep_OpenFileError(t *testing.T) {
 func TestExecuteFlatteningStep_ProvenanceInPseudonymizedDir(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
-			w.Header().Set("Content-Type", "text/csv")
+			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("1,John Doe\n"))
+			_, _ = w.Write([]byte(`{"id":"1"}` + "\n"))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}

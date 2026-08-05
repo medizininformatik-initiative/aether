@@ -374,12 +374,12 @@ func flushGroupBatch(
 		"resource_count", len(batch.resources),
 		"byte_size", batch.byteSize)
 
-	csvData, err := flattenerClient.Flatten(*viewDef, batch.resources)
+	rows, err := flattenerClient.Flatten(*viewDef, batch.resources)
 	if err != nil {
 		return fmt.Errorf("flattener failed for group '%s': %w", groupName, err)
 	}
 
-	if err := csvWriter.AppendCSVData(filename, header, csvData, batch.isFirstBatch); err != nil {
+	if err := csvWriter.AppendCSVData(filename, header, rows, batch.isFirstBatch); err != nil {
 		return fmt.Errorf("failed to write CSV for group '%s': %w", groupName, err)
 	}
 

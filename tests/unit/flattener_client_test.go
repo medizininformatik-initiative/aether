@@ -53,6 +53,18 @@ func newTestViewDefinition(name, resource string) models.ViewDefinition {
 	}
 }
 
+// newTestViewDefinitionWithColumns builds a ViewDefinition whose select clause
+// contains one column per name, so the client can map NDJSON objects to rows.
+func newTestViewDefinitionWithColumns(name, resource string, columns ...string) models.ViewDefinition {
+	cols := make([]models.ColumnDefinition, len(columns))
+	for i, col := range columns {
+		cols[i] = models.ColumnDefinition{Name: col, Path: col}
+	}
+	viewDef := newTestViewDefinition(name, resource)
+	viewDef.Select = []models.SelectClause{{Column: cols}}
+	return viewDef
+}
+
 func newTestResources(ids ...string) []map[string]any {
 	resources := make([]map[string]any, len(ids))
 	for i, id := range ids {
@@ -62,26 +74,139 @@ func newTestResources(ids ...string) []map[string]any {
 }
 
 func TestFlattenerClient_Flatten(t *testing.T) {
-	t.Run("successful flatten", func(t *testing.T) {
+	t.Run("successful flatten returns rows in ViewDefinition column order", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal(t, "/fhir/ViewDefinition/$run", r.URL.Path)
+			assert.Equal(t, "ndjson", r.URL.Query().Get("_format"))
 			assert.Equal(t, "POST", r.Method)
 			assert.Equal(t, "application/fhir+json", r.Header.Get("Content-Type"))
-			assert.Equal(t, "text/csv", r.Header.Get("Accept"))
+			assert.Equal(t, "application/x-ndjson", r.Header.Get("Accept"))
 
-			w.Header().Set("Content-Type", "text/csv")
+			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("1,John,Doe\n2,Jane,Smith\n"))
+			_, _ = w.Write([]byte(`{"id":"1","given":"John","family":"Doe"}` + "\n" +
+				`{"family":"Smith","given":"Jane","id":"2"}` + "\n"))
 		}))
 		defer server.Close()
 
 		client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), noRetryConfig(), nil, lib.DefaultLogger)
-		viewDef := newTestViewDefinition("TestView", "Patient")
+		viewDef := newTestViewDefinitionWithColumns("TestView", "Patient", "id", "given", "family")
 		resources := newTestResources("1", "2")
 
-		result, err := client.Flatten(viewDef, resources)
+		rows, err := client.Flatten(viewDef, resources)
 		require.NoError(t, err)
-		assert.Equal(t, "1,John,Doe\n2,Jane,Smith\n", result)
+		assert.Equal(t, [][]string{
+			{"1", "John", "Doe"},
+			{"2", "Jane", "Smith"},
+		}, rows)
+	})
+
+	t.Run("hostile free text survives verbatim", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"1","note":"He said \"hi\", then C:\\path\nnew line, lone \\ backslash, =formula"}` + "\n"))
+		}))
+		defer server.Close()
+
+		client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), noRetryConfig(), nil, lib.DefaultLogger)
+		viewDef := newTestViewDefinitionWithColumns("TestView", "Observation", "id", "note")
+
+		rows, err := client.Flatten(viewDef, newTestResources("1"))
+		require.NoError(t, err)
+		assert.Equal(t, [][]string{
+			{"1", "He said \"hi\", then C:\\path\nnew line, lone \\ backslash, =formula"},
+		}, rows)
+	})
+
+	t.Run("missing column becomes empty cell, not a shift", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"1","family":"Doe"}` + "\n"))
+		}))
+		defer server.Close()
+
+		client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), noRetryConfig(), nil, lib.DefaultLogger)
+		viewDef := newTestViewDefinitionWithColumns("TestView", "Patient", "id", "given", "family")
+
+		rows, err := client.Flatten(viewDef, newTestResources("1"))
+		require.NoError(t, err)
+		// "given" is absent from the object: its cell stays empty and
+		// "family" stays in its own column.
+		assert.Equal(t, [][]string{{"1", "", "Doe"}}, rows)
+	})
+
+	t.Run("rows with different missing columns stay aligned", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"1","family":"Doe"}` + "\n" + `{"id":"2","given":"Jane"}` + "\n"))
+		}))
+		defer server.Close()
+
+		client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), noRetryConfig(), nil, lib.DefaultLogger)
+		viewDef := newTestViewDefinitionWithColumns("TestView", "Patient", "id", "given", "family")
+
+		rows, err := client.Flatten(viewDef, newTestResources("1", "2"))
+		require.NoError(t, err)
+		assert.Equal(t, [][]string{
+			{"1", "", "Doe"},
+			{"2", "Jane", ""},
+		}, rows)
+	})
+
+	t.Run("non-object NDJSON line returns parse error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("42\n"))
+		}))
+		defer server.Close()
+
+		client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), noRetryConfig(), nil, lib.DefaultLogger)
+		viewDef := newTestViewDefinitionWithColumns("TestView", "Patient", "id")
+
+		_, err := client.Flatten(viewDef, newTestResources("1"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse NDJSON from flattener")
+	})
+
+	t.Run("empty body yields no rows", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), noRetryConfig(), nil, lib.DefaultLogger)
+		viewDef := newTestViewDefinitionWithColumns("TestView", "Patient", "id")
+
+		rows, err := client.Flatten(viewDef, newTestResources("1"))
+		require.NoError(t, err)
+		assert.Empty(t, rows)
+	})
+
+	t.Run("renders JSON types as documented", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"decimal":1.50,"int":2,"bool":true,"null":null,"object":{"a":1.50},"array":["x",false]}` + "\n"))
+		}))
+		defer server.Close()
+
+		client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), noRetryConfig(), nil, lib.DefaultLogger)
+		viewDef := newTestViewDefinitionWithColumns("TestView", "Observation",
+			"decimal", "int", "bool", "null", "object", "array")
+
+		rows, err := client.Flatten(viewDef, newTestResources("1"))
+		require.NoError(t, err)
+		// A number keeps its source text (1.50 stays 1.50), a boolean becomes
+		// true/false, null becomes an empty cell, and nested structures
+		// become compact JSON.
+		assert.Equal(t, [][]string{
+			{"1.50", "2", "true", "", `{"a":1.50}`, `["x",false]`},
+		}, rows)
 	})
 
 	t.Run("empty resources", func(t *testing.T) {
@@ -107,9 +232,9 @@ func TestFlattenerClient_Flatten(t *testing.T) {
 
 func TestFlattenerClient_WithCustomTransport(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/csv")
+		w.Header().Set("Content-Type", "application/x-ndjson")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("id,name\n1,Test\n"))
+		_, _ = w.Write([]byte(`{"id":"1","name":"Test"}` + "\n"))
 	}))
 	defer server.Close()
 
@@ -117,15 +242,15 @@ func TestFlattenerClient_WithCustomTransport(t *testing.T) {
 	transport := &http.Transport{}
 	client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), noRetryConfig(), transport, lib.DefaultLogger)
 
-	result, err := client.Flatten(newTestViewDefinition("TestView", "Patient"), newTestResources("1"))
+	rows, err := client.Flatten(newTestViewDefinitionWithColumns("TestView", "Patient", "id", "name"), newTestResources("1"))
 	require.NoError(t, err)
-	assert.Equal(t, "id,name\n1,Test\n", result)
+	assert.Equal(t, [][]string{{"1", "Test"}}, rows)
 }
 
 func TestFlattenerClient_DefaultTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("{}\n"))
 	}))
 	defer server.Close()
 
@@ -287,7 +412,7 @@ func TestFlattenerClient_Flatten_RetriesOnEOF(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("1,Alice\n"))
+		_, _ = w.Write([]byte(`{"id":"1","name":"Alice"}` + "\n"))
 	}))
 	defer server.Close()
 
@@ -297,9 +422,9 @@ func TestFlattenerClient_Flatten_RetriesOnEOF(t *testing.T) {
 		nil, lib.DefaultLogger,
 	)
 
-	result, err := client.Flatten(newTestViewDefinition("TestView", "Patient"), newTestResources("1"))
+	rows, err := client.Flatten(newTestViewDefinitionWithColumns("TestView", "Patient", "id", "name"), newTestResources("1"))
 	require.NoError(t, err)
-	assert.Equal(t, "1,Alice\n", result)
+	assert.Equal(t, [][]string{{"1", "Alice"}}, rows)
 	assert.Equal(t, int32(3), attempts.Load(), "expected 3 attempts (2 EOF + 1 success)")
 }
 
@@ -313,7 +438,7 @@ func TestFlattenerClient_Flatten_RetriesOnTransientHTTP(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("1,Bob\n"))
+		_, _ = w.Write([]byte(`{"id":"1","name":"Bob"}` + "\n"))
 	}))
 	defer server.Close()
 
@@ -323,9 +448,9 @@ func TestFlattenerClient_Flatten_RetriesOnTransientHTTP(t *testing.T) {
 		nil, lib.DefaultLogger,
 	)
 
-	result, err := client.Flatten(newTestViewDefinition("TestView", "Patient"), newTestResources("1"))
+	rows, err := client.Flatten(newTestViewDefinitionWithColumns("TestView", "Patient", "id", "name"), newTestResources("1"))
 	require.NoError(t, err)
-	assert.Equal(t, "1,Bob\n", result)
+	assert.Equal(t, [][]string{{"1", "Bob"}}, rows)
 	assert.Equal(t, int32(2), attempts.Load())
 }
 
@@ -430,7 +555,7 @@ func TestFlattenerClient_HealthCheck_RetriesOnTransientHTTP(t *testing.T) {
 
 // TestFlattenerClient_ReadResponseBodyError exercises the response-body read
 // failure branch: the server promises more bytes than it sends, then closes the
-// connection, so the client's body read fails with an unexpected EOF.
+// connection mid-object, so the streaming NDJSON decode fails.
 func TestFlattenerClient_ReadResponseBodyError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hj, ok := w.(http.Hijacker)
@@ -442,7 +567,7 @@ func TestFlattenerClient_ReadResponseBodyError(t *testing.T) {
 		if err != nil {
 			return
 		}
-		_, _ = buf.WriteString("HTTP/1.1 200 OK\r\nContent-Length: 100\r\nContent-Type: text/csv\r\n\r\nshort")
+		_, _ = buf.WriteString("HTTP/1.1 200 OK\r\nContent-Length: 100\r\nContent-Type: application/x-ndjson\r\n\r\n{\"id\":\"1")
 		_ = buf.Flush()
 		_ = conn.Close()
 	}))
@@ -461,5 +586,26 @@ func TestFlattenerClient_ReadResponseBodyError(t *testing.T) {
 	)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to read response")
+	assert.Contains(t, err.Error(), "failed to parse NDJSON from flattener")
+}
+
+// A resource that encoding/json cannot marshal must fail the request before
+// the client opens a connection, so the caller sees a marshal error rather
+// than a transport error.
+func TestFlattenerClient_Flatten_UnmarshalableResource(t *testing.T) {
+	client := services.NewFlattenerClient(
+		newTestFlatteningConfig("http://flattener.invalid"),
+		noRetryConfig(),
+		nil,
+		lib.NewLogger(lib.LogLevelError),
+	)
+
+	// A channel has no JSON representation.
+	resources := []map[string]any{{"resourceType": "Patient", "bad": make(chan int)}}
+
+	rows, err := client.Flatten(newTestViewDefinition("patients", "Patient"), resources)
+
+	require.Error(t, err)
+	assert.Nil(t, rows)
+	assert.Contains(t, err.Error(), "failed to marshal request")
 }

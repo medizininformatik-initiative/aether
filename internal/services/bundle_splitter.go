@@ -141,15 +141,20 @@ func PartitionEntries(entries []map[string]any, thresholdBytes int) ([][]map[str
 			}
 		}
 
-		// Check if adding this entry would exceed threshold
-		if len(currentPartition) > 0 && currentSize+entrySize+bundleOverheadBytes > thresholdBytes {
+		// Check if adding this entry (plus the JSON separator preceding it
+		// in the serialized entry array) would exceed threshold
+		if len(currentPartition) > 0 && currentSize+1+entrySize+bundleOverheadBytes > thresholdBytes {
 			// Current chunk would exceed limit - start new chunk
 			partitions = append(partitions, currentPartition)
 			currentPartition = []map[string]any{}
 			currentSize = 0
 		}
 
-		// Add entry to current partition
+		// Add entry to current partition, counting the separator byte
+		// for every entry after the first
+		if len(currentPartition) > 0 {
+			currentSize++
+		}
 		currentPartition = append(currentPartition, entry)
 		currentSize += entrySize
 	}

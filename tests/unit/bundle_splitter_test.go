@@ -1,6 +1,8 @@
 package unit
 
 import (
+	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -297,6 +299,70 @@ func TestPartitionEntriesGreedyAlgorithm(t *testing.T) {
 	// Verify all entries accounted for
 	assert.Equal(t, len(entries), totalEntries,
 		"All entries should be partitioned")
+}
+
+// TestSplitBundleChunksStayWithinThreshold verifies that every chunk produced by
+// SplitBundle serializes to at most the threshold, including the JSON separators
+// between entries, while still packing chunks close to the threshold.
+func TestSplitBundleChunksStayWithinThreshold(t *testing.T) {
+	testCases := []struct {
+		name           string
+		entryCount     int
+		thresholdBytes int
+	}{
+		{
+			name:           "many tiny entries with small threshold",
+			entryCount:     4000,
+			thresholdBytes: 4000,
+		},
+		{
+			name:           "many tiny entries with large threshold",
+			entryCount:     20000,
+			thresholdBytes: 100000,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			entries := make([]any, 0, tc.entryCount)
+			for i := 0; i < tc.entryCount; i++ {
+				entries = append(entries, map[string]any{
+					"resource": map[string]any{"id": fmt.Sprintf("%d", i)},
+				})
+			}
+			bundle := map[string]any{
+				"resourceType": "Bundle",
+				"id":           "tiny-entry-bundle",
+				"type":         "collection",
+				"entry":        entries,
+			}
+
+			result, err := services.SplitBundle(bundle, tc.thresholdBytes)
+			require.NoError(t, err)
+			require.True(t, result.WasSplit)
+
+			totalEntries := 0
+			for i, chunk := range result.Chunks {
+				totalEntries += len(chunk.Entries)
+
+				serialized, err := json.Marshal(models.ConvertChunkToBundle(chunk))
+				require.NoError(t, err)
+				assert.LessOrEqual(t, len(serialized), tc.thresholdBytes,
+					"chunk %d serializes to %d bytes, exceeding threshold %d",
+					i, len(serialized), tc.thresholdBytes)
+
+				// All chunks except the last must stay close to the threshold,
+				// otherwise splitting degrades into too many small requests
+				if i < len(result.Chunks)-1 {
+					assert.GreaterOrEqual(t, len(serialized), tc.thresholdBytes*9/10,
+						"chunk %d serializes to %d bytes, far below threshold %d",
+						i, len(serialized), tc.thresholdBytes)
+				}
+			}
+			assert.Equal(t, tc.entryCount, totalEntries,
+				"all entries should be preserved across chunks")
+		})
+	}
 }
 
 // TestBundleMetadataRoundTrip verifies metadata survives extraction and restoration

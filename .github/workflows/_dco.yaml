@@ -1,0 +1,44 @@
+name: DCO
+
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        description: 'Commit the pull request branches from'
+        required: true
+        type: string
+      head_sha:
+        description: 'Tip of the pull request branch'
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  dco:
+    name: DCO
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        with:
+          egress-policy: audit
+
+      # fetch-depth 0 is required: the check walks base..head, and a shallow
+      # clone leaves the base commit missing.
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Test the check
+        run: .github/scripts/check-dco_test.sh
+
+      # Passed through env rather than interpolated into the command, so no
+      # event data can be spliced into the shell.
+      - name: Check sign-off
+        env:
+          BASE_SHA: ${{ inputs.base_sha }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+        run: .github/scripts/check-dco.sh "$BASE_SHA" "$HEAD_SHA"

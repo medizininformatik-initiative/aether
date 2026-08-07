@@ -75,6 +75,15 @@ understand the code, you have the right to submit it, and **you are
 responsible for it** — regardless of how it was written. Never let an AI
 tool add its own `Signed-off-by`; only a human can certify the DCO.
 
+CI enforces this. The `DCO` check fails a pull request when any commit lacks
+a `Signed-off-by` line matching its author. Merge commits and commits from
+dependency bots are exempt. To fix a branch that already exists:
+
+```bash
+git rebase --signoff origin/main
+git push --force-with-lease
+```
+
 You must understand your own changes. If you can't explain what your patch
 does and why, it will be closed.
 

@@ -3,7 +3,7 @@
 
 services:
   fhir-flattener:
-    image: ghcr.io/medizininformatik-initiative/fhir-flattener:0.1.0-alpha.8@sha256:d8c72fc5d55cafe0bca4e1b3996716626ac48e130babf3b9eedb72c908041203
+    image: ghcr.io/medizininformatik-initiative/fhir-flattener:0.1.0-alpha.9@sha256:a14c5d57eb488c5fd26f40e293aa46686de4d921b72fdc0788997e6f665ee4e7
     working_dir: /app
     networks: [ "aether" ]
     healthcheck:

@@ -26,6 +26,16 @@ jobs:
     uses: ./.github/workflows/_lint.yaml
     secrets: inherit
 
+  # Pull requests only: base.sha exists on no other event, and direct pushes to
+  # main are blocked by the ruleset instead.
+  dco:
+    name: DCO
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: ./.github/workflows/_dco.yaml
+    with:
+      base_sha: ${{ github.event.pull_request.base.sha }}
+      head_sha: ${{ github.event.pull_request.head.sha }}
+
   docs-lint:
     name: Docs Lint
     uses: ./.github/workflows/_docs-lint.yaml

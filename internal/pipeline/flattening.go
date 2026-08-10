@@ -41,36 +41,6 @@ type groupBatch struct {
 	isFirstBatch bool // true until first flush
 }
 
-// columnDataTracker records the columns of one attribute group that receive
-// data. FHIR elements are optional, thus an empty cell in one row is normal.
-// Only a column that stays empty for the full job points to a ViewDefinition
-// path that finds no data.
-type columnDataTracker struct {
-	hasData []bool
-}
-
-// record marks each column that has a non-empty cell in one of the rows.
-func (t *columnDataTracker) record(rows [][]string) {
-	for _, row := range rows {
-		for i, cell := range row {
-			if i < len(t.hasData) && cell != "" {
-				t.hasData[i] = true
-			}
-		}
-	}
-}
-
-// emptyColumns returns the names of the columns that never received data.
-func (t *columnDataTracker) emptyColumns(headers []string) []string {
-	var names []string
-	for i, header := range headers {
-		if i < len(t.hasData) && !t.hasData[i] {
-			names = append(names, header)
-		}
-	}
-	return names
-}
-
 // flatteningStep transforms FHIR NDJSON data into CSV files using the fhir-flattener API.
 // Reads from dimp/ (if DIMP enabled) or import/ directory, outputs to csv/.
 type flatteningStep struct{}
@@ -283,10 +253,6 @@ func streamAndFlattenResources(
 	numGroups := len(groups)
 	batches := make([]groupBatch, numGroups)
 	totals := make([]int, numGroups)
-	trackers := make([]columnDataTracker, numGroups)
-	for i := range trackers {
-		trackers[i].hasData = make([]bool, len(headers[i]))
-	}
 
 	// Divide total memory budget across groups so peak usage stays within batchSizeBytes
 	perGroupBytes := perGroupBudget(batchSizeBytes, numGroups)
@@ -332,7 +298,7 @@ func streamAndFlattenResources(
 							totals[groupIdx]++
 
 							if batches[groupIdx].byteSize >= perGroupBytes {
-								if err := flushGroupBatch(&batches[groupIdx], viewDefs[groupIdx], headers[groupIdx], filenames[groupIdx], flattenerClient, csvWriter, logger, groups[groupIdx].Name, &trackers[groupIdx]); err != nil {
+								if err := flushGroupBatch(&batches[groupIdx], viewDefs[groupIdx], headers[groupIdx], filenames[groupIdx], flattenerClient, csvWriter, logger, groups[groupIdx].Name); err != nil {
 									return err
 								}
 							}
@@ -346,7 +312,7 @@ func streamAndFlattenResources(
 						totals[groupIdx]++
 
 						if batches[groupIdx].byteSize >= perGroupBytes {
-							if err := flushGroupBatch(&batches[groupIdx], viewDefs[groupIdx], headers[groupIdx], filenames[groupIdx], flattenerClient, csvWriter, logger, groups[groupIdx].Name, &trackers[groupIdx]); err != nil {
+							if err := flushGroupBatch(&batches[groupIdx], viewDefs[groupIdx], headers[groupIdx], filenames[groupIdx], flattenerClient, csvWriter, logger, groups[groupIdx].Name); err != nil {
 								return err
 							}
 						}
@@ -362,23 +328,9 @@ func streamAndFlattenResources(
 	// Flush remaining non-empty batches
 	for i := range batches {
 		if len(batches[i].resources) > 0 {
-			if err := flushGroupBatch(&batches[i], viewDefs[i], headers[i], filenames[i], flattenerClient, csvWriter, logger, groups[i].Name, &trackers[i]); err != nil {
+			if err := flushGroupBatch(&batches[i], viewDefs[i], headers[i], filenames[i], flattenerClient, csvWriter, logger, groups[i].Name); err != nil {
 				return nil, err
 			}
-		}
-	}
-
-	// Report the columns with no data one time for each group. A group that
-	// never flushed has no data at all and is already reported as such. This
-	// is a debug message, thus only --verbose makes it visible.
-	for i := range trackers {
-		if batches[i].isFirstBatch {
-			continue
-		}
-		if empty := trackers[i].emptyColumns(headers[i]); len(empty) > 0 {
-			logger.Debug("Columns have no data in the full job; cells left empty",
-				"group_name", groups[i].Name,
-				"columns", strings.Join(empty, ","))
 		}
 	}
 
@@ -444,7 +396,6 @@ func flushGroupBatch(
 	csvWriter *services.CSVWriter,
 	logger *lib.Logger,
 	groupName string,
-	tracker *columnDataTracker,
 ) error {
 	logger.Debug("Flushing batch",
 		"group_name", groupName,
@@ -455,8 +406,6 @@ func flushGroupBatch(
 	if err != nil {
 		return fmt.Errorf("flattener failed for group '%s': %w", groupName, err)
 	}
-
-	tracker.record(rows)
 
 	if err := csvWriter.AppendCSVData(filename, header, rows, batch.isFirstBatch); err != nil {
 		return fmt.Errorf("failed to write CSV for group '%s': %w", groupName, err)

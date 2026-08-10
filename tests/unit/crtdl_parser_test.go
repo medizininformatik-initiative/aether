@@ -183,6 +183,68 @@ func TestParseCRTDL(t *testing.T) {
 		assert.Contains(t, err.Error(), "at least one attribute")
 	})
 
+	t.Run("duplicate group name", func(t *testing.T) {
+		tempDir := t.TempDir()
+		crtdlPath := filepath.Join(tempDir, "test.json")
+		crtdlJSON := `{
+			"dataExtraction": {
+				"attributeGroups": [
+					{
+						"id": "group-1",
+						"name": "Patients",
+						"groupReference": "https://example.com/Patient",
+						"attributes": [{"attributeRef": "Patient.id", "mustHave": true}]
+					},
+					{
+						"id": "group-2",
+						"name": "Patients",
+						"groupReference": "https://example.com/PatientOther",
+						"attributes": [{"attributeRef": "Patient.id", "mustHave": true}]
+					}
+				]
+			}
+		}`
+		err := os.WriteFile(crtdlPath, []byte(crtdlJSON), 0644)
+		require.NoError(t, err)
+
+		_, err = services.ParseCRTDL(crtdlPath)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "same name 'Patients'")
+		assert.Contains(t, err.Error(), "group-1")
+		assert.Contains(t, err.Error(), "group-2")
+	})
+
+	t.Run("group names that map to one CSV file name", func(t *testing.T) {
+		tempDir := t.TempDir()
+		crtdlPath := filepath.Join(tempDir, "test.json")
+		crtdlJSON := `{
+			"dataExtraction": {
+				"attributeGroups": [
+					{
+						"id": "group-1",
+						"name": "Fall/Kontakt",
+						"groupReference": "https://example.com/Encounter",
+						"attributes": [{"attributeRef": "Encounter.id", "mustHave": true}]
+					},
+					{
+						"id": "group-2",
+						"name": "Fall_Kontakt",
+						"groupReference": "https://example.com/EncounterOther",
+						"attributes": [{"attributeRef": "Encounter.id", "mustHave": true}]
+					}
+				]
+			}
+		}`
+		err := os.WriteFile(crtdlPath, []byte(crtdlJSON), 0644)
+		require.NoError(t, err)
+
+		_, err = services.ParseCRTDL(crtdlPath)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "Fall_Kontakt.csv")
+		assert.Contains(t, err.Error(), "group-1")
+		assert.Contains(t, err.Error(), "group-2")
+	})
+
 	t.Run("missing attributeRef", func(t *testing.T) {
 		tempDir := t.TempDir()
 		crtdlPath := filepath.Join(tempDir, "test.json")

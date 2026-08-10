@@ -13,8 +13,9 @@ import (
 
 // ImportFromLocalDirectory copies FHIR NDJSON files from a local directory to the job's import directory
 // If compress is true, output files will be compressed with zstd (.ndjson.zst)
+// recursive opts into scanning subdirectories of sourcePath (see findNDJSONFiles)
 // Returns list of imported files and any error
-func ImportFromLocalDirectory(sourcePath string, destinationDir string, logger *lib.Logger, compress bool, compressionLevel string) ([]models.FHIRDataFile, error) {
+func ImportFromLocalDirectory(sourcePath string, destinationDir string, logger *lib.Logger, compress bool, compressionLevel string, recursive bool) ([]models.FHIRDataFile, error) {
 	sourceInfo, err := os.Stat(sourcePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -37,13 +38,13 @@ func ImportFromLocalDirectory(sourcePath string, destinationDir string, logger *
 		return nil, fmt.Errorf("failed to create destination directory: %w", err)
 	}
 
-	ndjsonFiles, err := findNDJSONFiles(sourcePath)
+	ndjsonFiles, err := findNDJSONFiles(sourcePath, recursive)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan source directory: %w", err)
 	}
 
 	if len(ndjsonFiles) == 0 {
-		return nil, fmt.Errorf("no FHIR NDJSON files found in %s", sourcePath)
+		return nil, fmt.Errorf("no FHIR NDJSON files found in %s%s", sourcePath, recursiveHint(recursive))
 	}
 
 	if err := models.DetectDuplicateFHIRFiles(ndjsonFiles); err != nil {
@@ -65,8 +66,17 @@ func ImportFromLocalDirectory(sourcePath string, destinationDir string, logger *
 	return importedFiles, nil
 }
 
-// findNDJSONFiles recursively finds all .ndjson files in a directory
-func findNDJSONFiles(rootPath string) ([]string, error) {
+// findNDJSONFiles finds .ndjson/.ndjson.zst files under rootPath. By default
+// (recursive=false) it only looks at the top level, since ImportFromLocalDirectory
+// flattens matches into a single destination directory keyed by basename
+// (see copyFile) and that's only safe when the whole tree's basenames are
+// unique. Pass recursive=true for sources deliberately organized across
+// subdirectories.
+func findNDJSONFiles(rootPath string, recursive bool) ([]string, error) {
+	if !recursive {
+		return findNDJSONFilesFlat(rootPath)
+	}
+
 	var files []string
 
 	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
@@ -86,6 +96,37 @@ func findNDJSONFiles(rootPath string) ([]string, error) {
 	})
 
 	return files, err
+}
+
+// findNDJSONFilesFlat lists NDJSON files directly under rootPath, ignoring
+// subdirectories entirely.
+func findNDJSONFilesFlat(rootPath string) ([]string, error) {
+	entries, err := os.ReadDir(rootPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var files []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if models.IsValidFHIRFile(entry.Name()) {
+			files = append(files, filepath.Join(rootPath, entry.Name()))
+		}
+	}
+
+	return files, nil
+}
+
+// recursiveHint points users at services.local_import.recursive when a
+// non-recursive scan found nothing, so a subdirectory-organized source
+// doesn't look like an empty one.
+func recursiveHint(recursive bool) string {
+	if recursive {
+		return ""
+	}
+	return " (only the top-level directory was scanned; set services.local_import.recursive: true to also scan subdirectories)"
 }
 
 // copyFile copies a single file to the destination directory
@@ -173,8 +214,9 @@ func copyFile(sourcePath string, destDir string, logger *lib.Logger, compress bo
 	}, nil
 }
 
-// ValidateImportSource checks if an import source is valid
-func ValidateImportSource(sourcePath string, inputType models.InputType) error {
+// ValidateImportSource checks if an import source is valid. recursive is only
+// consulted for InputTypeLocal (see findNDJSONFiles).
+func ValidateImportSource(sourcePath string, inputType models.InputType, recursive bool) error {
 	switch inputType {
 	case models.InputTypeLocal:
 		info, err := os.Stat(sourcePath)
@@ -197,13 +239,13 @@ func ValidateImportSource(sourcePath string, inputType models.InputType) error {
 			return fmt.Errorf("expected directory but got file: %s%s", sourcePath, hint)
 		}
 
-		files, err := findNDJSONFiles(sourcePath)
+		files, err := findNDJSONFiles(sourcePath, recursive)
 		if err != nil {
 			return fmt.Errorf("failed to scan directory: %w", err)
 		}
 
 		if len(files) == 0 {
-			return fmt.Errorf("no FHIR NDJSON files found in directory: %s\n\nExpected files with extensions: .ndjson", sourcePath)
+			return fmt.Errorf("no FHIR NDJSON files found in directory: %s%s\n\nExpected files with extensions: .ndjson", sourcePath, recursiveHint(recursive))
 		}
 
 		return nil

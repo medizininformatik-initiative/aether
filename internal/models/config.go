@@ -60,6 +60,11 @@ type ValidationConfig struct {
 // LocalImportConfig contains settings for local directory import
 type LocalImportConfig struct {
 	Dir string `yaml:"dir" json:"dir" mapstructure:"dir"` // Default directory path for local imports
+	// Recursive opts into scanning subdirectories of Dir for NDJSON files.
+	// Defaults to false since local_import flattens matches into a single
+	// destination directory keyed by basename, which is only safe when the
+	// whole source tree already has unique basenames.
+	Recursive bool `yaml:"recursive" json:"recursive" mapstructure:"recursive"`
 }
 
 // DIMPConfig contains DIMP pseudonymization service settings

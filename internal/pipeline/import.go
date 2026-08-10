@@ -84,14 +84,15 @@ func (s importStep) Run(ctx *StepContext) (StepResult, error) {
 		if sourceDir == "" {
 			sourceDir = job.InputSource
 		}
-		if verr := services.ValidateImportSource(sourceDir, models.InputTypeLocal); verr != nil {
+		recursive := job.Config.Services.LocalImport.Recursive
+		if verr := services.ValidateImportSource(sourceDir, models.InputTypeLocal, recursive); verr != nil {
 			return StepResult{}, verr
 		}
-		logger.Info("Importing from local directory", "source", sourceDir, "compress", compress)
-		importedFiles, err = services.ImportFromLocalDirectory(sourceDir, importDir, logger, compress, compressionLevel)
+		logger.Info("Importing from local directory", "source", sourceDir, "compress", compress, "recursive", recursive)
+		importedFiles, err = services.ImportFromLocalDirectory(sourceDir, importDir, logger, compress, compressionLevel, recursive)
 
 	case models.StepHttpImport:
-		if verr := services.ValidateImportSource(job.InputSource, models.InputTypeHTTP); verr != nil {
+		if verr := services.ValidateImportSource(job.InputSource, models.InputTypeHTTP, false); verr != nil {
 			return StepResult{}, verr
 		}
 		logger.Info("Downloading from URL", "source", job.InputSource, "compress", compress)
@@ -104,13 +105,13 @@ func (s importStep) Run(ctx *StepContext) (StepResult, error) {
 	case models.StepTorchImport:
 		// TORCH result URL: poll directly. Otherwise: submit the CRTDL for extraction.
 		if job.InputType == models.InputTypeTORCHURL {
-			if verr := services.ValidateImportSource(job.InputSource, models.InputTypeTORCHURL); verr != nil {
+			if verr := services.ValidateImportSource(job.InputSource, models.InputTypeTORCHURL, false); verr != nil {
 				return StepResult{}, verr
 			}
 			logger.Info("Downloading from TORCH result URL", "source", job.InputSource, "compress", compress)
 			importedFiles, err = executeTORCHDownload(job, importDir, httpClient, logger, ctx.ShowProgress, compress, compressionLevel)
 		} else {
-			if verr := services.ValidateImportSource(job.CRTDLPath, models.InputTypeCRTDL); verr != nil {
+			if verr := services.ValidateImportSource(job.CRTDLPath, models.InputTypeCRTDL, false); verr != nil {
 				return StepResult{}, verr
 			}
 			logger.Info("Extracting data from TORCH using CRTDL", "crtdl", job.CRTDLPath, "compress", compress)

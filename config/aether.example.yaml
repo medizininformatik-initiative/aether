@@ -209,6 +209,11 @@ services:
     # Supports environment variables: dir: "${FHIR_DATA_DIR}"
     # Can be overridden with: aether pipeline start query.crtdl --dir /other/path
     dir: "/path/to/fhir/data"
+    # Scan subdirectories of dir for NDJSON files. Default: false (top level only).
+    # Only enable this for sources deliberately organized across subdirectories
+    # with unique filenames throughout — a producer's own internal working
+    # directories can otherwise be picked up as if they were real output.
+    recursive: false
 
 pipeline:
   # List of steps to execute in order

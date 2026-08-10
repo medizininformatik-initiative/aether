@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
@@ -93,7 +92,7 @@ func (c *FlattenerClient) Flatten(viewDef models.ViewDefinition, resources []map
 		return nil, classifyHTTPResponse("Flattener", resp)
 	}
 
-	rows, err := c.decodeNDJSONRows(resp.Body, ExtractColumnNames(viewDef), len(resources), viewDef.Name)
+	rows, err := c.decodeNDJSONRows(resp.Body, ExtractColumnNames(viewDef), len(resources))
 	if err != nil {
 		return nil, err
 	}
@@ -104,14 +103,14 @@ func (c *FlattenerClient) Flatten(viewDef models.ViewDefinition, resources []map
 
 // decodeNDJSONRows streams the NDJSON response body and maps each object to a
 // CSV row by column name. A column absent from an object becomes an empty
-// cell; absent columns are reported once per batch as a warning. sizeHint
-// pre-sizes the row slice (the resource count is a good lower bound).
-func (c *FlattenerClient) decodeNDJSONRows(body io.Reader, columns []string, sizeHint int, viewDefName string) ([][]string, error) {
+// cell, because FHIR elements are optional. The caller counts the columns
+// that stay empty for the full job. sizeHint pre-sizes the row slice (the
+// resource count is a good lower bound).
+func (c *FlattenerClient) decodeNDJSONRows(body io.Reader, columns []string, sizeHint int) ([][]string, error) {
 	decoder := json.NewDecoder(body)
 	decoder.UseNumber()
 
 	rows := make([][]string, 0, sizeHint)
-	missing := make([]bool, len(columns))
 	obj := make(map[string]any)
 	for {
 		clear(obj)
@@ -126,24 +125,11 @@ func (c *FlattenerClient) decodeNDJSONRows(body io.Reader, columns []string, siz
 		for i, col := range columns {
 			value, ok := obj[col]
 			if !ok {
-				missing[i] = true
 				continue
 			}
 			row[i] = renderCSVCell(value)
 		}
 		rows = append(rows, row)
-	}
-
-	var missingNames []string
-	for i, wasMissing := range missing {
-		if wasMissing {
-			missingNames = append(missingNames, columns[i])
-		}
-	}
-	if len(missingNames) > 0 {
-		c.logger.Warn("Flattener response is missing columns; cells left empty",
-			"viewDefinition", viewDefName,
-			"columns", strings.Join(missingNames, ","))
 	}
 
 	return rows, nil

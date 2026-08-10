@@ -288,7 +288,7 @@ func TestValidateImportSource_HTTPUrl(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := services.ValidateImportSource(tt.url, models.InputTypeHTTP)
+			err := services.ValidateImportSource(tt.url, models.InputTypeHTTP, false)
 
 			if tt.expectError {
 				assert.Error(t, err, "Should return error")

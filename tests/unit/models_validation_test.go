@@ -334,7 +334,7 @@ func TestDetectDuplicateFHIRFiles(t *testing.T) {
 				"/path/Patient.ndjson.zst",
 			},
 			wantErr: true,
-			errMsg:  "found duplicate FHIR files",
+			errMsg:  "found duplicate input files that normalize to the same basename",
 		},
 		{
 			name: "Multiple duplicates",
@@ -345,7 +345,7 @@ func TestDetectDuplicateFHIRFiles(t *testing.T) {
 				"/path/Observation.ndjson.zst",
 			},
 			wantErr: true,
-			errMsg:  "found duplicate FHIR files",
+			errMsg:  "found duplicate input files that normalize to the same basename",
 		},
 		{
 			name: "Single duplicate among many files",
@@ -365,7 +365,7 @@ func TestDetectDuplicateFHIRFiles(t *testing.T) {
 				"/path/Patient.NDJSON.ZST",
 			},
 			wantErr: true,
-			errMsg:  "found duplicate FHIR files",
+			errMsg:  "found duplicate input files that normalize to the same basename",
 		},
 		{
 			name: "No duplicates - stems differ only in case",

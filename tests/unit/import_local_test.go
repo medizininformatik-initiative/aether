@@ -40,7 +40,7 @@ func TestImportFromLocalDirectory_Success(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelInfo)
 
 	// Execute import
-	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
 
 	// Verify results
 	assert.NoError(t, err, "Import should succeed")
@@ -67,7 +67,7 @@ func TestImportFromLocalDirectory_NonexistentDirectory(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelInfo)
 
 	// Execute import
-	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
 
 	// Verify error
 	assert.Error(t, err, "Should fail for nonexistent directory")
@@ -86,7 +86,7 @@ func TestImportFromLocalDirectory_NotADirectory(t *testing.T) {
 	require.NoError(t, os.WriteFile(sourceFile, []byte("test"), 0644))
 
 	// Execute import
-	importedFiles, err := services.ImportFromLocalDirectory(sourceFile, destDir, logger, false, "")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceFile, destDir, logger, false, "", false)
 
 	// Verify error
 	assert.Error(t, err, "Should fail when source is not a directory")
@@ -109,7 +109,7 @@ func TestImportFromLocalDirectory_NoNDJSONFiles(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "data.json"), []byte("{}"), 0644))
 
 	// Execute import
-	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
 
 	// Verify error
 	assert.Error(t, err, "Should fail when no NDJSON files found")
@@ -140,12 +140,66 @@ func TestImportFromLocalDirectory_RecursiveScan(t *testing.T) {
 		require.NoError(t, os.WriteFile(fullPath, []byte(content), 0644))
 	}
 
-	// Execute import
-	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "")
+	// Execute import with recursive scanning explicitly enabled
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", true)
 
 	// Verify all files are found recursively
 	assert.NoError(t, err, "Import should succeed")
 	assert.Len(t, importedFiles, 3, "Should find all 3 NDJSON files recursively")
+}
+
+// TestImportFromLocalDirectory_NonRecursiveByDefault verifies that, without
+// opting in, local_import only scans the top-level source directory and
+// never descends into subdirectories at all — regardless of what they're
+// named. This is what fixes issue #683 (a TORCH job root and its internal
+// batches/ working directory colliding on a shared basename): the fix
+// doesn't need to know TORCH's internal directory names, because nothing
+// below the top level is ever considered unless recursive is requested.
+func TestImportFromLocalDirectory_NonRecursiveByDefault(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	logger := lib.NewLogger(lib.LogLevelInfo)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(sourceDir, "batches"), 0755))
+
+	// Real result bundle in the job root.
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "38bb6a0c.ndjson"),
+		[]byte(`{"resourceType":"Bundle","id":"38bb6a0c"}`), 0644))
+	// Same basename one level down (e.g. TORCH's batches/ working dir) — would
+	// have collided with the job-root bundle under the old recursive-by-default scan.
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "batches", "38bb6a0c.ndjson"),
+		[]byte("patient-1\npatient-2\n"), 0644))
+
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
+
+	require.NoError(t, err, "Import should succeed, ignoring the subdirectory entirely")
+	require.Len(t, importedFiles, 1, "Should import only the job-root bundle")
+	assert.Equal(t, "38bb6a0c.ndjson", importedFiles[0].FileName)
+
+	content, err := os.ReadFile(filepath.Join(destDir, "38bb6a0c.ndjson"))
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "Bundle", "Imported file should be the job-root bundle, not the subdirectory file")
+}
+
+// TestImportFromLocalDirectory_NoNDJSONFilesMentionsRecursiveFlag verifies
+// that a non-recursive scan finding nothing points the user at the opt-in
+// flag, so a subdirectory-organized source doesn't read as an empty one.
+func TestImportFromLocalDirectory_NoNDJSONFilesMentionsRecursiveFlag(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	logger := lib.NewLogger(lib.LogLevelInfo)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(sourceDir, "subdir"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "subdir", "Patient.ndjson"),
+		[]byte(`{"resourceType":"Patient"}`), 0644))
+
+	_, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no FHIR NDJSON files found")
+	assert.Contains(t, err.Error(), "services.local_import.recursive", "Error should point at the opt-in flag")
 }
 
 // TestImportFromLocalDirectory_MultilineFiles verifies correct line counting
@@ -165,7 +219,7 @@ func TestImportFromLocalDirectory_MultilineFiles(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "Patient.ndjson"), []byte(multilineContent), 0644))
 
 	// Execute import
-	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
 
 	// Verify line count
 	assert.NoError(t, err, "Import should succeed")
@@ -227,7 +281,7 @@ func TestValidateImportSource_LocalDirectory(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sourcePath := tt.setupFunc()
-			err := services.ValidateImportSource(sourcePath, models.InputTypeLocal)
+			err := services.ValidateImportSource(sourcePath, models.InputTypeLocal, false)
 
 			if tt.expectError {
 				assert.Error(t, err, "Should return error")
@@ -267,7 +321,7 @@ func TestValidateImportSource_HTTPValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := services.ValidateImportSource(tt.url, models.InputTypeHTTP)
+			err := services.ValidateImportSource(tt.url, models.InputTypeHTTP, false)
 
 			if tt.expectError {
 				assert.Error(t, err, "Should return error for: "+tt.name)
@@ -329,7 +383,7 @@ func TestValidateImportSource_CRTDLValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sourcePath := tt.setupFunc()
-			err := services.ValidateImportSource(sourcePath, models.InputTypeCRTDL)
+			err := services.ValidateImportSource(sourcePath, models.InputTypeCRTDL, false)
 
 			if tt.expectError {
 				assert.Error(t, err, "Should return error for: "+tt.name)
@@ -381,7 +435,7 @@ func TestValidateImportSource_TORCHValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := services.ValidateImportSource(tt.url, models.InputTypeTORCHURL)
+			err := services.ValidateImportSource(tt.url, models.InputTypeTORCHURL, false)
 
 			if tt.expectError {
 				assert.Error(t, err, "Should return error for: "+tt.name)
@@ -395,7 +449,7 @@ func TestValidateImportSource_TORCHValidation(t *testing.T) {
 
 // TestValidateImportSource_UnknownType tests unknown input type handling
 func TestValidateImportSource_UnknownType(t *testing.T) {
-	err := services.ValidateImportSource("/some/path", "unknown-input-type")
+	err := services.ValidateImportSource("/some/path", "unknown-input-type", false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown input type")
 }
@@ -411,7 +465,7 @@ func TestImportFromLocalDirectory_JSONFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(sourceFile, []byte(`{"test": "data"}`), 0644))
 
 	// Execute import
-	importedFiles, err := services.ImportFromLocalDirectory(sourceFile, destDir, logger, false, "")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceFile, destDir, logger, false, "", false)
 
 	// Verify error (line 29-30 path)
 	assert.Error(t, err, "Should fail when source is a .json file")
@@ -432,7 +486,7 @@ func TestImportFromLocalDirectory_CRTDLFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(sourceFile, []byte(`{"cohortDefinition": {}}`), 0644))
 
 	// Execute import
-	importedFiles, err := services.ImportFromLocalDirectory(sourceFile, destDir, logger, false, "")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceFile, destDir, logger, false, "", false)
 
 	// Verify error (line 29-30 path)
 	assert.Error(t, err, "Should fail when source is a .json file")
@@ -451,7 +505,7 @@ func TestValidateImportSource_JSONFileForLocalInput(t *testing.T) {
 	require.NoError(t, os.WriteFile(jsonFile, []byte(`{"test": "data"}`), 0644))
 
 	// Validate with InputTypeLocal (should fail with helpful hint - line 174-178)
-	err := services.ValidateImportSource(jsonFile, models.InputTypeLocal)
+	err := services.ValidateImportSource(jsonFile, models.InputTypeLocal, false)
 
 	assert.Error(t, err, "Should return error for JSON file with InputTypeLocal")
 	assert.Contains(t, err.Error(), "expected directory but got file", "Error should mention file vs directory")
@@ -471,7 +525,7 @@ func TestValidateImportSource_CRTDLFileForLocalInput(t *testing.T) {
 	require.NoError(t, os.WriteFile(crtdlFile, []byte(`{"cohortDefinition": {}}`), 0644))
 
 	// Validate with InputTypeLocal (should fail with helpful hint - line 174-178)
-	err := services.ValidateImportSource(crtdlFile, models.InputTypeLocal)
+	err := services.ValidateImportSource(crtdlFile, models.InputTypeLocal, false)
 
 	assert.Error(t, err, "Should return error for CRTDL file with InputTypeLocal")
 	assert.Contains(t, err.Error(), "expected directory but got file", "Error should mention file vs directory")
@@ -511,7 +565,7 @@ func TestImportFromLocalDirectory_WithCompression(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelInfo)
 
 	// Execute import with compression enabled
-	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, true, "default")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, true, "default", false)
 
 	// Verify results
 	assert.NoError(t, err, "Import should succeed")
@@ -549,7 +603,7 @@ func TestImportFromLocalDirectory_CompressionAllLevels(t *testing.T) {
 
 			logger := lib.NewLogger(lib.LogLevelInfo)
 
-			importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, true, level)
+			importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, true, level, false)
 
 			assert.NoError(t, err, "Import should succeed with compression level: %s", level)
 			require.Len(t, importedFiles, 1)
@@ -578,7 +632,7 @@ func TestImportFromLocalDirectory_ImportCompressedSource(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelInfo)
 
 	// Import without compression (should decompress and store as-is if needed, or copy)
-	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
 
 	assert.NoError(t, err, "Import should succeed")
 	require.Len(t, importedFiles, 1)
@@ -606,7 +660,7 @@ func TestImportFromLocalDirectory_RecompressSource(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelInfo)
 
 	// Import with compression enabled (should decompress and recompress)
-	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, true, "default")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, true, "default", false)
 
 	assert.NoError(t, err, "Import should succeed")
 	require.Len(t, importedFiles, 1)
@@ -645,7 +699,7 @@ func TestImportFromLocalDirectory_MixedSourceFiles(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelInfo)
 
 	// Import with compression enabled
-	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, true, "default")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, true, "default", false)
 
 	assert.NoError(t, err, "Import should succeed")
 	assert.Len(t, importedFiles, 2, "Should import both files")
@@ -678,7 +732,7 @@ func TestImportFromLocalDirectory_DuplicateFilesError(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelInfo)
 
 	// Import should fail due to duplicate files
-	_, err = services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "")
+	_, err = services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
 
 	assert.Error(t, err, "Import should fail with duplicate files")
 	assert.Contains(t, err.Error(), "Patient.ndjson", "Error should mention the duplicate file")
@@ -699,7 +753,7 @@ func TestValidateImportSource_NDJSONFileForLocalInput(t *testing.T) {
 	require.NoError(t, os.WriteFile(ndjsonFile, []byte(`{"resourceType":"Patient","id":"1"}`), 0644))
 
 	// Validate with InputTypeLocal (should fail with helpful hint - lines 219-220)
-	err := services.ValidateImportSource(ndjsonFile, models.InputTypeLocal)
+	err := services.ValidateImportSource(ndjsonFile, models.InputTypeLocal, false)
 
 	assert.Error(t, err, "Should return error for NDJSON file with InputTypeLocal")
 	assert.Contains(t, err.Error(), "expected directory but got file", "Error should mention file vs directory")
@@ -734,7 +788,7 @@ func TestImportFromLocalDirectory_PermissionDenied(t *testing.T) {
 	}()
 
 	// Import should fail due to permission denied
-	_, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "")
+	_, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
 	assert.Error(t, err, "Import should fail with permission denied")
 }
 
@@ -766,7 +820,7 @@ func TestImportFromLocalDirectory_DestinationDirectoryCreationFails(t *testing.T
 	destDir := filepath.Join(readOnlyDir, "dest")
 
 	// Import should fail due to permission denied when creating destination
-	_, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "")
+	_, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
 	assert.Error(t, err, "Import should fail when destination can't be created")
 	assert.Contains(t, err.Error(), "destination directory", "Error should mention destination directory")
 }
@@ -799,7 +853,7 @@ func TestImportFromLocalDirectory_CopyFileError(t *testing.T) {
 	}()
 
 	// Import should fail due to write permission denied
-	_, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "")
+	_, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
 	assert.Error(t, err, "Import should fail when destination is read-only")
 }
 
@@ -821,7 +875,7 @@ func TestImportFromLocalDirectory_LargeMultilineCompressed(t *testing.T) {
 		[]byte(content), 0644))
 
 	// Import with compression
-	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, true, "default")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, true, "default", false)
 
 	assert.NoError(t, err, "Import should succeed")
 	require.Len(t, importedFiles, 1)
@@ -842,7 +896,7 @@ func TestImportFromLocalDirectory_EmptySourceFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "Empty.ndjson"), []byte{}, 0644))
 
 	// Import should succeed
-	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
 
 	assert.NoError(t, err, "Import should succeed with empty file")
 	require.Len(t, importedFiles, 1)
@@ -874,7 +928,7 @@ func TestImportFromLocalDirectory_SourceOpenError(t *testing.T) {
 	}()
 
 	// Import should fail due to permission denied when opening source
-	_, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "")
+	_, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
 	assert.Error(t, err, "Import should fail when source file cannot be opened")
 	assert.Contains(t, err.Error(), "failed to open source file", "Error should mention source file")
 }
@@ -904,7 +958,7 @@ func TestImportFromLocalDirectory_DestFileCreationError(t *testing.T) {
 	}()
 
 	// Import should fail when destination file can't be created
-	_, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "")
+	_, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
 	assert.Error(t, err, "Import should fail when destination file cannot be created")
 	assert.Contains(t, err.Error(), "destination file", "Error should mention destination file")
 }
@@ -924,7 +978,7 @@ func TestImportFromLocalDirectory_FileStatFallback(t *testing.T) {
 		[]byte(`{"resourceType":"Patient","id":"1"}`), 0644))
 
 	// Normal import - stat should succeed
-	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
 
 	assert.NoError(t, err)
 	require.Len(t, importedFiles, 1)
@@ -947,7 +1001,7 @@ func TestImportFromLocalDirectory_CountResourcesFallback(t *testing.T) {
 		[]byte(`{"resourceType":"Patient","id":"1"}`), 0644))
 
 	// Normal import - should succeed and count resources
-	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
 
 	assert.NoError(t, err)
 	require.Len(t, importedFiles, 1)
@@ -969,7 +1023,7 @@ func TestImportFromLocalDirectory_WithCompressionCloseError(t *testing.T) {
 		[]byte(`{"resourceType":"Patient","id":"1"}`), 0644))
 
 	// Import with compression - close should succeed
-	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, true, "default")
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, true, "default", false)
 
 	assert.NoError(t, err)
 	require.Len(t, importedFiles, 1)
@@ -1003,7 +1057,7 @@ func TestImportFromLocalDirectory_SourceStatAccessError(t *testing.T) {
 	}()
 
 	// Import should fail due to access error (not ENOENT)
-	_, err := services.ImportFromLocalDirectory(filepath.Join(tempDir, "source"), destDir, logger, false, "")
+	_, err := services.ImportFromLocalDirectory(filepath.Join(tempDir, "source"), destDir, logger, false, "", false)
 	assert.Error(t, err, "Import should fail when source cannot be accessed")
 	assert.Contains(t, err.Error(), "cannot access source directory", "Error should mention access issue")
 }
@@ -1033,7 +1087,7 @@ func TestValidateImportSource_SourceStatAccessError(t *testing.T) {
 	}()
 
 	// Validation should fail due to access error
-	err := services.ValidateImportSource(filepath.Join(tempDir, "source"), models.InputTypeLocal)
+	err := services.ValidateImportSource(filepath.Join(tempDir, "source"), models.InputTypeLocal, false)
 	assert.Error(t, err, "Validation should fail when source cannot be accessed")
 	assert.Contains(t, err.Error(), "cannot access directory", "Error should mention access issue")
 }
@@ -1061,7 +1115,7 @@ func TestValidateImportSource_CRTDLStatAccessError(t *testing.T) {
 	}()
 
 	// Validation should fail due to access error
-	err := services.ValidateImportSource(crtdlFile, models.InputTypeCRTDL)
+	err := services.ValidateImportSource(crtdlFile, models.InputTypeCRTDL, false)
 	assert.Error(t, err, "Validation should fail when CRTDL cannot be accessed")
 	assert.Contains(t, err.Error(), "cannot access CRTDL file", "Error should mention access issue")
 }

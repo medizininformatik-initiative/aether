@@ -59,6 +59,7 @@ services:
 
   local_import:
     dir: string
+    recursive: boolean                 # default: false
 
   crtdl_preprocessing:
     enabled: boolean                       # default: false
@@ -284,11 +285,13 @@ Default directory for local FHIR imports.
 services:
   local_import:
     dir: "/data/fhir"
+    recursive: false
 ```
 
 | Option | Type | Description |
 |--------|------|-------------|
 | `dir` | string | Default import directory (overridable with `--dir` flag) |
+| `recursive` | bool | Scan subdirectories of `dir` for NDJSON files. Default `false` (top level only). |
 
 ### CRTDL Preprocessing
 

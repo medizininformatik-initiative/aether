@@ -64,15 +64,16 @@ func GetNormalizedBaseName(filename string) string {
 	return base
 }
 
-// DetectDuplicateFHIRFiles checks if there are files with both compressed and
-// uncompressed versions (e.g., Patient.ndjson and Patient.ndjson.zst).
-// Returns an error listing all duplicates found, or nil if no duplicates exist.
+// DetectDuplicateFHIRFiles checks if two or more files normalize to the same
+// basename once a .zst compression suffix is stripped, since local_import
+// would otherwise silently overwrite one with the other. Returns an error
+// listing the full source path of every colliding file, or nil if none exist.
 func DetectDuplicateFHIRFiles(files []string) error {
 	seen := make(map[string][]string)
 
 	for _, file := range files {
 		normalized := GetNormalizedBaseName(file)
-		seen[normalized] = append(seen[normalized], filepath.Base(file))
+		seen[normalized] = append(seen[normalized], file)
 	}
 
 	var duplicates []string
@@ -83,7 +84,7 @@ func DetectDuplicateFHIRFiles(files []string) error {
 	}
 
 	if len(duplicates) > 0 {
-		return fmt.Errorf("found duplicate FHIR files (both compressed and uncompressed versions exist): %s", strings.Join(duplicates, "; "))
+		return fmt.Errorf("found duplicate input files that normalize to the same basename: %s", strings.Join(duplicates, "; "))
 	}
 
 	return nil

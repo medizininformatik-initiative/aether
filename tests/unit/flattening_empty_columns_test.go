@@ -71,8 +71,8 @@ func writeTwoColumnLookupTable(t *testing.T, path, profileURL, resourceType stri
 	require.NoError(t, os.WriteFile(path, data, 0644))
 }
 
-// countEmptyColumnWarnings counts the log lines that report columns with no data.
-func countEmptyColumnWarnings(logOutput string) int {
+// countEmptyColumnReports counts the log lines that report columns with no data.
+func countEmptyColumnReports(logOutput string) int {
 	count := 0
 	for _, line := range strings.Split(logOutput, "\n") {
 		if strings.Contains(line, "no data") && strings.Contains(line, "column") {
@@ -82,10 +82,10 @@ func countEmptyColumnWarnings(logOutput string) int {
 	return count
 }
 
-// TestExecuteFlatteningStep_EmptyColumnWarningOncePerGroup verifies that a
-// column with no data in the full job causes only one warning, although the
+// TestExecuteFlatteningStep_EmptyColumnReportOncePerGroup verifies that a
+// column with no data in the full job causes only one report, although the
 // step sends many batches to the flattener.
-func TestExecuteFlatteningStep_EmptyColumnWarningOncePerGroup(t *testing.T) {
+func TestExecuteFlatteningStep_EmptyColumnReportOncePerGroup(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/fhir/ViewDefinition/$run" {
@@ -125,15 +125,60 @@ func TestExecuteFlatteningStep_EmptyColumnWarningOncePerGroup(t *testing.T) {
 	require.NoError(t, runPipelineStep(models.StepFlattening, job, jobDir, logger))
 	require.Greater(t, callCount, 1, "test needs more than one batch")
 
-	assert.Equal(t, 1, countEmptyColumnWarnings(logOutput.String()),
-		"expected one warning for the full job")
+	assert.Equal(t, 1, countEmptyColumnReports(logOutput.String()),
+		"expected one report for the full job")
 	assert.Contains(t, logOutput.String(), "gender")
 }
 
-// TestExecuteFlatteningStep_NoWarningIfColumnHasDataInSomeRows verifies that a
-// column with data in only some rows causes no warning. FHIR elements are
+// TestExecuteFlatteningStep_EmptyColumnReportOnlyIfVerbose verifies that the
+// report about columns with no data is a debug message. Thus it is visible
+// only if the user gives the --verbose flag.
+func TestExecuteFlatteningStep_EmptyColumnReportOnlyIfVerbose(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/fhir/ViewDefinition/$run" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		callCount++
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprintf(w, `{"id":"patient-%d"}`+"\n", callCount)
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	jobDir := filepath.Join(tempDir, "jobs", "test-empty-columns-quiet")
+	inputDir := filepath.Join(jobDir, "import")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+
+	profileURL := "https://example.com/Patient"
+	groupID := "group-patient"
+
+	crtdlPath := filepath.Join(tempDir, "test.json")
+	writeTwoColumnCRTDL(t, crtdlPath, groupID, "Patient", profileURL)
+
+	lookupPath := filepath.Join(tempDir, "lookup.json")
+	writeTwoColumnLookupTable(t, lookupPath, profileURL, "Patient")
+
+	writeTestNDJSON(t, filepath.Join(inputDir, "patients.ndjson"), makeLargePatientBundles(profileURL, groupID))
+
+	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
+	job.Config.Services.Flattening.BatchSizeMB = 1
+
+	var logOutput bytes.Buffer
+	logger := lib.NewLoggerWithWriter(lib.LogLevelInfo, &logOutput)
+
+	require.NoError(t, runPipelineStep(models.StepFlattening, job, jobDir, logger))
+
+	assert.Equal(t, 0, countEmptyColumnReports(logOutput.String()),
+		"expected no report if the log level is info")
+}
+
+// TestExecuteFlatteningStep_NoReportIfColumnHasDataInSomeRows verifies that a
+// column with data in only some rows causes no report. FHIR elements are
 // optional, thus this condition is normal.
-func TestExecuteFlatteningStep_NoWarningIfColumnHasDataInSomeRows(t *testing.T) {
+func TestExecuteFlatteningStep_NoReportIfColumnHasDataInSomeRows(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/fhir/ViewDefinition/$run" {
@@ -177,5 +222,5 @@ func TestExecuteFlatteningStep_NoWarningIfColumnHasDataInSomeRows(t *testing.T) 
 	require.NoError(t, runPipelineStep(models.StepFlattening, job, jobDir, logger))
 	require.Greater(t, callCount, 1, "test needs more than one batch")
 
-	assert.Equal(t, 0, countEmptyColumnWarnings(logOutput.String()))
+	assert.Equal(t, 0, countEmptyColumnReports(logOutput.String()))
 }

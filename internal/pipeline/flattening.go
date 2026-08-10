@@ -369,13 +369,14 @@ func streamAndFlattenResources(
 	}
 
 	// Report the columns with no data one time for each group. A group that
-	// never flushed has no data at all and is already reported as such.
+	// never flushed has no data at all and is already reported as such. This
+	// is a debug message, thus only --verbose makes it visible.
 	for i := range trackers {
 		if batches[i].isFirstBatch {
 			continue
 		}
 		if empty := trackers[i].emptyColumns(headers[i]); len(empty) > 0 {
-			logger.Warn("Columns have no data in the full job; cells left empty",
+			logger.Debug("Columns have no data in the full job; cells left empty",
 				"group_name", groups[i].Name,
 				"columns", strings.Join(empty, ","))
 		}

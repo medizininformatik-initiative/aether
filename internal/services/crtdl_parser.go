@@ -34,6 +34,10 @@ func ValidateCRTDL(doc *models.CRTDLDocument) error {
 		return fmt.Errorf("CRTDL must have at least one attributeGroup")
 	}
 
+	// The name of an attributeGroup becomes the name of its CSV file. Two groups
+	// that share a file name write to one file, which loses the rows of one group.
+	firstGroupWithFile := make(map[string]models.AttributeGroup, len(doc.DataExtraction.AttributeGroups))
+
 	for i, group := range doc.DataExtraction.AttributeGroups {
 		if group.ID == "" {
 			return fmt.Errorf("attributeGroup at index %d missing 'id' field", i)
@@ -41,6 +45,15 @@ func ValidateCRTDL(doc *models.CRTDLDocument) error {
 		if group.Name == "" {
 			return fmt.Errorf("attributeGroup at index %d missing 'name' field", i)
 		}
+		csvFilename := BuildCSVFilename(group.Name)
+		if first, isDuplicate := firstGroupWithFile[csvFilename]; isDuplicate {
+			return fmt.Errorf("%s\n\n"+
+				"The name of an attributeGroup becomes the name of its CSV file.\n"+
+				"Give each attributeGroup a unique name",
+				duplicateGroupMessage(first, group, csvFilename))
+		}
+		firstGroupWithFile[csvFilename] = group
+
 		if group.GroupReference == "" {
 			return fmt.Errorf("attributeGroup '%s' missing 'groupReference' field", group.Name)
 		}
@@ -56,6 +69,17 @@ func ValidateCRTDL(doc *models.CRTDLDocument) error {
 	}
 
 	return nil
+}
+
+// duplicateGroupMessage tells which two attributeGroups collide, and whether
+// their names are equal or only become equal as a CSV file name
+func duplicateGroupMessage(first, second models.AttributeGroup, csvFilename string) string {
+	if first.Name == second.Name {
+		return fmt.Sprintf("attributeGroups '%s' and '%s' have the same name '%s'",
+			first.ID, second.ID, first.Name)
+	}
+	return fmt.Sprintf("attributeGroups '%s' (name '%s') and '%s' (name '%s') both write to the CSV file '%s'",
+		first.ID, first.Name, second.ID, second.Name, csvFilename)
 }
 
 // GetAttributeGroups returns all attribute groups from a CRTDL document

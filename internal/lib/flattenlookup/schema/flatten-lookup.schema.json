@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.medizininformatik-initiative.de/schema/flatten-lookup.schema.json",
+  "title": "flatten-lookup",
+  "description": "Lookup tables that map FHIR profile element IDs to SQL-on-FHIR ViewDefinition snippets for flattening.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/lookupTable" },
+  "$defs": {
+    "lookupTable": {
+      "type": "object",
+      "required": ["url", "resourceType", "elements"],
+      "properties": {
+        "url": {
+          "description": "Canonical URL of the FHIR profile (StructureDefinition).",
+          "type": "string",
+          "minLength": 1
+        },
+        "resourceType": {
+          "description": "FHIR resource type of the profile, e.g. Patient or Condition.",
+          "type": "string",
+          "minLength": 1
+        },
+        "elements": {
+          "description": "Map of element ID to its flattening definition.",
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/lookupElement" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "lookupElement": {
+      "type": "object",
+      "required": ["viewDefinition"],
+      "properties": {
+        "parent": {
+          "description": "DEPRECATED. Element ID of the parent element in the same table. The parent link is derived from the children lists, so this field is redundant. Do not write it in new files; consumers ignore it.",
+          "deprecated": true,
+          "type": "string",
+          "minLength": 1
+        },
+        "children": {
+          "description": "Element IDs of child elements in the same table. The parent link is derived from these at runtime and is not stored.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "viewDefinition": { "$ref": "#/$defs/selectClause" }
+      },
+      "additionalProperties": false
+    },
+    "selectClause": {
+      "description": "A ViewDefinition snippet: a partial select clause with optional nesting.",
+      "type": "object",
+      "properties": {
+        "forEach": { "type": "string", "minLength": 1 },
+        "forEachOrNull": { "type": "string", "minLength": 1 },
+        "column": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/column" }
+        },
+        "select": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/selectClause" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "column": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "path": { "type": "string" },
+        "type": { "type": "string" },
+        "collection": { "type": "boolean" },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

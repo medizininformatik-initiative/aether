@@ -1,0 +1,376 @@
+[
+    {
+        "url": "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/PatientPseudonymisiert",
+        "resourceType": "Patient",
+        "elements": {
+            "Patient.active": {
+                "viewDefinition": {
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "active",
+                                    "path": "active",
+                                    "type": "boolean"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "Patient.deceased[x]": {
+                "viewDefinition": {
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "deceased_boolean",
+                                    "path": "deceased.ofType(boolean)",
+                                    "type": "boolean"
+                                },
+                                {
+                                    "name": "deceased_datetime",
+                                    "path": "deceased.ofType(dateTime)",
+                                    "type": "dateTime"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "Patient.gender": {
+                "viewDefinition": {
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "gender",
+                                    "path": "gender",
+                                    "type": "code"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "Patient.birthDate": {
+                "viewDefinition": {
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "birth_date",
+                                    "path": "birthDate",
+                                    "type": "date"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        }
+    },
+    {
+        "url": "https://www.medizininformatik-initiative.de/fhir/core/modul-diagnose/StructureDefinition/Diagnose",
+        "resourceType": "Condition",
+        "elements": {
+            "Condition.code": {
+                "viewDefinition": {
+                    "forEachOrNull": "code",
+                    "select": []
+                },
+                "children": [
+                    "Condition.code.coding:sct",
+                    "Condition.code.coding:icd10-gm",
+                    "Condition.code.coding:alpha-id",
+                    "Condition.code.coding:orphanet"
+                ]
+            },
+            "Condition.code.coding:sct": {
+                "viewDefinition": {
+                    "forEachOrNull": "coding.where(system = 'http://snomed.info/sct')",
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "code_system_sct",
+                                    "path": "system",
+                                    "type": "uri"
+                                },
+                                {
+                                    "name": "code_code_sct",
+                                    "path": "code",
+                                    "type": "code"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "Condition.code.coding:icd10-gm": {
+                "viewDefinition": {
+                    "forEachOrNull": "coding.where(system = 'http://fhir.de/CodeSystem/bfarm/icd-10-gm')",
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "code_system_icd10gm",
+                                    "path": "system",
+                                    "type": "uri"
+                                },
+                                {
+                                    "name": "code_code_icd10gm",
+                                    "path": "code",
+                                    "type": "code"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "Condition.code.coding:alpha-id": {
+                "viewDefinition": {
+                    "forEachOrNull": "coding.where(system = 'http://fhir.de/CodeSystem/bfarm/alpha-id')",
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "code_system_alphaid",
+                                    "path": "system",
+                                    "type": "uri"
+                                },
+                                {
+                                    "name": "code_code_alphaid",
+                                    "path": "code",
+                                    "type": "code"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "Condition.code.coding:orphanet": {
+                "viewDefinition": {
+                    "forEachOrNull": "coding.where(system = 'http://www.orpha.net')",
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "code_system_orphanet",
+                                    "path": "system",
+                                    "type": "uri"
+                                },
+                                {
+                                    "name": "code_code_orphanet",
+                                    "path": "code",
+                                    "type": "code"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "Condition.recordedDate": {
+                "viewDefinition": {
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "recorded_date",
+                                    "path": "recordedDate",
+                                    "type": "dateTime"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "Condition.clinicalStatus": {
+                "viewDefinition": {
+                    "forEachOrNull": "clinicalStatus.coding",
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "clinical_status_system",
+                                    "path": "system",
+                                    "type": "uri"
+                                },
+                                {
+                                    "name": "clinical_status_code",
+                                    "path": "code",
+                                    "type": "code"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "Condition.verificationStatus": {
+                "viewDefinition": {
+                    "forEachOrNull": "verificationStatus.coding",
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "verification_status_system",
+                                    "path": "system",
+                                    "type": "uri"
+                                },
+                                {
+                                    "name": "verification_status_code",
+                                    "path": "code",
+                                    "type": "code"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "Condition.extension:Feststellungsdatum": {
+                "viewDefinition": {
+                    "forEachOrNull": "extension.where(url='http://hl7.org/fhir/StructureDefinition/condition-assertedDate')",
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "feststellungsdatum",
+                                    "path": "value.ofType(dateTime)",
+                                    "type": "dateTime"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        }
+    },
+    {
+        "url": "https://www.medizininformatik-initiative.de/fhir/core/modul-prozedur/StructureDefinition/Procedure",
+        "resourceType": "Procedure",
+        "elements": {
+            "Procedure.code": {
+                "viewDefinition": {
+                    "forEachOrNull": "code",
+                    "select": []
+                },
+                "children": [
+                    "Procedure.code.coding:ops",
+                    "Procedure.code.coding:sct"
+                ]
+            },
+            "Procedure.code.coding:ops": {
+                "viewDefinition": {
+                    "forEachOrNull": "coding.where(system = 'http://fhir.de/CodeSystem/bfarm/ops')",
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "system_ops",
+                                    "path": "system"
+                                },
+                                {
+                                    "name": "code_ops",
+                                    "path": "code"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "Procedure.code.coding:sct": {
+                "viewDefinition": {
+                    "forEachOrNull": "coding.where(system = 'http://snomed.info/sct')",
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "system_sct",
+                                    "path": "system"
+                                },
+                                {
+                                    "name": "code_sct",
+                                    "path": "code"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "Procedure.status": {
+                "viewDefinition": {
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "status",
+                                    "path": "status",
+                                    "type": "code"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "Procedure.performed[x]": {
+                "viewDefinition": {
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "performed_datetime",
+                                    "path": "performed.ofType(dateTime)",
+                                    "type": "dateTime"
+                                }
+                            ]
+                        },
+                        {
+                            "forEachOrNull": "performed.ofType(Period)",
+                            "select": [
+                                {
+                                    "column": [
+                                        {
+                                            "name": "performed_period_start",
+                                            "path": "start",
+                                            "type": "dateTime"
+                                        },
+                                        {
+                                            "name": "performed_period_end",
+                                            "path": "end",
+                                            "type": "dateTime"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "column": [
+                                {
+                                    "name": "performed_string",
+                                    "path": "performed.ofType(string)",
+                                    "type": "string"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "Procedure.extension:Dokumentationsdatum": {
+                "viewDefinition": {
+                    "forEachOrNull": "extension.where(url='http://fhir.de/StructureDefinition/ProzedurDokumentationsdatum')",
+                    "select": [
+                        {
+                            "column": [
+                                {
+                                    "name": "dokumentationsdatum",
+                                    "path": "value.ofType(dateTime)",
+                                    "type": "dateTime"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        }
+    }
+]

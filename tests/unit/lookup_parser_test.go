@@ -73,7 +73,7 @@ func TestLoadLookupTables(t *testing.T) {
 
 		_, err = services.LoadLookupTables(lookupPath)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "missing 'url' field")
+		assert.Contains(t, err.Error(), "missing property 'url'")
 	})
 
 	t.Run("missing resourceType field", func(t *testing.T) {
@@ -85,7 +85,7 @@ func TestLoadLookupTables(t *testing.T) {
 
 		_, err = services.LoadLookupTables(lookupPath)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "missing 'resourceType' field")
+		assert.Contains(t, err.Error(), "missing property 'resourceType'")
 	})
 
 	t.Run("file not found", func(t *testing.T) {
@@ -102,7 +102,7 @@ func TestLoadLookupTables(t *testing.T) {
 
 		_, err = services.LoadLookupTables(lookupPath)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to parse lookup file")
+		assert.Contains(t, err.Error(), "malformed-json")
 	})
 
 	t.Run("rejects circular children references", func(t *testing.T) {
@@ -113,8 +113,8 @@ func TestLoadLookupTables(t *testing.T) {
 				"url": "https://example.com/Patient",
 				"resourceType": "Patient",
 				"elements": {
-					"Patient.a": {"children": ["Patient.b"]},
-					"Patient.b": {"children": ["Patient.a"]}
+					"Patient.a": {"children": ["Patient.b"], "viewDefinition": ` + minimalViewDefinition + `},
+					"Patient.b": {"children": ["Patient.a"], "viewDefinition": ` + minimalViewDefinition + `}
 				}
 			}
 		]`
@@ -123,7 +123,7 @@ func TestLoadLookupTables(t *testing.T) {
 
 		_, err = services.LoadLookupTables(lookupPath)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "circular")
+		assert.Contains(t, err.Error(), "cycle")
 	})
 }
 
@@ -225,7 +225,7 @@ func TestLoadLookupTablesMissingElements(t *testing.T) {
 
 		_, err = services.LoadLookupTables(lookupPath)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "missing 'elements' field")
+		assert.Contains(t, err.Error(), "missing property 'elements'")
 	})
 }
 
@@ -329,8 +329,7 @@ func TestLoadLookupTablesNormalizesParentLinks(t *testing.T) {
 			},
 		}
 
-		err := services.NormalizeLookupTables(tables)
-		require.NoError(t, err)
+		services.NormalizeLookupTables(tables)
 		assert.Equal(t, "Encounter.extension:A", tables[0].Elements["Encounter.extension:A.extension:B"].Parent)
 		assert.NotContains(t, tables[0].Elements, "Encounter.extension:A.extension:Missing")
 	})
@@ -391,91 +390,27 @@ func TestLoadLookupTablesNormalizesParentLinks(t *testing.T) {
 		_, err = services.LoadLookupTables(lookupPath)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Encounter.extension:A.extension:B")
-		assert.Contains(t, err.Error(), "listed more than once")
+		assert.Contains(t, err.Error(), "multiple-parents")
 	})
 }
 
-func TestValidateLookupTables(t *testing.T) {
-	t.Run("valid tables", func(t *testing.T) {
-		tables := []models.LookupTable{
-			{URL: "https://example.com/Patient", ResourceType: "Patient", Elements: map[string]models.LookupElement{}},
-			{URL: "https://example.com/Condition", ResourceType: "Condition", Elements: map[string]models.LookupElement{}},
+// TestLoadLookupTablesRejectsDuplicateURL covers the uniqueness check across
+// tables, which runs in the shared verification of the raw file.
+func TestLoadLookupTablesRejectsDuplicateURL(t *testing.T) {
+	lookupPath := writeLookupFile(t, `[
+		{
+			"url": "https://example.com/Patient",
+			"resourceType": "Patient",
+			"elements": {"Patient.id": {"viewDefinition": `+minimalViewDefinition+`}}
+		},
+		{
+			"url": "https://example.com/Patient",
+			"resourceType": "Patient",
+			"elements": {"Patient.id": {"viewDefinition": `+minimalViewDefinition+`}}
 		}
-		err := services.ValidateLookupTables(tables)
-		assert.NoError(t, err)
-	})
+	]`)
 
-	t.Run("duplicate URLs", func(t *testing.T) {
-		tables := []models.LookupTable{
-			{URL: "https://example.com/Patient", ResourceType: "Patient", Elements: map[string]models.LookupElement{}},
-			{URL: "https://example.com/Patient", ResourceType: "Patient", Elements: map[string]models.LookupElement{}},
-		}
-		err := services.ValidateLookupTables(tables)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "duplicate profile URL")
-	})
-
-	t.Run("invalid child reference", func(t *testing.T) {
-		tables := []models.LookupTable{
-			{
-				URL:          "https://example.com/Patient",
-				ResourceType: "Patient",
-				Elements: map[string]models.LookupElement{
-					"Patient.name": {Children: []string{"Patient.name.nonexistent"}},
-				},
-			},
-		}
-		err := services.ValidateLookupTables(tables)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "non-existent child")
-	})
-
-	t.Run("valid nested children hierarchy", func(t *testing.T) {
-		tables := []models.LookupTable{
-			{
-				URL:          "https://example.com/Patient",
-				ResourceType: "Patient",
-				Elements: map[string]models.LookupElement{
-					"Patient.a":     {Children: []string{"Patient.a.b", "Patient.a.c"}},
-					"Patient.a.b":   {Children: []string{"Patient.a.b.d"}},
-					"Patient.a.c":   {},
-					"Patient.a.b.d": {},
-				},
-			},
-		}
-		err := services.ValidateLookupTables(tables)
-		assert.NoError(t, err)
-	})
-
-	t.Run("circular children reference", func(t *testing.T) {
-		tables := []models.LookupTable{
-			{
-				URL:          "https://example.com/Patient",
-				ResourceType: "Patient",
-				Elements: map[string]models.LookupElement{
-					"Patient.a": {Children: []string{"Patient.b"}},
-					"Patient.b": {Children: []string{"Patient.a"}},
-				},
-			},
-		}
-		err := services.ValidateLookupTables(tables)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "circular")
-	})
-
-	t.Run("self-referencing children entry", func(t *testing.T) {
-		tables := []models.LookupTable{
-			{
-				URL:          "https://example.com/Patient",
-				ResourceType: "Patient",
-				Elements: map[string]models.LookupElement{
-					"Patient.a": {Children: []string{"Patient.a"}},
-				},
-			},
-		}
-		err := services.ValidateLookupTables(tables)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "circular")
-	})
-
+	_, err := services.LoadLookupTables(lookupPath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate profile URL")
 }

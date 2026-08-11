@@ -10,12 +10,18 @@ import (
 
 // LoadLookupTables loads the lookup tables from a JSON file
 // The file contains an array of LookupTable objects
-// The tables are normalized and validated; a file whose children lists form
-// a cycle is rejected here, so every loaded table set is safe for the builder.
+// The flattenlookup library validates the raw file, so a file whose children
+// lists form a cycle is rejected here and every loaded table set is safe for
+// the builder. Warning findings are dropped; the pipeline start check reports
+// them.
 func LoadLookupTables(path string) ([]models.LookupTable, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read lookup file: %w", err)
+	}
+
+	if _, err := verifyLookupData(data); err != nil {
+		return nil, err
 	}
 
 	var tables []models.LookupTable
@@ -23,37 +29,19 @@ func LoadLookupTables(path string) ([]models.LookupTable, error) {
 		return nil, fmt.Errorf("failed to parse lookup file: %w", err)
 	}
 
-	// Validate each table
-	for i, table := range tables {
-		if table.URL == "" {
-			return nil, fmt.Errorf("lookup table at index %d missing 'url' field", i)
-		}
-		if table.ResourceType == "" {
-			return nil, fmt.Errorf("lookup table at index %d (url: %s) missing 'resourceType' field", i, table.URL)
-		}
-		if table.Elements == nil {
-			return nil, fmt.Errorf("lookup table at index %d (url: %s) missing 'elements' field", i, table.URL)
-		}
-	}
-
-	if err := NormalizeLookupTables(tables); err != nil {
-		return nil, err
-	}
-
-	if err := ValidateLookupTables(tables); err != nil {
-		return nil, err
-	}
+	NormalizeLookupTables(tables)
 
 	return tables, nil
 }
 
 // NormalizeLookupTables derives every Parent link from the Children lists.
 // Authored parent values are ignored: each Parent is cleared and set to the
-// element whose Children list names it. A child that two elements claim, or
-// that one Children list names twice, is an error.
+// element whose Children list names it. The flattenlookup library rejects a
+// child that more than one element claims before this runs, so the derivation
+// cannot be ambiguous.
 // Authored parent fields are deprecated and dropped without a warning; the
 // field will be removed in a future flatten-lookup version.
-func NormalizeLookupTables(tables []models.LookupTable) error {
+func NormalizeLookupTables(tables []models.LookupTable) {
 	for _, table := range tables {
 		for elementID, element := range table.Elements {
 			if element.Parent != "" {
@@ -62,19 +50,8 @@ func NormalizeLookupTables(tables []models.LookupTable) error {
 			}
 		}
 
-		claimedBy := make(map[string]string)
 		for elementID, element := range table.Elements {
 			for _, childID := range element.Children {
-				if parentID, claimed := claimedBy[childID]; claimed {
-					if parentID == elementID {
-						return fmt.Errorf("element '%s' is listed more than once in the children of '%s' in profile '%s'",
-							childID, elementID, table.URL)
-					}
-					return fmt.Errorf("element '%s' is listed as child of both '%s' and '%s' in profile '%s'",
-						childID, parentID, elementID, table.URL)
-				}
-				claimedBy[childID] = elementID
-
 				child, exists := table.Elements[childID]
 				if !exists {
 					continue
@@ -84,7 +61,6 @@ func NormalizeLookupTables(tables []models.LookupTable) error {
 			}
 		}
 	}
-	return nil
 }
 
 // GetProfileLookup finds a LookupTable by profile URL
@@ -127,74 +103,4 @@ func GetElementChildren(table *models.LookupTable, elementID string) []models.Lo
 		}
 	}
 	return children
-}
-
-// ValidateLookupTables performs additional validation on the lookup tables.
-// It expects tables that NormalizeLookupTables has processed, so Parent links
-// are derived and need no check of their own.
-// Checks for:
-// - Duplicate profile URLs
-// - Circular references in children
-// - Invalid child references
-func ValidateLookupTables(tables []models.LookupTable) error {
-	// Check for duplicate URLs
-	urlSet := make(map[string]bool)
-	for _, table := range tables {
-		if urlSet[table.URL] {
-			return fmt.Errorf("duplicate profile URL: %s", table.URL)
-		}
-		urlSet[table.URL] = true
-	}
-
-	// Check for invalid child references within each table
-	for _, table := range tables {
-		for elementID, element := range table.Elements {
-			for _, childID := range element.Children {
-				if _, exists := table.Elements[childID]; !exists {
-					return fmt.Errorf("element '%s' references non-existent child '%s' in profile '%s'",
-						elementID, childID, table.URL)
-				}
-			}
-		}
-		if err := detectChildrenCycle(table); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// detectChildrenCycle reports an error when the Children lists of a table form a cycle.
-// The builder recurses over Children and Parent links, so a cycle would not terminate.
-func detectChildrenCycle(table models.LookupTable) error {
-	const inProgress, done = 1, 2
-	state := make(map[string]int)
-
-	var visit func(elementID string) error
-	visit = func(elementID string) error {
-		switch state[elementID] {
-		case inProgress:
-			return fmt.Errorf("circular children reference involving element '%s' in profile '%s'",
-				elementID, table.URL)
-		case done:
-			return nil
-		}
-		state[elementID] = inProgress
-		// A childID that is not in Elements is rejected by ValidateLookupTables
-		// before this runs; visiting it is a harmless no-op (no children).
-		for _, childID := range table.Elements[elementID].Children {
-			if err := visit(childID); err != nil {
-				return err
-			}
-		}
-		state[elementID] = done
-		return nil
-	}
-
-	for elementID := range table.Elements {
-		if err := visit(elementID); err != nil {
-			return err
-		}
-	}
-	return nil
 }

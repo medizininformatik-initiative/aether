@@ -37,6 +37,15 @@ pipeline:
 | `timeout` | duration | 30m | Request timeout |
 | `batch_size_mb` | int | 500 | Total memory budget in MB, divided across groups (0 = default) |
 
+## Lookup File Validation
+
+When the flattening step is enabled, `aether pipeline start` validates the
+lookup file before the first step runs. The check validates the JSON structure
+against the flatten-lookup schema and the cross-references between elements
+(child resolution, parent uniqueness, cycles). Error findings stop the start
+with a message that names each defect. Warning findings go to the log, and the
+pipeline continues.
+
 ## How it Works
 
 Flattening parses the CRTDL to extract attribute groups, builds a ViewDefinition

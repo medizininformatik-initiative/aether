@@ -1,0 +1,139 @@
+{
+  "$defs": {
+    "FlatteningLookupElement": {
+      "properties": {
+        "parent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent"
+        },
+        "viewDefinition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ViewDefinitionSnippet"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "children": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Children"
+        }
+      },
+      "title": "FlatteningLookupElement",
+      "type": "object"
+    },
+    "ViewDefinitionColumn": {
+      "properties": {
+        "name": {
+          "default": null,
+          "title": "Name",
+          "type": "string"
+        },
+        "path": {
+          "default": null,
+          "title": "Path",
+          "type": "string"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Type"
+        }
+      },
+      "title": "ViewDefinitionColumn",
+      "type": "object"
+    },
+    "ViewDefinitionSelect": {
+      "properties": {
+        "column": {
+          "items": {
+            "$ref": "#/$defs/ViewDefinitionColumn"
+          },
+          "title": "Column",
+          "type": "array"
+        }
+      },
+      "title": "ViewDefinitionSelect",
+      "type": "object"
+    },
+    "ViewDefinitionSnippet": {
+      "properties": {
+        "forEachOrNull": {
+          "default": null,
+          "title": "Foreachornull",
+          "type": "string"
+        },
+        "select": {
+          "default": null,
+          "items": {
+            "$ref": "#/$defs/ViewDefinitionSelect"
+          },
+          "title": "Select",
+          "type": "array"
+        },
+        "column": {
+          "default": null,
+          "items": {
+            "$ref": "#/$defs/ViewDefinitionColumn"
+          },
+          "title": "Column",
+          "type": "array"
+        }
+      },
+      "title": "ViewDefinitionSnippet",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "url": {
+      "title": "Url",
+      "type": "string"
+    },
+    "resourceType": {
+      "title": "Resourcetype",
+      "type": "string"
+    },
+    "elements": {
+      "additionalProperties": {
+        "$ref": "#/$defs/FlatteningLookupElement"
+      },
+      "default": {},
+      "title": "Elements",
+      "type": "object"
+    }
+  },
+  "required": [
+    "url",
+    "resourceType"
+  ],
+  "title": "FlatteningLookup",
+  "type": "object"
+}

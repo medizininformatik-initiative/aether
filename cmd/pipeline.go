@@ -170,6 +170,36 @@ func init() {
 	pipelineContinueCmd.Flags().BoolVar(&noProgress, "no-progress", false, "Disable progress indicators")
 }
 
+// verifyFlatteningLookup validates the flatten-lookup file before the first
+// step starts, so a defective file stops the job before hours of extraction.
+// The check runs only when the flattening step is enabled; warnings go to the
+// log, error findings stop the start.
+func verifyFlatteningLookup(config *models.ProjectConfig, logger *lib.Logger) error {
+	if !config.Pipeline.IsStepEnabled(models.StepFlattening) {
+		return nil
+	}
+	warnings, err := services.VerifyLookupFile(config.Services.Flattening.LookupPath)
+	for _, warning := range warnings {
+		logger.Warn("Lookup file finding", "finding", warning)
+	}
+	if err != nil {
+		return fmt.Errorf("lookup file check failed: %w\n\nCorrect the file at services.flattening.lookup_path before you start the pipeline", err)
+	}
+	return nil
+}
+
+// verifyFlatteningLookupForJob applies the lookup file check to a resumed job.
+// A flattening step that is already complete does not need the file, so a
+// missing or changed file does not block the continue.
+func verifyFlatteningLookupForJob(job *models.PipelineJob, logger *lib.Logger) error {
+	for _, step := range job.Steps {
+		if step.Name == models.StepFlattening && step.Status != models.StepStatusCompleted {
+			return verifyFlatteningLookup(&job.Config, logger)
+		}
+	}
+	return nil
+}
+
 func runPipelineStart(cmd *cobra.Command, args []string) error {
 	// Positional contract: <config> <crtdl> [input]. The third positional, if
 	// supplied, is the input source for the enabled import step.
@@ -208,6 +238,10 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	// data may not semantically match the CRTDL query.
 	if config.Pipeline.IsStepEnabled(models.StepHttpImport) && !allowHTTPCRTDL {
 		return fmt.Errorf("combining http_import with a CRTDL requires --allow-http-crtdl\n\nThe HTTP endpoint's data may not match the CRTDL query.\nPass --allow-http-crtdl to acknowledge and proceed")
+	}
+
+	if err := verifyFlatteningLookup(config, lib.DefaultLogger); err != nil {
+		return err
 	}
 
 	fmt.Println("Validating service connectivity...")
@@ -343,6 +377,10 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 	// Append this run's logs to the job's existing job.log.
 	if err := logger.AttachJobLogFile(services.GetJobLogFilePath(config.JobsDir, jobID)); err != nil {
 		return fmt.Errorf("failed to attach job log file: %w", err)
+	}
+
+	if err := verifyFlatteningLookupForJob(job, logger); err != nil {
+		return err
 	}
 
 	if job.Status == models.JobStatusCompleted {

@@ -15,14 +15,26 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
-// crtdlWithoutPatientIdentifier matches the bug 323 scenario: a Patient
-// attribute group missing the identifier attribute. The enrichment should add
+// crtdlWithoutPatientIdentifier is a schema-valid CRTDL whose Patient
+// attribute group has no identifier attribute. The enrichment should add
 // Patient.identifier so downstream steps (flattening) see the enriched group.
 func crtdlWithoutPatientIdentifier() map[string]any {
 	return map[string]any{
+		"version": "http://json-schema.org/to-be-methodically-defined",
 		"cohortDefinition": map[string]any{
-			"version":           "1.0.0",
-			"inclusionCriteria": []any{},
+			"version": "http://to_be_decided.com/draft-1/schema#",
+			"inclusionCriteria": []any{
+				[]any{
+					map[string]any{
+						"context": map[string]any{
+							"code": "Patient", "system": "http://example.org/cs", "display": "Patient",
+						},
+						"termCodes": []any{
+							map[string]any{"code": "263495000", "system": "http://snomed.info/sct", "display": "Gender"},
+						},
+					},
+				},
+			},
 		},
 		"dataExtraction": map[string]any{
 			"attributeGroups": []map[string]any{
@@ -228,6 +240,61 @@ func TestPrepareCRTDL_EnrichmentEnabled_FailsWhenInputCRTDLInvalid(t *testing.T)
 	err := pipeline.PrepareCRTDL(job, lib.NewLogger(lib.LogLevelDebug))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parse CRTDL")
+}
+
+// Enrichment builds a document that no earlier check has seen. A group
+// reference that is not a URI passes the enrichment config checks but breaks
+// the CRTDL schema, so PrepareCRTDL must refuse it.
+func TestPrepareCRTDL_RejectsEnrichmentResultThatBreaksSchema(t *testing.T) {
+	tempDir := t.TempDir()
+	jobsDir := filepath.Join(tempDir, "jobs")
+
+	crtdlPath := writeCRTDLFile(t, tempDir, "input.json", crtdlWithoutPatientIdentifier())
+	job := newJobForPrep(t, jobsDir, "job-bad-enrichment", crtdlPath, models.CRTDLPreprocessingConfig{
+		Enabled: true,
+		Enrichments: []models.GroupEnrichment{
+			{
+				GroupReference:    "Encounter",
+				CreateIfNotExists: &models.CreateGroupConfig{GroupName: "Encounters"},
+				AttributesToAdd:   []models.EnrichmentAttribute{{AttributeRef: "Encounter.id"}},
+			},
+		},
+	})
+
+	err := pipeline.PrepareCRTDL(job, lib.NewLogger(lib.LogLevelDebug))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "groupReference")
+}
+
+// A rejected enrichment must leave no artifact. If the invalid file stayed in
+// the job directory, the idempotency check would treat it as prepared and a
+// later `pipeline continue` would use it.
+func TestPrepareCRTDL_RejectedEnrichment_WritesNoFileAndKeepsPath(t *testing.T) {
+	tempDir := t.TempDir()
+	jobsDir := filepath.Join(tempDir, "jobs")
+	jobID := "job-rejected-enrichment"
+
+	crtdlPath := writeCRTDLFile(t, tempDir, "input.json", crtdlWithoutPatientIdentifier())
+	job := newJobForPrep(t, jobsDir, jobID, crtdlPath, models.CRTDLPreprocessingConfig{
+		Enabled: true,
+		Enrichments: []models.GroupEnrichment{
+			{
+				GroupReference:    "Encounter",
+				CreateIfNotExists: &models.CreateGroupConfig{GroupName: "Encounters"},
+				AttributesToAdd:   []models.EnrichmentAttribute{{AttributeRef: "Encounter.id"}},
+			},
+		},
+	})
+
+	require.Error(t, pipeline.PrepareCRTDL(job, lib.NewLogger(lib.LogLevelDebug)))
+
+	assert.Equal(t, crtdlPath, job.CRTDLPath,
+		"CRTDLPath must still point at the original input after a rejected enrichment")
+
+	_, statErr := os.Stat(filepath.Join(jobsDir, jobID, "enriched-crtdl.json"))
+	assert.True(t, os.IsNotExist(statErr),
+		"No enriched-crtdl.json may remain in the job directory after rejection")
 }
 
 // TestPrepareCRTDL_PreprocessingDisabled_FailsWhenInputMissing covers the

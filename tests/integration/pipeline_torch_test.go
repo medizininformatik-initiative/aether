@@ -859,10 +859,22 @@ func TestPipeline_TORCHExtraction_WithPreprocessing(t *testing.T) {
 	// Create CRTDL file with a Patient group (missing the enrichment attributes)
 	crtdlPath := filepath.Join(tempDir, "test-preprocessing.json")
 	crtdlContent := map[string]any{
+		"version": "http://json-schema.org/to-be-methodically-defined",
 		"cohortDefinition": map[string]any{
-			"version":           "1.0.0",
-			"display":           "Test cohort",
-			"inclusionCriteria": []any{},
+			"version": "http://to_be_decided.com/draft-1/schema#",
+			"display": "Test cohort",
+			"inclusionCriteria": []any{
+				[]any{
+					map[string]any{
+						"context": map[string]any{
+							"code": "Patient", "system": "http://example.org/cs", "display": "Patient",
+						},
+						"termCodes": []any{
+							map[string]any{"code": "263495000", "system": "http://snomed.info/sct", "display": "Gender"},
+						},
+					},
+				},
+			},
 		},
 		"dataExtraction": map[string]any{
 			"attributeGroups": []map[string]any{

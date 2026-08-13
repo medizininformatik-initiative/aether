@@ -244,6 +244,12 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Verify the CRTDL file before the first step starts, so a defective file
+	// stops the job before hours of extraction.
+	if err := services.VerifyCRTDLFile(crtdlPath); err != nil {
+		return fmt.Errorf("CRTDL check failed: %w\n\nCorrect the CRTDL file before you start the pipeline", err)
+	}
+
 	fmt.Println("Validating service connectivity...")
 	connectTransport, _ := services.BuildTLSTransport(config.TLS, lib.DefaultLogger)
 	if err := config.ValidateServiceConnectivity(connectTransport); err != nil {

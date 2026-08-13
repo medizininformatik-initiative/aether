@@ -34,9 +34,21 @@ func TestCRTDLEnrichmentAppliedForLocalImportPath(t *testing.T) {
 	// the exact misconfiguration described in issue #323.
 	crtdlPath := filepath.Join(tempDir, "crtdl.json")
 	crtdl := map[string]any{
+		"version": "http://json-schema.org/to-be-methodically-defined",
 		"cohortDefinition": map[string]any{
-			"version":           "1.0.0",
-			"inclusionCriteria": []any{},
+			"version": "http://to_be_decided.com/draft-1/schema#",
+			"inclusionCriteria": []any{
+				[]any{
+					map[string]any{
+						"context": map[string]any{
+							"code": "Patient", "system": "http://example.org/cs", "display": "Patient",
+						},
+						"termCodes": []any{
+							map[string]any{"code": "263495000", "system": "http://snomed.info/sct", "display": "Gender"},
+						},
+					},
+				},
+			},
 		},
 		"dataExtraction": map[string]any{
 			"attributeGroups": []map[string]any{

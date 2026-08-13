@@ -297,6 +297,38 @@ func TestPrepareCRTDL_RejectedEnrichment_WritesNoFileAndKeepsPath(t *testing.T) 
 		"No enriched-crtdl.json may remain in the job directory after rejection")
 }
 
+// An enrichment rule can name a linkedGroups profile URL that the CRTDL does
+// not contain. The pipeline must stop, because an enriched CRTDL without the
+// link gives output that has no error message but is not complete.
+func TestPrepareCRTDL_RejectsUnresolvableLinkedGroup(t *testing.T) {
+	tempDir := t.TempDir()
+	jobsDir := filepath.Join(tempDir, "jobs")
+	jobID := "job-unresolvable-link"
+	unknownProfile := "https://www.example.org/fhir/StructureDefinition/Unknown"
+
+	crtdlPath := writeCRTDLFile(t, tempDir, "input.json", crtdlWithoutPatientIdentifier())
+	job := newJobForPrep(t, jobsDir, jobID, crtdlPath, models.CRTDLPreprocessingConfig{
+		Enabled: true,
+		Enrichments: []models.GroupEnrichment{
+			{
+				GroupReference: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/PatientPseudonymisiert",
+				AttributesToAdd: []models.EnrichmentAttribute{
+					{AttributeRef: "Patient.identifier", LinkedGroups: []string{unknownProfile}},
+				},
+			},
+		},
+	})
+
+	err := pipeline.PrepareCRTDL(job, lib.NewLogger(lib.LogLevelDebug))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), unknownProfile, "the error must name the profile URL that stays unresolved")
+
+	_, statErr := os.Stat(filepath.Join(jobsDir, jobID, "enriched-crtdl.json"))
+	assert.True(t, os.IsNotExist(statErr),
+		"No enriched-crtdl.json may remain after an unresolvable linkedGroups reference")
+}
+
 // TestPrepareCRTDL_PreprocessingDisabled_FailsWhenInputMissing covers the
 // ReadFile error branch in copyOriginalCRTDL (crtdl_prep.go lines 78-80).
 func TestPrepareCRTDL_PreprocessingDisabled_FailsWhenInputMissing(t *testing.T) {

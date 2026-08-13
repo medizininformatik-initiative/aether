@@ -1,14 +1,15 @@
 package unit
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
 
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/xeipuuv/gojsonschema"
 
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
@@ -32,9 +33,12 @@ func TestBundleChunkSchema(t *testing.T) {
 	require.NoError(t, err, "Failed to read bundle-chunk.json schema")
 
 	// Parse schema
-	schemaLoader := gojsonschema.NewBytesLoader(schemaBytes)
-	schema, err := gojsonschema.NewSchema(schemaLoader)
+	schemaDoc, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaBytes))
 	require.NoError(t, err, "Failed to parse bundle-chunk.json schema")
+	compiler := jsonschema.NewCompiler()
+	require.NoError(t, compiler.AddResource(schemaPath, schemaDoc))
+	schema, err := compiler.Compile(schemaPath)
+	require.NoError(t, err, "Failed to compile bundle-chunk.json schema")
 
 	t.Run("Single chunk from small Bundle", func(t *testing.T) {
 		// Create a small test Bundle that won't be split
@@ -50,10 +54,7 @@ func TestBundleChunkSchema(t *testing.T) {
 		chunkBundle := models.ConvertChunkToBundle(splitResult.Chunks[0])
 
 		// Validate chunk against schema
-		dataLoader := gojsonschema.NewBytesLoader(mustMarshalJSON(chunkBundle))
-		result, err := schema.Validate(dataLoader)
-		require.NoError(t, err, "Schema validation failed")
-		assert.True(t, result.Valid(), fmt.Sprintf("Chunk failed schema validation: %v", result.Errors()))
+		assert.NoError(t, validateAgainstSchema(t, schema, chunkBundle), "Chunk failed schema validation")
 	})
 
 	t.Run("Multiple chunks from large Bundle", func(t *testing.T) {
@@ -69,10 +70,7 @@ func TestBundleChunkSchema(t *testing.T) {
 		// Validate each chunk against schema
 		for i, chunk := range splitResult.Chunks {
 			chunkBundle := models.ConvertChunkToBundle(chunk)
-			dataLoader := gojsonschema.NewBytesLoader(mustMarshalJSON(chunkBundle))
-			result, err := schema.Validate(dataLoader)
-			require.NoError(t, err, fmt.Sprintf("Schema validation failed for chunk %d", i))
-			assert.True(t, result.Valid(), fmt.Sprintf("Chunk %d failed schema validation: %v", i, result.Errors()))
+			assert.NoError(t, validateAgainstSchema(t, schema, chunkBundle), fmt.Sprintf("Chunk %d failed schema validation", i))
 		}
 	})
 
@@ -94,10 +92,7 @@ func TestBundleChunkSchema(t *testing.T) {
 			assert.NotEmpty(t, id, "Chunk ID should not be empty")
 
 			// Validate this passes schema's pattern validation
-			dataLoader := gojsonschema.NewBytesLoader(mustMarshalJSON(chunkBundle))
-			result, err := schema.Validate(dataLoader)
-			require.NoError(t, err)
-			assert.True(t, result.Valid(), fmt.Sprintf("Chunk %d failed ID format validation", i))
+			assert.NoError(t, validateAgainstSchema(t, schema, chunkBundle), fmt.Sprintf("Chunk %d failed ID format validation", i))
 		}
 	})
 
@@ -135,10 +130,7 @@ func TestBundleChunkSchema(t *testing.T) {
 			assert.Greater(t, entryCount, 0, fmt.Sprintf("Chunk %d: should have at least one entry", i))
 
 			// Schema validation should pass
-			dataLoader := gojsonschema.NewBytesLoader(mustMarshalJSON(chunkBundle))
-			result, err := schema.Validate(dataLoader)
-			require.NoError(t, err)
-			assert.True(t, result.Valid(), fmt.Sprintf("Chunk %d: should pass FHIR schema validation", i))
+			assert.NoError(t, validateAgainstSchema(t, schema, chunkBundle), fmt.Sprintf("Chunk %d: should pass FHIR schema validation", i))
 		}
 	})
 
@@ -159,10 +151,7 @@ func TestBundleChunkSchema(t *testing.T) {
 			assert.Equal(t, "collection", bundleType, fmt.Sprintf("Chunk %d should preserve Bundle type", i))
 
 			// Schema validation should pass
-			dataLoader := gojsonschema.NewBytesLoader(mustMarshalJSON(chunkBundle))
-			result, err := schema.Validate(dataLoader)
-			require.NoError(t, err)
-			assert.True(t, result.Valid())
+			assert.NoError(t, validateAgainstSchema(t, schema, chunkBundle))
 		}
 	})
 
@@ -203,12 +192,17 @@ func TestBundleChunkSchema(t *testing.T) {
 			}
 
 			// Schema validation
-			dataLoader := gojsonschema.NewBytesLoader(mustMarshalJSON(chunkBundle))
-			result, err := schema.Validate(dataLoader)
-			require.NoError(t, err)
-			assert.True(t, result.Valid())
+			assert.NoError(t, validateAgainstSchema(t, schema, chunkBundle))
 		}
 	})
+}
+
+// validateAgainstSchema validates a Bundle map against the compiled schema.
+func validateAgainstSchema(t *testing.T, schema *jsonschema.Schema, chunkBundle map[string]any) error {
+	t.Helper()
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(mustMarshalJSON(chunkBundle)))
+	require.NoError(t, err)
+	return schema.Validate(doc)
 }
 
 // mustMarshalJSON marshals data to JSON bytes, panicking on error

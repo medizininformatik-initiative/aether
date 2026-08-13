@@ -16,7 +16,9 @@ import (
 //
 // crtdlPath is the CRTDL file attached to the job; every job carries a CRTDL
 // so it is normally non-empty (the "" case is kept only for tests that
-// exercise non-CRTDL paths).
+// exercise non-CRTDL paths). CreateJob does not validate the file. The caller
+// must run services.VerifyCRTDLFile first, so that an invalid CRTDL stops the
+// start before a job directory exists.
 //
 // inputSource is the import-step input:
 //   - HTTP(S) URL (for http_import)
@@ -43,14 +45,6 @@ func CreateJob(jobID string, inputSource string, crtdlPath string, config models
 			return nil, fmt.Errorf("failed to detect input type: %w", err)
 		}
 		logger.Info("Detected input type", "type", inputType, "source", inputSource)
-	}
-
-	// Validate CRTDL syntax whenever one is attached
-	if crtdlPath != "" {
-		if err := lib.ValidateCRTDLSyntax(crtdlPath); err != nil {
-			return nil, fmt.Errorf("CRTDL validation failed: %w", err)
-		}
-		logger.Info("CRTDL syntax validation passed", "path", crtdlPath)
 	}
 
 	// Determine initial step based on enabled import step in config

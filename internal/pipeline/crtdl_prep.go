@@ -70,6 +70,12 @@ func PrepareCRTDL(job *models.PipelineJob, logger *lib.Logger) error {
 		return fmt.Errorf("failed to serialize enriched CRTDL: %w", err)
 	}
 
+	// Enrichment builds a document that the check at pipeline start never saw.
+	// Verify it before it becomes the CRTDL that all later steps use.
+	if err := services.VerifyCRTDLBytes(enrichedContent); err != nil {
+		return fmt.Errorf("enrichment produced an invalid CRTDL: %w", err)
+	}
+
 	return saveCRTDL(job, jobDir, "enriched-crtdl.json", enrichedContent, logger)
 }
 

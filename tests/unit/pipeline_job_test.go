@@ -347,7 +347,7 @@ func TestCreateJob_FailsWhenSaveStateAfterCRTDLPreparationFails(t *testing.T) {
 	jobsDir := filepath.Join(tmpDir, "jobs")
 
 	// Write a valid CRTDL file so DetectInputType returns CRTDL and
-	// ValidateCRTDLSyntax/ParseCRTDL both succeed.
+	// ParseCRTDL succeeds.
 	crtdlPath := filepath.Join(tmpDir, "input.json")
 	crtdlContent := map[string]any{
 		"cohortDefinition": map[string]any{
@@ -485,9 +485,9 @@ func TestCreateJob_TorchCRTDLOnly(t *testing.T) {
 		"CRTDLPath must point at the prepared CRTDL inside jobDir")
 }
 
-// TestCreateJob_InvalidCRTDL covers the CRTDL validation failure branch (job.go line 50-51):
-// when crtdlPath points to a missing/invalid file, CreateJob must surface the
-// validation error rather than silently proceed.
+// TestCreateJob_InvalidCRTDL shows that an unreadable CRTDL file stops the job
+// creation. CreateJob has no CRTDL check of its own; PrepareCRTDL reads the
+// file and reports the failure.
 func TestCreateJob_InvalidCRTDL(t *testing.T) {
 	tmpDir := t.TempDir()
 	missingCRTDL := filepath.Join(tmpDir, "does-not-exist.json")
@@ -503,7 +503,7 @@ func TestCreateJob_InvalidCRTDL(t *testing.T) {
 
 	require.Error(t, err, "CreateJob must fail when CRTDL file is unreadable")
 	assert.Nil(t, job)
-	assert.Contains(t, err.Error(), "CRTDL validation failed", "error must mention CRTDL validation")
+	assert.Contains(t, err.Error(), "failed to prepare CRTDL", "error must name the failed step")
 }
 
 // TestCreateJob_CRTDLFlagOnlyNoPositional covers the local_import scenario

@@ -64,6 +64,24 @@ services:
     # Default: 10 MB
     bundle_split_threshold_mb: 10
 
+    # Authentication (optional)
+    # Basic auth and OAuth2 both set Authorization; use one of them only.
+    # The API key uses its own header, thus it can accompany either scheme.
+    # auth:
+    #   # Basic auth
+    #   username: "dimp-user"
+    #   password: "dimp-password"
+    #
+    #   # OAuth2 client credentials
+    #   oauth_issuer_uri: "https://keycloak.example.org/realms/aether"
+    #   oauth_client_id: "aether"
+    #   oauth_client_secret: "secret"
+    #
+    #   # API key. The FHIR Pseudonymizer reads it from x-api-key.
+    #   # Set api_key_header only for a proxy that uses a different header.
+    #   api_key: "your-api-key"
+    #   api_key_header: "x-api-key"
+
   # CRTDL Preprocessing (optional)
   # Enriches CRTDL files with additional attributes required by DIMP before sending to TORCH.
   # This is needed when DIMP requires certain identifiers (e.g., PseudonymisierterIdentifier,
@@ -138,7 +156,7 @@ services:
     # Default: 100, Max: 1000
     batch_size: 100
 
-    # Authentication (optional) - choose ONE method or leave both empty
+    # Authentication (optional) - choose ONE method or leave all empty
     auth:
       # Option 1: Basic Auth
       # Use environment variables to avoid storing credentials in config files:
@@ -150,6 +168,12 @@ services:
       # oauth_issuer_uri: "${FHIR_OAUTH_ISSUER_URI}"
       # oauth_client_id: "${FHIR_OAUTH_CLIENT_ID}"
       # oauth_client_secret: "${FHIR_OAUTH_CLIENT_SECRET}"
+
+      # Option 3: API key. Sent in its own header, not in Authorization.
+      # It can accompany option 1 or option 2.
+      # The FHIR send modes use it; s3_upload proxy auth ignores it.
+      # api_key: "${FHIR_API_KEY}"
+      # api_key_header: "x-api-key"
 
     # Transfer settings (only for transfer_load mode)
     transfer:

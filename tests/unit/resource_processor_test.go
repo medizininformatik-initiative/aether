@@ -17,7 +17,7 @@ import (
 func createTestResourceProcessor(server *httptest.Server) *pipeline.ResourceProcessor {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 	httpClient := services.DefaultHTTPClient()
-	dimpClient := services.NewDIMPClient(server.URL, httpClient, logger)
+	dimpClient := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, httpClient, logger)
 	return pipeline.NewResourceProcessor(dimpClient, logger, 10*1024*1024, "test.ndjson")
 }
 
@@ -117,7 +117,7 @@ func TestResourceProcessor_ProcessNonBundle_OversizedResource(t *testing.T) {
 	// Create processor with very small threshold (100 bytes)
 	logger := lib.NewLogger(lib.LogLevelDebug)
 	httpClient := services.DefaultHTTPClient()
-	dimpClient := services.NewDIMPClient(server.URL, httpClient, logger)
+	dimpClient := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, httpClient, logger)
 	processor := pipeline.NewResourceProcessor(dimpClient, logger, 100, "test.ndjson")
 
 	// Create a large resource

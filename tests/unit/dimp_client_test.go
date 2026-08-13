@@ -37,7 +37,7 @@ func TestDIMPClient_Pseudonymize_Success(t *testing.T) {
 	// Test implementation
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-	client := services.NewDIMPClient(server.URL, httpClient, logger)
+	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, httpClient, logger)
 
 	originalPatient := map[string]any{
 		"resourceType": "Patient",
@@ -83,7 +83,7 @@ func TestDIMPClient_Pseudonymize_PreservesResourceType(t *testing.T) {
 			// Test that resourceType is preserved
 			logger := lib.NewLogger(lib.LogLevelError)
 			httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-			client := services.NewDIMPClient(server.URL, httpClient, logger)
+			client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, httpClient, logger)
 
 			original := map[string]any{
 				"resourceType": tc.resourceType,
@@ -109,7 +109,7 @@ func TestDIMPClient_Pseudonymize_HandlesEmptyResource(t *testing.T) {
 	// Test error handling for empty resource
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-	client := services.NewDIMPClient(server.URL, httpClient, logger)
+	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, httpClient, logger)
 
 	emptyResource := map[string]any{}
 

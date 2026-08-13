@@ -184,10 +184,8 @@ func (c *ProjectConfig) Validate() error {
 	}
 
 	// Validate service URLs are well-formed (if provided)
-	if c.Services.DIMP.URL != "" {
-		if _, err := url.Parse(c.Services.DIMP.URL); err != nil {
-			return fmt.Errorf("invalid dimp url: %w", err)
-		}
+	if err := c.Services.DIMP.Validate(); err != nil {
+		return err
 	}
 	if c.Services.Validation.URL != "" {
 		if _, err := url.Parse(c.Services.Validation.URL); err != nil {

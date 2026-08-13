@@ -68,6 +68,29 @@ retry:
 	assert.Equal(t, "http://dimp.env.example:8080/fhir", config.Services.DIMP.URL)
 }
 
+// TestEnvOverride_DIMPAuthAPIKey verifies the dimp auth block is bindable from
+// the environment, so credentials stay out of the config file.
+func TestEnvOverride_DIMPAuthAPIKey(t *testing.T) {
+	t.Setenv("AETHER_SERVICES_DIMP_AUTH_API_KEY", "env-api-key")
+
+	configFile := writeEnvTestConfig(t, `
+services:
+  dimp:
+    url: "http://dimp.example:8080"
+pipeline:
+  enabled_steps:
+    - local_import
+    - dimp
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000`)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err)
+	assert.Equal(t, "env-api-key", config.Services.DIMP.Auth.APIKey)
+}
+
 // TestEnvOverride_DeeplyNestedKey verifies the reflection walk binds keys more
 // than two levels deep (services.send.s3.bucket).
 func TestEnvOverride_DeeplyNestedKey(t *testing.T) {

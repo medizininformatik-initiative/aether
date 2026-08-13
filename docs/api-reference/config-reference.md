@@ -21,6 +21,14 @@ services:
   dimp:
     url: string
     bundle_split_threshold_mb: integer   # 1-100, default: 10
+    auth:
+      username: string
+      password: string
+      oauth_issuer_uri: string
+      oauth_client_id: string
+      oauth_client_secret: string
+      api_key: string
+      api_key_header: string             # default: x-api-key
 
   flattening:
     service_url: string
@@ -39,6 +47,8 @@ services:
       oauth_issuer_uri: string
       oauth_client_id: string
       oauth_client_secret: string
+      api_key: string                    # FHIR modes only; ignored for s3_upload
+      api_key_header: string             # default: x-api-key
     transfer:                            # transfer_load only
       project_identifier: string
       organization_identifier: string
@@ -137,12 +147,31 @@ services:
   dimp:
     url: "http://dimp:32861"
     bundle_split_threshold_mb: 10
+    auth:
+      api_key: "${DIMP_API_KEY}"
 ```
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `url` | string | - | DIMP server root URL (required if dimp step enabled). Do not include `/fhir` — the client appends it. |
 | `bundle_split_threshold_mb` | int | 10 | Split Bundles larger than this (1-100 MB) |
+| `auth.username` | string | - | Basic Auth username |
+| `auth.password` | string | - | Basic Auth password |
+| `auth.oauth_issuer_uri` | string | - | OAuth 2.0 issuer URI. When set, Aether fetches client-credentials bearer tokens. |
+| `auth.oauth_client_id` | string | - | OAuth 2.0 client ID |
+| `auth.oauth_client_secret` | string | - | OAuth 2.0 client secret |
+| `auth.api_key` | string | - | API key. Sent in its own header, not in `Authorization`. |
+| `auth.api_key_header` | string | `x-api-key` | Header that carries `api_key`. The FHIR Pseudonymizer reads `x-api-key`; change it only for a proxy that expects a different header. |
+
+Basic Auth and OAuth 2.0 both set the `Authorization` header. Aether rejects a
+config that sets both. The API key uses its own header, thus you can set it
+together with Basic Auth or OAuth 2.0. Aether also rejects an incomplete set of
+fields for one scheme.
+
+`api_key_header` must be a valid HTTP header name. You can set it to
+`Authorization` to send a static token, for example `api_key: "Bearer abc"`. But
+Aether rejects `Authorization` together with Basic Auth or OAuth 2.0, because
+the API key would replace their credentials.
 
 ### Flattening
 

@@ -54,7 +54,7 @@ func TestDIMPService_Pseudonymize_Success(t *testing.T) {
 	// Test the contract
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-	client := services.NewDIMPClient(server.URL, httpClient, logger)
+	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, httpClient, logger)
 
 	originalPatient := map[string]any{
 		"resourceType": "Patient",
@@ -91,7 +91,7 @@ func TestDIMPService_400BadRequest(t *testing.T) {
 	// Test will verify non-retryable error
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-	client := services.NewDIMPClient(server.URL, httpClient, logger)
+	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, httpClient, logger)
 
 	malformedResource := map[string]any{
 		"id": "no-resource-type",
@@ -122,7 +122,7 @@ func TestDIMPService_500InternalServerError(t *testing.T) {
 	// Test will verify retryable error behavior
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 100}, models.TLSConfig{}, logger)
-	client := services.NewDIMPClient(server.URL, httpClient, logger)
+	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, httpClient, logger)
 
 	resource := map[string]any{
 		"resourceType": "Patient",
@@ -145,7 +145,7 @@ func TestDIMPService_502BadGateway(t *testing.T) {
 	// Test will verify this is treated as transient/retryable
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 100}, models.TLSConfig{}, logger)
-	client := services.NewDIMPClient(server.URL, httpClient, logger)
+	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, httpClient, logger)
 
 	resource := map[string]any{
 		"resourceType": "Patient",
@@ -174,7 +174,7 @@ func TestDIMPService_422UnprocessableEntity(t *testing.T) {
 	// Test will verify non-retryable error
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-	client := services.NewDIMPClient(server.URL, httpClient, logger)
+	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, httpClient, logger)
 
 	resource := map[string]any{
 		"resourceType": "Patient",

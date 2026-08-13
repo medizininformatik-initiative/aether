@@ -28,7 +28,7 @@ func TestDIMPStep_UsesFakeDIMPProcessor(t *testing.T) {
 			return r, nil
 		},
 	}
-	pipeline.SetDIMPFactoryForTesting(func(_ string, _ *services.HTTPClient, _ *lib.Logger) services.DIMPProcessor {
+	pipeline.SetDIMPFactoryForTesting(func(_ models.DIMPConfig, _ *services.HTTPClient, _ *lib.Logger) services.DIMPProcessor {
 		return mock
 	})
 	defer pipeline.ResetDIMPFactory()

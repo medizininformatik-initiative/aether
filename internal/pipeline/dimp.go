@@ -16,15 +16,15 @@ import (
 )
 
 // defaultDIMPFactory is the production DIMP client constructor.
-var defaultDIMPFactory = func(baseURL string, httpClient *services.HTTPClient, logger *lib.Logger) services.DIMPProcessor {
-	return services.NewDIMPClient(baseURL, httpClient, logger)
+var defaultDIMPFactory = func(config models.DIMPConfig, httpClient *services.HTTPClient, logger *lib.Logger) services.DIMPProcessor {
+	return services.NewDIMPClient(config, httpClient, logger)
 }
 
 // dimpFactory creates a DIMPProcessor. Overridable in tests.
 var dimpFactory = defaultDIMPFactory
 
 // SetDIMPFactoryForTesting replaces the DIMP client factory for tests.
-func SetDIMPFactoryForTesting(factory func(string, *services.HTTPClient, *lib.Logger) services.DIMPProcessor) {
+func SetDIMPFactoryForTesting(factory func(models.DIMPConfig, *services.HTTPClient, *lib.Logger) services.DIMPProcessor) {
 	dimpFactory = factory
 }
 
@@ -50,7 +50,7 @@ func (dimpStep) Run(ctx *StepContext) (StepResult, error) {
 	}
 
 	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
-	dimpClient := dimpFactory(job.Config.Services.DIMP.URL, httpClient, logger)
+	dimpClient := dimpFactory(job.Config.Services.DIMP, httpClient, logger)
 
 	importDir := ctx.Layout.InputDir(stepName)
 	outputDir := ctx.Layout.OutputDir(stepName)

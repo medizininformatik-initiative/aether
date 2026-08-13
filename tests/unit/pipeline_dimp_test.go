@@ -202,6 +202,35 @@ func TestExecuteDIMPStep_ProcessSimpleResources(t *testing.T) {
 	assert.Equal(t, "pseudo-p2", resources[1]["id"])
 }
 
+// The step must give the configured auth to the DIMP client, so credentials in
+// services.dimp.auth reach the service.
+func TestExecuteDIMPStep_SendsConfiguredAuth(t *testing.T) {
+	var gotKey string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = r.Header.Get("x-api-key")
+		var resource map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&resource)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resource)
+	}))
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	job := createDIMPTestJob(server.URL)
+	job.Config.Services.DIMP.Auth = models.AuthConfig{APIKey: "dimp-secret"}
+	logger := createDIMPTestLogger()
+
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+	writeDIMPNDJSON(t, filepath.Join(importDir, "patients.ndjson"), []map[string]any{
+		{"resourceType": "Patient", "id": "p1"},
+	})
+
+	require.NoError(t, runPipelineStep(models.StepDIMP, job, tmpDir, logger))
+
+	assert.Equal(t, "dimp-secret", gotKey)
+}
+
 // TestExecuteDIMPStep_ResumeProcessing skips already processed files
 func TestExecuteDIMPStep_ResumeProcessing(t *testing.T) {
 	server := createMockDIMPServer()

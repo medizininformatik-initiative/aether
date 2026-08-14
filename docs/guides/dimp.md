@@ -74,6 +74,28 @@ The `create_if_not_exists` option creates the group in the CRTDL if it doesn't a
 
 Enrichment rules can also be loaded from an external JSON file. See [CRTDL Preprocessing](../api-reference/config-reference.md#crtdl-preprocessing) in the configuration reference for details.
 
+### Linked Groups
+
+An added attribute can link other attribute groups with `linked_groups`. Give the
+profile URL of each group. Aether changes each profile URL into the id of the
+attribute group that has this `group_reference`:
+
+```yaml
+attributes_to_add:
+  - attribute_ref: "Patient.identifier"
+    must_have: false
+    linked_groups:
+      - "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung"
+```
+
+Aether does this after it applies all the rules. Thus a rule can link a group
+that a subsequent rule creates, and the sequence of the rules does not change
+the result.
+
+If a profile URL agrees with no attribute group, the pipeline stops with an
+error that gives the group, the attribute, and the URL. Aether writes no
+`enriched-crtdl.json`. Correct the URL, or add a rule that creates the group.
+
 ## Large Bundles
 
 For large datasets, Aether automatically splits bundles before sending to DIMP:

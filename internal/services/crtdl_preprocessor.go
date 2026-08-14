@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -35,7 +36,12 @@ import (
 //     a. Find matching group by groupReference
 //     b. If found: add/update attributes in the group
 //     c. If not found and addGroupIfNotExists: create new group
-//  3. Return enriched document
+//  3. Resolve all linkedGroups profile URLs against the complete document
+//  4. Return enriched document
+//
+// Step 3 runs after all rules apply, so a rule can link a group that a later
+// rule creates. A profile URL that matches no attribute group is an error:
+// DIMP needs the link, and silent removal gives a document that looks correct.
 //
 // Parameters:
 //
@@ -45,7 +51,7 @@ import (
 // Returns:
 //
 //	Enriched CRTDL document with additional attributes
-//	Error if enrichment fails
+//	Error if a linkedGroups entry matches no attribute group
 func EnrichCRTDL(doc models.CRTDLDocument, enrichments []models.GroupEnrichment) (models.CRTDLDocument, error) {
 	if len(enrichments) == 0 {
 		return deepCopyCRTDL(doc), nil
@@ -68,12 +74,22 @@ func EnrichCRTDL(doc models.CRTDLDocument, enrichments []models.GroupEnrichment)
 			)
 		} else if enrichment.ShouldCreateIfNotExists() {
 			// Group not found but should be created
-			newGroup := CreateNewGroup(enrichment)
-			// Resolve linkedGroups for the new group's attributes
-			newGroup = resolveLinkedGroupsForGroup(newGroup, result)
-			result.DataExtraction.AttributeGroups = append(result.DataExtraction.AttributeGroups, newGroup)
+			result.DataExtraction.AttributeGroups = append(
+				result.DataExtraction.AttributeGroups,
+				CreateNewGroup(enrichment),
+			)
 		}
 		// If group not found and addGroupIfNotExists is false, skip silently
+	}
+
+	// A rule can link a group that a later rule creates. Resolve again over the
+	// complete document, so the order of the rules does not change the result.
+	for i, group := range result.DataExtraction.AttributeGroups {
+		result.DataExtraction.AttributeGroups[i] = resolveLinkedGroupsForGroup(group, result)
+	}
+
+	if err := checkLinkedGroupsResolved(result); err != nil {
+		return models.CRTDLDocument{}, err
 	}
 
 	return result, nil
@@ -171,6 +187,9 @@ func CreateNewGroup(enrichment models.GroupEnrichment) models.AttributeGroup {
 // ResolveLinkedGroups resolves profile URLs to group IDs in the CRTDL document.
 // Pure function: Takes document and profile URLs, returns resolved group IDs.
 //
+// An entry that matches no attribute group stays unchanged. A dropped entry
+// makes the lost link invisible; a kept profile URL is visibly not a group id.
+//
 // Parameters:
 //
 //	doc - CRTDL document containing attribute groups
@@ -178,7 +197,7 @@ func CreateNewGroup(enrichment models.GroupEnrichment) models.AttributeGroup {
 //
 // Returns:
 //
-//	List of group IDs matching the profile URLs (empty if no matches)
+//	One entry per input: the group ID if a group matches, else the input URL
 func ResolveLinkedGroups(doc models.CRTDLDocument, profileURLs []string) []string {
 	if len(profileURLs) == 0 {
 		return []string{}
@@ -187,12 +206,7 @@ func ResolveLinkedGroups(doc models.CRTDLDocument, profileURLs []string) []strin
 	resolvedIDs := make([]string, 0, len(profileURLs))
 
 	for _, profileURL := range profileURLs {
-		for _, group := range doc.DataExtraction.AttributeGroups {
-			if group.GroupReference == profileURL {
-				resolvedIDs = append(resolvedIDs, group.ID)
-				break // Found match, move to next URL
-			}
-		}
+		resolvedIDs = append(resolvedIDs, resolveProfileURL(doc, profileURL))
 	}
 
 	return resolvedIDs
@@ -235,6 +249,47 @@ func loadEnrichmentsFromFile(path string) ([]models.GroupEnrichment, error) {
 }
 
 // --- Internal Helper Functions ---
+
+// resolveProfileURL returns the id of the group whose groupReference is
+// profileURL. It returns profileURL unchanged if no group matches.
+func resolveProfileURL(doc models.CRTDLDocument, profileURL string) string {
+	for _, group := range doc.DataExtraction.AttributeGroups {
+		if group.GroupReference == profileURL {
+			return group.ID
+		}
+	}
+	return profileURL
+}
+
+// checkLinkedGroupsResolved reports every linkedGroups entry that is not the id
+// of an attribute group in the document. Such an entry is a profile URL that
+// matches no group. DIMP needs the link, so the enrichment must not continue.
+func checkLinkedGroupsResolved(doc models.CRTDLDocument) error {
+	ids := make(map[string]bool, len(doc.DataExtraction.AttributeGroups))
+	for _, group := range doc.DataExtraction.AttributeGroups {
+		ids[group.ID] = true
+	}
+
+	var unresolved []string
+	for _, group := range doc.DataExtraction.AttributeGroups {
+		for _, attr := range group.Attributes {
+			for _, linked := range attr.LinkedGroups {
+				if ids[linked] {
+					continue
+				}
+				unresolved = append(unresolved, fmt.Sprintf("group %q attribute %q links %q",
+					group.ID, attr.AttributeRef, linked))
+			}
+		}
+	}
+
+	if len(unresolved) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("%d linkedGroups reference(s) match no attribute group: %s",
+		len(unresolved), strings.Join(unresolved, "; "))
+}
 
 // cloneExtra deep-copies a map of preserved unknown JSON fields.
 func cloneExtra(in map[string]json.RawMessage) map[string]json.RawMessage {

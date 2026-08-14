@@ -177,6 +177,69 @@ func TestEnrichCRTDL_ResolveLinkedGroups(t *testing.T) {
 	assert.Equal(t, "encounter-group", someRefAttr.LinkedGroups[0], "linkedGroups should be resolved to group IDs")
 }
 
+// TestEnrichCRTDL_ResolveLinkedGroups_ForwardReference verifies that a rule can
+// link a group that a later rule creates. Resolution runs after all rules apply,
+// so the order of the rules does not change the result.
+func TestEnrichCRTDL_ResolveLinkedGroups_ForwardReference(t *testing.T) {
+	doc := createTestCRTDLDocument()
+	consentProfile := "https://www.example.org/fhir/StructureDefinition/Consent"
+
+	enrichments := []models.GroupEnrichment{
+		{
+			GroupReference: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient",
+			AttributesToAdd: []models.EnrichmentAttribute{
+				{AttributeRef: "Patient.consent", LinkedGroups: []string{consentProfile}},
+			},
+		},
+		{
+			GroupReference:    consentProfile,
+			CreateIfNotExists: &models.CreateGroupConfig{GroupName: "Consent"},
+			AttributesToAdd: []models.EnrichmentAttribute{
+				{AttributeRef: "Consent.id"},
+			},
+		},
+	}
+
+	result, err := services.EnrichCRTDL(doc, enrichments)
+
+	require.NoError(t, err)
+
+	consentGroup := findGroupByReference(result, consentProfile)
+	require.NotNil(t, consentGroup, "the second rule should create the Consent group")
+
+	patientGroup := findGroupByID(result, "patient-group")
+	require.NotNil(t, patientGroup)
+	consentAttr := findAttributeByRef(patientGroup.Attributes, "Patient.consent")
+	require.NotNil(t, consentAttr)
+	require.Len(t, consentAttr.LinkedGroups, 1)
+	assert.Equal(t, consentGroup.ID, consentAttr.LinkedGroups[0],
+		"the profile URL should resolve to the id of the group that the later rule creates")
+}
+
+// TestEnrichCRTDL_UnresolvedLinkedGroup_ReturnsError verifies that a profile URL
+// which no attribute group matches stops the enrichment. Silent removal of the
+// entry gives a document that looks correct but has lost the link.
+func TestEnrichCRTDL_UnresolvedLinkedGroup_ReturnsError(t *testing.T) {
+	doc := createTestCRTDLDocument()
+	unknownProfile := "https://www.example.org/fhir/StructureDefinition/Unknown"
+
+	enrichments := []models.GroupEnrichment{
+		{
+			GroupReference: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient",
+			AttributesToAdd: []models.EnrichmentAttribute{
+				{AttributeRef: "Patient.unknownRef", LinkedGroups: []string{unknownProfile}},
+			},
+		},
+	}
+
+	_, err := services.EnrichCRTDL(doc, enrichments)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), unknownProfile, "the error should name the profile URL")
+	assert.Contains(t, err.Error(), "Patient.unknownRef", "the error should name the attribute")
+	assert.Contains(t, err.Error(), "patient-group", "the error should name the group")
+}
+
 func TestEnrichCRTDL_MultipleEnrichments(t *testing.T) {
 	doc := createTestCRTDLDocument()
 	enrichments := []models.GroupEnrichment{
@@ -309,7 +372,10 @@ func TestResolveLinkedGroups_MultipleMatches(t *testing.T) {
 	assert.Contains(t, result, "encounter-group")
 }
 
-func TestResolveLinkedGroups_NoMatch(t *testing.T) {
+// TestResolveLinkedGroups_NoMatch_KeepsURL verifies that an unmatched profile
+// URL stays in the result. A dropped URL makes the lost link invisible to the
+// caller and to the cross-reference check.
+func TestResolveLinkedGroups_NoMatch_KeepsURL(t *testing.T) {
 	doc := createTestCRTDLDocument()
 	profileURLs := []string{
 		"https://www.example.org/fhir/StructureDefinition/NonExistent",
@@ -317,7 +383,7 @@ func TestResolveLinkedGroups_NoMatch(t *testing.T) {
 
 	result := services.ResolveLinkedGroups(doc, profileURLs)
 
-	assert.Empty(t, result)
+	assert.Equal(t, profileURLs, result, "an unmatched profile URL must stay in place")
 }
 
 func TestResolveLinkedGroups_EmptyInput(t *testing.T) {
@@ -669,6 +735,18 @@ func TestEnrichCRTDL_DeepCopyWithMultipleLinkedGroups(t *testing.T) {
 					GroupReference: "https://example.org/GroupA",
 					Attributes:     []models.Attribute{},
 				},
+				{
+					ID:             "group-b",
+					Name:           "GroupB",
+					GroupReference: "https://example.org/GroupB",
+					Attributes:     []models.Attribute{},
+				},
+				{
+					ID:             "group-c",
+					Name:           "GroupC",
+					GroupReference: "https://example.org/GroupC",
+					Attributes:     []models.Attribute{},
+				},
 			},
 		},
 	}
@@ -715,6 +793,15 @@ func TestEnrichCRTDL_DeepCopyWithMultipleLinkedGroups(t *testing.T) {
 func findGroupByID(doc models.CRTDLDocument, id string) *models.AttributeGroup {
 	for i := range doc.DataExtraction.AttributeGroups {
 		if doc.DataExtraction.AttributeGroups[i].ID == id {
+			return &doc.DataExtraction.AttributeGroups[i]
+		}
+	}
+	return nil
+}
+
+func findGroupByReference(doc models.CRTDLDocument, groupReference string) *models.AttributeGroup {
+	for i := range doc.DataExtraction.AttributeGroups {
+		if doc.DataExtraction.AttributeGroups[i].GroupReference == groupReference {
 			return &doc.DataExtraction.AttributeGroups[i]
 		}
 	}

@@ -176,4 +176,15 @@ auth:
   oauth_client_secret: "${OAUTH_CLIENT_SECRET}"
 ```
 
-For `s3_upload`, the `auth` block is optional and only used for upstream proxy auth (see [S3 Upload → Authentication](#authentication-1)). The S3 API itself is always authenticated via the keys under `s3.*`.
+**API Key:**
+```yaml
+auth:
+  api_key: "${FHIR_API_KEY}"
+  api_key_header: "x-api-key"   # optional; this is the default
+```
+
+The API key goes in its own header, not in `Authorization`. Thus you can set it
+together with Basic Auth or OAuth 2.0. Basic Auth and OAuth 2.0 both set
+`Authorization`; use one of them only.
+
+For `s3_upload`, the `auth` block is optional and only used for upstream proxy auth (see [S3 Upload → Authentication](#authentication-1)). The S3 API itself is always authenticated via the keys under `s3.*`. Proxy auth supports `username`/`password` only: in `s3_upload` mode Aether ignores `oauth_*` and `api_key`.

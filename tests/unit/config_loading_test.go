@@ -1353,6 +1353,69 @@ jobs_dir: "` + jobsDir + `"
 	assert.Equal(t, 10, config.Services.DIMP.BundleSplitThresholdMB, "bundle_split_threshold_mb should default to 10")
 }
 
+// TestConfigLoading_DIMPAuth verifies the dimp auth block loads from YAML.
+func TestConfigLoading_DIMPAuth(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  dimp:
+    url: "http://localhost:32861"
+    auth:
+      api_key: "dimp-secret"
+      api_key_header: "X-Gateway-Key"
+
+pipeline:
+  enabled_steps:
+    - local_import
+    - dimp
+
+jobs_dir: "` + jobsDir + `"
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(configContent), 0644))
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err, "Config should load without error")
+
+	assert.Equal(t, "dimp-secret", config.Services.DIMP.Auth.APIKey)
+	assert.Equal(t, "X-Gateway-Key", config.Services.DIMP.Auth.APIKeyHeader)
+	assert.Equal(t, 10, config.Services.DIMP.BundleSplitThresholdMB, "default survives the auth overlay")
+}
+
+// TestConfigLoading_DIMPAuthIncomplete verifies LoadConfig refuses an
+// inconsistent dimp auth block, not only a struct built in a test.
+func TestConfigLoading_DIMPAuthIncomplete(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  dimp:
+    url: "http://localhost:32861"
+    auth:
+      username: "dimp-user"
+
+pipeline:
+  enabled_steps:
+    - local_import
+    - dimp
+
+jobs_dir: "` + jobsDir + `"
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(configContent), 0644))
+
+	config, err := services.LoadConfig(configFile)
+
+	require.Error(t, err)
+	assert.Nil(t, config)
+	assert.Contains(t, err.Error(), "dimp auth: password is required")
+}
+
 // TestConfigLoading_CompressionDefault verifies compression defaults to enabled=true
 func TestConfigLoading_CompressionDefault(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -1814,7 +1877,7 @@ func TestSendConfig_ValidateMixedAuth(t *testing.T) {
 
 	err := config.Validate()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot configure both basic auth and OAuth2")
+	assert.Contains(t, err.Error(), "cannot configure basic auth and OAuth2 together")
 }
 
 // TestSendConfig_ValidateIncompleteBasicAuth verifies partial Basic Auth is rejected

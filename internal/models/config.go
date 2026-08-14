@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -71,6 +72,19 @@ type LocalImportConfig struct {
 type DIMPConfig struct {
 	URL                    string `yaml:"url" json:"url" mapstructure:"url"`
 	BundleSplitThresholdMB int    `yaml:"bundle_split_threshold_mb" json:"bundle_split_threshold_mb" mapstructure:"bundle_split_threshold_mb"` // Default 10MB - threshold for splitting large Bundles to prevent HTTP 413 errors
+	// Auth holds authentication settings for the DIMP service
+	Auth AuthConfig `yaml:"auth" json:"auth" mapstructure:"auth"`
+}
+
+// Validate checks that the DIMP config is well-formed. An empty URL is allowed
+// here; ProjectConfig.Validate refuses it only when the dimp step is enabled.
+func (c *DIMPConfig) Validate() error {
+	if c.URL != "" {
+		if _, err := url.Parse(c.URL); err != nil {
+			return fmt.Errorf("invalid dimp url: %w", err)
+		}
+	}
+	return c.Auth.Validate("dimp")
 }
 
 // TORCHConfig contains TORCH server connection and extraction behavior settings
@@ -106,7 +120,8 @@ const (
 	SendModeS3Upload SendMode = "s3_upload"
 )
 
-// AuthConfig holds unified authentication settings for send step
+// AuthConfig holds unified authentication settings for a service client.
+// Use one scheme only: basic auth, OAuth2 client credentials, or an API key.
 type AuthConfig struct {
 	// Basic Auth
 	Username string `yaml:"username" json:"username" mapstructure:"username"`
@@ -115,6 +130,21 @@ type AuthConfig struct {
 	OAuthIssuerURI    string `yaml:"oauth_issuer_uri" json:"oauth_issuer_uri" mapstructure:"oauth_issuer_uri"`
 	OAuthClientID     string `yaml:"oauth_client_id" json:"oauth_client_id" mapstructure:"oauth_client_id"`
 	OAuthClientSecret string `yaml:"oauth_client_secret" json:"oauth_client_secret" mapstructure:"oauth_client_secret"`
+	// API Key, sent in its own header instead of Authorization
+	APIKey string `yaml:"api_key" json:"api_key" mapstructure:"api_key"`
+	// APIKeyHeader names the header that carries APIKey. Empty means DefaultAPIKeyHeader.
+	APIKeyHeader string `yaml:"api_key_header" json:"api_key_header" mapstructure:"api_key_header"`
+}
+
+// DefaultAPIKeyHeader is the conventional header for an API key.
+const DefaultAPIKeyHeader = "x-api-key"
+
+// APIKeyHeaderName returns the header that carries the API key.
+func (c *AuthConfig) APIKeyHeaderName() string {
+	if c.APIKeyHeader != "" {
+		return c.APIKeyHeader
+	}
+	return DefaultAPIKeyHeader
 }
 
 // TransferConfig holds settings specific to transfer_load mode
@@ -255,38 +285,79 @@ func (c *SendConfig) validateS3Upload() error {
 
 // validateAuth checks that authentication configuration is consistent
 func (c *SendConfig) validateAuth() error {
-	hasBasicAuth := c.Auth.Username != "" || c.Auth.Password != ""
-	hasOAuth2 := c.Auth.OAuthIssuerURI != "" || c.Auth.OAuthClientID != "" || c.Auth.OAuthClientSecret != ""
+	return c.Auth.Validate("send")
+}
 
-	// Cannot mix both auth methods
+// Validate checks that the authentication configuration is consistent. It
+// refuses basic auth together with OAuth2, and an incomplete set of fields for
+// one scheme. An API key can accompany basic auth or OAuth2, because it uses
+// its own header. The scope names the owning config block in the error
+// message, e.g. "send".
+func (c *AuthConfig) Validate(scope string) error {
+	hasBasicAuth := c.Username != "" || c.Password != ""
+	hasOAuth2 := c.OAuthIssuerURI != "" || c.OAuthClientID != "" || c.OAuthClientSecret != ""
+
+	// Basic auth and OAuth2 both write the Authorization header
 	if hasBasicAuth && hasOAuth2 {
-		return fmt.Errorf("send auth: cannot configure both basic auth and OAuth2; use one or the other")
+		return fmt.Errorf("%s auth: cannot configure basic auth and OAuth2 together; use one only", scope)
 	}
 
 	// If using Basic Auth, both username and password must be set
 	if hasBasicAuth {
-		if c.Auth.Username == "" {
-			return fmt.Errorf("send auth: username is required when using basic auth")
+		if c.Username == "" {
+			return fmt.Errorf("%s auth: username is required when using basic auth", scope)
 		}
-		if c.Auth.Password == "" {
-			return fmt.Errorf("send auth: password is required when using basic auth")
+		if c.Password == "" {
+			return fmt.Errorf("%s auth: password is required when using basic auth", scope)
 		}
 	}
 
 	// If using OAuth2, all three fields must be set
 	if hasOAuth2 {
-		if c.Auth.OAuthIssuerURI == "" {
-			return fmt.Errorf("send auth: oauth_issuer_uri is required when using OAuth2")
+		if c.OAuthIssuerURI == "" {
+			return fmt.Errorf("%s auth: oauth_issuer_uri is required when using OAuth2", scope)
 		}
-		if c.Auth.OAuthClientID == "" {
-			return fmt.Errorf("send auth: oauth_client_id is required when using OAuth2")
+		if c.OAuthClientID == "" {
+			return fmt.Errorf("%s auth: oauth_client_id is required when using OAuth2", scope)
 		}
-		if c.Auth.OAuthClientSecret == "" {
-			return fmt.Errorf("send auth: oauth_client_secret is required when using OAuth2")
+		if c.OAuthClientSecret == "" {
+			return fmt.Errorf("%s auth: oauth_client_secret is required when using OAuth2", scope)
 		}
 	}
 
+	// api_key_header only names the header; it needs a key to send
+	if c.APIKeyHeader != "" && c.APIKey == "" {
+		return fmt.Errorf("%s auth: api_key is required when api_key_header is set", scope)
+	}
+
+	if c.APIKeyHeader != "" && !isValidHeaderFieldName(c.APIKeyHeader) {
+		return fmt.Errorf("%s auth: api_key_header is not a valid HTTP header name: %q", scope, c.APIKeyHeader)
+	}
+
+	// One scheme per header: the API key would overwrite basic auth or OAuth2
+	if strings.EqualFold(c.APIKeyHeader, "Authorization") && (hasBasicAuth || hasOAuth2) {
+		return fmt.Errorf("%s auth: api_key_header cannot be Authorization together with basic auth or OAuth2; they write the same header", scope)
+	}
+
 	return nil
+}
+
+// isValidHeaderFieldName reports whether name is a token as RFC 9110, section
+// 5.6.2 defines it. net/http refuses any other name when it writes the request.
+func isValidHeaderFieldName(name string) bool {
+	const separators = "!#$%&'*+-.^_`|~"
+
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
+		case strings.IndexByte(separators, c) >= 0:
+		default:
+			return false
+		}
+	}
+
+	return name != ""
 }
 
 // SendAuthType represents the type of authentication to use
@@ -299,15 +370,22 @@ const (
 	SendAuthBasic
 	// SendAuthOAuth2 indicates OAuth2 client credentials
 	SendAuthOAuth2
+	// SendAuthAPIKey indicates an API key sent in its own header
+	SendAuthAPIKey
 )
 
-// GetAuthType returns the authentication type based on configuration
+// GetAuthType returns the scheme that sets the Authorization header. It
+// returns SendAuthAPIKey only when the API key is the sole scheme, because an
+// API key can accompany basic auth or OAuth2.
 func (c *SendConfig) GetAuthType() SendAuthType {
 	if c.Auth.Username != "" && c.Auth.Password != "" {
 		return SendAuthBasic
 	}
 	if c.Auth.OAuthIssuerURI != "" && c.Auth.OAuthClientID != "" && c.Auth.OAuthClientSecret != "" {
 		return SendAuthOAuth2
+	}
+	if c.Auth.APIKey != "" {
+		return SendAuthAPIKey
 	}
 	return SendAuthNone
 }

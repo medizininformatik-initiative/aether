@@ -2,20 +2,23 @@ package services
 
 import (
 	"github.com/medizininformatik-initiative/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
 // DIMPClient handles communication with the DIMP pseudonymization service
 // Per contracts/dimp-service.md
 type DIMPClient struct {
 	baseURL    string
+	auth       models.AuthConfig
 	httpClient *HTTPClient
 	logger     *lib.Logger
 }
 
-// NewDIMPClient creates a new DIMP client with the given base URL
-func NewDIMPClient(baseURL string, httpClient *HTTPClient, logger *lib.Logger) *DIMPClient {
+// NewDIMPClient creates a new DIMP client from the DIMP service config
+func NewDIMPClient(config models.DIMPConfig, httpClient *HTTPClient, logger *lib.Logger) *DIMPClient {
 	return &DIMPClient{
-		baseURL:    baseURL,
+		baseURL:    config.URL,
+		auth:       config.Auth,
 		httpClient: httpClient,
 		logger:     logger,
 	}
@@ -42,6 +45,7 @@ func (c *DIMPClient) Pseudonymize(resource map[string]any) (map[string]any, erro
 		URL:         url,
 		ContentType: "application/json",
 		Body:        resource,
+		Auth:        c.auth,
 		Service:     "DIMP",
 	}, &pseudonymized)
 	if err != nil {

@@ -228,10 +228,23 @@ func (c *HTTPClient) DoOnce(req *http.Request) (*http.Response, error) {
 	return resp, err
 }
 
-// ApplyAuth sets the Authorization header from the given auth config.
-// Basic auth takes precedence; OAuth2 client-credentials is used otherwise.
+// ApplyAuth sets the authentication headers from the given auth config.
+// Basic auth or OAuth2 client-credentials set Authorization; basic auth takes
+// precedence. The API key sets its own header and can accompany either scheme.
 // No header is set when auth is unconfigured.
 func (c *HTTPClient) ApplyAuth(req *http.Request, auth models.AuthConfig) error {
+	if err := c.applyAuthorizationHeader(req, auth); err != nil {
+		return err
+	}
+
+	if auth.APIKey != "" {
+		req.Header.Set(auth.APIKeyHeaderName(), auth.APIKey)
+	}
+
+	return nil
+}
+
+func (c *HTTPClient) applyAuthorizationHeader(req *http.Request, auth models.AuthConfig) error {
 	if auth.Username != "" && auth.Password != "" {
 		credentials := auth.Username + ":" + auth.Password
 		encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
@@ -245,7 +258,6 @@ func (c *HTTPClient) ApplyAuth(req *http.Request, auth models.AuthConfig) error 
 			return fmt.Errorf("failed to get OAuth2 token: %w", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
-		return nil
 	}
 
 	return nil

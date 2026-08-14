@@ -48,7 +48,19 @@ services:
   dimp:
     url: "http://your-dimp-server:32861"  # server root; /fhir appended by client
     bundle_split_threshold_mb: 10  # Auto-split large bundles
+    auth:                          # optional
+      api_key: "your-api-key"      # sent as x-api-key
 ```
+
+The `auth` block accepts Basic Auth (`username`/`password`), OAuth 2.0 client
+credentials (`oauth_issuer_uri`/`oauth_client_id`/`oauth_client_secret`), or an
+API key (`api_key`, with `api_key_header` to change the header from the default
+`x-api-key`).
+
+Basic Auth and OAuth 2.0 both set the `Authorization` header. Use one of them
+only. The API key uses its own header, thus you can set it together with Basic
+Auth or OAuth 2.0. This applies to a gateway that needs an API key in front of a
+service that needs `Authorization`.
 
 ### Flattening
 

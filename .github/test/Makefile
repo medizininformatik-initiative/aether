@@ -1,7 +1,7 @@
 # Makefile for Aether Test Infrastructure
 # Located in .github/test/
 
-.PHONY: help services build start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test flattener-up flattener-down flattener-logs blaze-up blaze-down blaze-logs validator-up validator-down validator-logs seaweedfs-up seaweedfs-down seaweedfs-logs test-with-services download-testdata upload-testdata e2e-test e2e-test-flattening e2e-test-validation e2e-test-direct-load e2e-test-s3-upload clean-test-data
+.PHONY: help services build start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test flattener-up flattener-down flattener-logs blaze-up blaze-down blaze-logs validator-up validator-down validator-logs seaweedfs-up seaweedfs-down seaweedfs-logs test-with-services download-testdata upload-testdata e2e-test e2e-test-flattening e2e-test-validation e2e-test-dimp-v3 e2e-test-direct-load e2e-test-s3-upload clean-test-data
 
 # Default target
 .DEFAULT_GOAL := help
@@ -48,6 +48,7 @@ help:
 	@echo "  e2e-test          Run end-to-end test (downloads, uploads, runs pipeline)"
 	@echo "  e2e-test-flattening Run flattening E2E test with pre-staged example data"
 	@echo "  e2e-test-validation Run validation E2E test with pre-staged example data"
+	@echo "  e2e-test-dimp-v3  Run DIMP experimental v3 E2E test with pre-staged example data"
 	@echo "  e2e-test-direct-load Run direct resource load E2E test (torch → send)"
 	@echo "  build             Build aether binary"
 	@echo "  e2e-test-s3-upload Run S3 upload E2E test (torch → send via SeaweedFS)"
@@ -251,6 +252,15 @@ e2e-test-validation:
 	@echo "Running validation E2E test script..."
 	@../scripts/run-validation-e2e-test.sh
 	@echo "✓ Validation E2E test complete"
+
+## e2e-test-dimp-v3: Run DIMP experimental v3 E2E test with pre-staged example data
+e2e-test-dimp-v3:
+	@echo "Running DIMP experimental v3 E2E test..."
+	@echo "Starting fhir-pseudonymizer and aether-runner services..."
+	@docker compose up -d --wait aether-runner fhir-pseudonymizer
+	@echo "Running DIMP experimental v3 E2E test script..."
+	@../scripts/run-dimp-v3-e2e-test.sh
+	@echo "✓ DIMP experimental v3 E2E test complete"
 
 ## seaweedfs-up: Start SeaweedFS S3-compatible object store
 seaweedfs-up:

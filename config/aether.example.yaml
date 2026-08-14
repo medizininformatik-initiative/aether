@@ -87,6 +87,16 @@ services:
     #   api_key: "your-api-key"
     #   api_key_header: "x-api-key"
 
+    # Experimental v3 endpoint (optional)
+    # An anonymization_config path sends requests to the v3alpha1 endpoint of
+    # the FHIR-Pseudonymizer, with the anonymization YAML in each request.
+    # The service then does not need a restart for configuration changes.
+    # Without this path, aether uses the default endpoint.
+    # The endpoint needs FHIR-Pseudonymizer v2.31.0 or later.
+    # The upstream endpoint is experimental and can change.
+    # experimental_v3:
+    #   anonymization_config: "/path/to/anonymization.yaml"
+
   # CRTDL Preprocessing (optional)
   # Enriches CRTDL files with additional attributes required by DIMP before sending to TORCH.
   # This is needed when DIMP requires certain identifiers (e.g., PseudonymisierterIdentifier,

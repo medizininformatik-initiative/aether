@@ -28,7 +28,7 @@ func TestDIMPStep_UsesFakeDIMPProcessor(t *testing.T) {
 			return r, nil
 		},
 	}
-	pipeline.SetDIMPFactoryForTesting(func(_ models.DIMPConfig, _ *services.HTTPClient, _ *lib.Logger) services.DIMPProcessor {
+	pipeline.SetDIMPFactoryForTesting(func(_ models.DIMPConfig, _ []byte, _ *services.HTTPClient, _ *lib.Logger) services.DIMPProcessor {
 		return mock
 	})
 	defer pipeline.ResetDIMPFactory()
@@ -47,6 +47,48 @@ func TestDIMPStep_UsesFakeDIMPProcessor(t *testing.T) {
 	out := readDIMPNDJSON(t, filepath.Join(tmpDir, "dimp", "dimped_patients.ndjson"))
 	require.Len(t, out, 1)
 	assert.Equal(t, "fake-p1", out[0]["id"])
+}
+
+func TestDIMPStep_ExperimentalV3_PassesAnonymizationConfigToFactory(t *testing.T) {
+	tmpDir := t.TempDir()
+	anonPath := filepath.Join(tmpDir, "anonymization.yaml")
+	require.NoError(t, os.WriteFile(anonPath, []byte("fhirVersion: R4\n"), 0644))
+
+	var gotConfig []byte
+	mock := &servicestest.MockDIMPProcessor{}
+	pipeline.SetDIMPFactoryForTesting(func(_ models.DIMPConfig, anonymizationConfig []byte, _ *services.HTTPClient, _ *lib.Logger) services.DIMPProcessor {
+		gotConfig = anonymizationConfig
+		return mock
+	})
+	defer pipeline.ResetDIMPFactory()
+
+	job := createDIMPTestJob("http://unused-by-fake")
+	job.Config.Services.DIMP.ExperimentalV3 = models.DIMPExperimentalV3Config{
+		AnonymizationConfig: anonPath,
+	}
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+	writeDIMPNDJSON(t, filepath.Join(importDir, "patients.ndjson"), []map[string]any{
+		{"resourceType": "Patient", "id": "p1"},
+	})
+
+	require.NoError(t, runPipelineStep(models.StepDIMP, job, tmpDir, createDIMPTestLogger()))
+
+	require.NotEmpty(t, mock.Calls, "step must call the injected fake")
+	assert.Equal(t, "fhirVersion: R4\n", string(gotConfig), "step must pass the anonymization YAML to the v3 client")
+}
+
+// The step fails in client construction, before it reads any input files.
+func TestDIMPStep_ExperimentalV3_UnreadableConfigFails(t *testing.T) {
+	tmpDir := t.TempDir()
+	job := createDIMPTestJob("http://dimp.invalid")
+	job.Config.Services.DIMP.ExperimentalV3 = models.DIMPExperimentalV3Config{
+		AnonymizationConfig: filepath.Join(tmpDir, "does-not-exist.yaml"),
+	}
+
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, createDIMPTestLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "anonymization config")
 }
 
 func TestValidationStep_UsesFakeValidator(t *testing.T) {

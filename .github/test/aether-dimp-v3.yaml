@@ -1,0 +1,31 @@
+# Aether DIMP experimental v3 E2E Test Configuration
+# Uses internal Docker hostnames since aether runs inside the Docker network
+
+services:
+  # DIMP Pseudonymization Service
+  dimp:
+    url: "http://fhir-pseudonymizer:8080"
+    bundle_split_threshold_mb: 10
+
+    # A path here selects the experimental v3alpha1 endpoint. Aether reads the
+    # file once and sends it with each request.
+    experimental_v3:
+      anonymization_config: "/app/example-dimp-v3/anonymization.yaml"
+
+pipeline:
+  # Pipeline starts from pre-staged data after the local_import step
+  enabled_steps:
+    - local_import  # Already completed (pre-staged)
+    - dimp          # This is the step being tested
+
+# Disable compression for simpler test verification
+compression:
+  enabled: false
+
+retry:
+  max_attempts: 3
+  initial_backoff_ms: 1000
+  max_backoff_ms: 10000
+
+# Directory to store job state and data
+jobs_dir: "./jobs"

@@ -24,9 +24,11 @@ services:
       - ./aether-validation.yaml:/app/aether-validation.yaml:ro
       - ./aether-direct-load.yaml:/app/aether-direct-load.yaml:ro
       - ./aether-s3-upload.yaml:/app/aether-s3-upload.yaml:ro
+      - ./aether-dimp-v3.yaml:/app/aether-dimp-v3.yaml:ro
       - ./torch/queries:/app/torch/queries:ro
       - ./example-flattening:/app/example-flattening:ro
       - ./example-validation:/app/example-validation:ro
+      - ./example-dimp-v3:/app/example-dimp-v3:ro
       - ./jobs:/app/jobs
     # Keep container running so we can exec into it
     command: ["sleep", "infinity"]

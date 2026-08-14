@@ -1,0 +1,24 @@
+---
+# Anonymization rules that aether sends with each request to the experimental
+# v3alpha1 endpoint of the FHIR-Pseudonymizer.
+#
+# Each rule is the opposite of the rule in dimp/anonymization.yaml, the file
+# that the service reads at start. The e2e test uses this difference to prove
+# that the service applies the rules from the request, not its own file.
+#
+#   field      | this file        | dimp/anonymization.yaml
+#   -----------+------------------+------------------------
+#   gender     | redact           | keep (no rule)
+#   birthDate  | keep exact       | generalize to the year
+#   name       | keep             | redact
+#   id         | keep             | cryptoHash
+fhirVersion: R4
+fhirPathRules:
+  - path: Patient.gender
+    method: redact
+  - path: Patient.birthDate
+    method: keep
+  - path: nodesByType('HumanName')
+    method: keep
+  - path: Resource.id
+    method: keep

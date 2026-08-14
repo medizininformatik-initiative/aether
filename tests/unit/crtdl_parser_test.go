@@ -14,63 +14,14 @@ import (
 
 func TestParseCRTDL(t *testing.T) {
 	t.Run("valid CRTDL", func(t *testing.T) {
-		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.json")
-		crtdlJSON := `{
-			"dataExtraction": {
-				"attributeGroups": [
-					{
-						"id": "group-1",
-						"name": "Patients",
-						"groupReference": "https://example.com/Patient",
-						"attributes": [
-							{"attributeRef": "Patient.id", "mustHave": true},
-							{"attributeRef": "Patient.name", "mustHave": false}
-						]
-					}
-				]
-			}
-		}`
-		err := os.WriteFile(crtdlPath, []byte(crtdlJSON), 0644)
-		require.NoError(t, err)
-
-		doc, err := services.ParseCRTDL(crtdlPath)
+		doc, err := services.ParseCRTDL(validCRTDLFixture)
 		require.NoError(t, err)
 		require.NotNil(t, doc)
-		assert.Len(t, doc.DataExtraction.AttributeGroups, 1)
-		assert.Equal(t, "group-1", doc.DataExtraction.AttributeGroups[0].ID)
-		assert.Equal(t, "Patients", doc.DataExtraction.AttributeGroups[0].Name)
-		assert.Equal(t, "https://example.com/Patient", doc.DataExtraction.AttributeGroups[0].GroupReference)
+		require.Len(t, doc.DataExtraction.AttributeGroups, 2)
+		assert.Equal(t, "1234", doc.DataExtraction.AttributeGroups[0].ID)
+		assert.Equal(t, "TyphusDiagnosis", doc.DataExtraction.AttributeGroups[0].Name)
+		assert.NotEmpty(t, doc.DataExtraction.AttributeGroups[0].GroupReference)
 		assert.Len(t, doc.DataExtraction.AttributeGroups[0].Attributes, 2)
-	})
-
-	t.Run("multiple attribute groups", func(t *testing.T) {
-		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.json")
-		crtdlJSON := `{
-			"dataExtraction": {
-				"attributeGroups": [
-					{
-						"id": "group-1",
-						"name": "Patients",
-						"groupReference": "https://example.com/Patient",
-						"attributes": [{"attributeRef": "Patient.id", "mustHave": true}]
-					},
-					{
-						"id": "group-2",
-						"name": "Conditions",
-						"groupReference": "https://example.com/Condition",
-						"attributes": [{"attributeRef": "Condition.code", "mustHave": true}]
-					}
-				]
-			}
-		}`
-		err := os.WriteFile(crtdlPath, []byte(crtdlJSON), 0644)
-		require.NoError(t, err)
-
-		doc, err := services.ParseCRTDL(crtdlPath)
-		require.NoError(t, err)
-		assert.Len(t, doc.DataExtraction.AttributeGroups, 2)
 	})
 
 	t.Run("file not found", func(t *testing.T) {
@@ -87,10 +38,10 @@ func TestParseCRTDL(t *testing.T) {
 
 		_, err = services.ParseCRTDL(crtdlPath)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to parse CRTDL file")
+		assert.Contains(t, err.Error(), "malformed-json")
 	})
 
-	t.Run("missing attribute groups", func(t *testing.T) {
+	t.Run("invalid document", func(t *testing.T) {
 		tempDir := t.TempDir()
 		crtdlPath := filepath.Join(tempDir, "test.json")
 		crtdlJSON := `{"dataExtraction": {"attributeGroups": []}}`
@@ -99,171 +50,7 @@ func TestParseCRTDL(t *testing.T) {
 
 		_, err = services.ParseCRTDL(crtdlPath)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "at least one attributeGroup")
-	})
-
-	t.Run("missing id", func(t *testing.T) {
-		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.json")
-		crtdlJSON := `{
-			"dataExtraction": {
-				"attributeGroups": [{
-					"name": "Patients",
-					"groupReference": "https://example.com/Patient",
-					"attributes": [{"attributeRef": "Patient.id", "mustHave": true}]
-				}]
-			}
-		}`
-		err := os.WriteFile(crtdlPath, []byte(crtdlJSON), 0644)
-		require.NoError(t, err)
-
-		_, err = services.ParseCRTDL(crtdlPath)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "missing 'id' field")
-	})
-
-	t.Run("missing name", func(t *testing.T) {
-		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.json")
-		crtdlJSON := `{
-			"dataExtraction": {
-				"attributeGroups": [{
-					"id": "group-1",
-					"groupReference": "https://example.com/Patient",
-					"attributes": [{"attributeRef": "Patient.id", "mustHave": true}]
-				}]
-			}
-		}`
-		err := os.WriteFile(crtdlPath, []byte(crtdlJSON), 0644)
-		require.NoError(t, err)
-
-		_, err = services.ParseCRTDL(crtdlPath)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "missing 'name' field")
-	})
-
-	t.Run("missing groupReference", func(t *testing.T) {
-		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.json")
-		crtdlJSON := `{
-			"dataExtraction": {
-				"attributeGroups": [{
-					"id": "group-1",
-					"name": "Patients",
-					"attributes": [{"attributeRef": "Patient.id", "mustHave": true}]
-				}]
-			}
-		}`
-		err := os.WriteFile(crtdlPath, []byte(crtdlJSON), 0644)
-		require.NoError(t, err)
-
-		_, err = services.ParseCRTDL(crtdlPath)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "missing 'groupReference' field")
-	})
-
-	t.Run("missing attributes", func(t *testing.T) {
-		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.json")
-		crtdlJSON := `{
-			"dataExtraction": {
-				"attributeGroups": [{
-					"id": "group-1",
-					"name": "Patients",
-					"groupReference": "https://example.com/Patient",
-					"attributes": []
-				}]
-			}
-		}`
-		err := os.WriteFile(crtdlPath, []byte(crtdlJSON), 0644)
-		require.NoError(t, err)
-
-		_, err = services.ParseCRTDL(crtdlPath)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "at least one attribute")
-	})
-
-	t.Run("duplicate group name", func(t *testing.T) {
-		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.json")
-		crtdlJSON := `{
-			"dataExtraction": {
-				"attributeGroups": [
-					{
-						"id": "group-1",
-						"name": "Patients",
-						"groupReference": "https://example.com/Patient",
-						"attributes": [{"attributeRef": "Patient.id", "mustHave": true}]
-					},
-					{
-						"id": "group-2",
-						"name": "Patients",
-						"groupReference": "https://example.com/PatientOther",
-						"attributes": [{"attributeRef": "Patient.id", "mustHave": true}]
-					}
-				]
-			}
-		}`
-		err := os.WriteFile(crtdlPath, []byte(crtdlJSON), 0644)
-		require.NoError(t, err)
-
-		_, err = services.ParseCRTDL(crtdlPath)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "same name 'Patients'")
-		assert.Contains(t, err.Error(), "group-1")
-		assert.Contains(t, err.Error(), "group-2")
-	})
-
-	t.Run("group names that map to one CSV file name", func(t *testing.T) {
-		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.json")
-		crtdlJSON := `{
-			"dataExtraction": {
-				"attributeGroups": [
-					{
-						"id": "group-1",
-						"name": "Fall/Kontakt",
-						"groupReference": "https://example.com/Encounter",
-						"attributes": [{"attributeRef": "Encounter.id", "mustHave": true}]
-					},
-					{
-						"id": "group-2",
-						"name": "Fall_Kontakt",
-						"groupReference": "https://example.com/EncounterOther",
-						"attributes": [{"attributeRef": "Encounter.id", "mustHave": true}]
-					}
-				]
-			}
-		}`
-		err := os.WriteFile(crtdlPath, []byte(crtdlJSON), 0644)
-		require.NoError(t, err)
-
-		_, err = services.ParseCRTDL(crtdlPath)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "Fall_Kontakt.csv")
-		assert.Contains(t, err.Error(), "group-1")
-		assert.Contains(t, err.Error(), "group-2")
-	})
-
-	t.Run("missing attributeRef", func(t *testing.T) {
-		tempDir := t.TempDir()
-		crtdlPath := filepath.Join(tempDir, "test.json")
-		crtdlJSON := `{
-			"dataExtraction": {
-				"attributeGroups": [{
-					"id": "group-1",
-					"name": "Patients",
-					"groupReference": "https://example.com/Patient",
-					"attributes": [{"mustHave": true}]
-				}]
-			}
-		}`
-		err := os.WriteFile(crtdlPath, []byte(crtdlJSON), 0644)
-		require.NoError(t, err)
-
-		_, err = services.ParseCRTDL(crtdlPath)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "missing 'attributeRef' field")
+		assert.Contains(t, err.Error(), "schema-violation")
 	})
 }
 

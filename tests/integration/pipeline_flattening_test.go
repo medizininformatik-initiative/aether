@@ -58,6 +58,22 @@ func makeBundle(id string, resources ...map[string]any) map[string]any {
 	}
 }
 
+// wrapCRTDL embeds a dataExtraction JSON object in a CRTDL envelope that the
+// schema accepts.
+func wrapCRTDL(dataExtraction string) string {
+	return `{
+		"version": "http://json-schema.org/to-be-methodically-defined",
+		"cohortDefinition": {
+			"version": "http://to_be_decided.com/draft-1/schema#",
+			"inclusionCriteria": [[{
+				"context": {"code": "Patient", "system": "http://example.org/cs", "display": "Patient"},
+				"termCodes": [{"code": "263495000", "system": "http://snomed.info/sct", "display": "Gender"}]
+			}]]
+		},
+		"dataExtraction": ` + dataExtraction + `
+	}`
+}
+
 func TestExecuteFlatteningStep_FullPipeline(t *testing.T) {
 	// Create a mock fhir-flattener server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -85,21 +101,19 @@ func TestExecuteFlatteningStep_FullPipeline(t *testing.T) {
 
 	// Create CRTDL file with group ID
 	crtdlPath := filepath.Join(tempDir, "test.json")
-	crtdlContent := `{
-		"dataExtraction": {
-			"attributeGroups": [
-				{
-					"id": "` + groupID + `",
-					"name": "Patients",
-					"groupReference": "https://example.com/Patient",
-					"attributes": [
-						{"attributeRef": "Patient.id", "mustHave": true},
-						{"attributeRef": "Patient.name", "mustHave": false}
-					]
-				}
-			]
-		}
-	}`
+	crtdlContent := wrapCRTDL(`{
+		"attributeGroups": [
+			{
+				"id": "` + groupID + `",
+				"name": "Patients",
+				"groupReference": "https://example.com/Patient",
+				"attributes": [
+					{"attributeRef": "Patient.id", "mustHave": true},
+					{"attributeRef": "Patient.name", "mustHave": false}
+				]
+			}
+		]
+	}`)
 	require.NoError(t, os.WriteFile(crtdlPath, []byte(crtdlContent), 0644))
 
 	// Create lookup table file
@@ -295,16 +309,14 @@ func TestExecuteFlatteningStep_MissingLookupTables(t *testing.T) {
 
 	// Create valid CRTDL
 	crtdlPath := filepath.Join(tempDir, "test.json")
-	crtdlContent := `{
-		"dataExtraction": {
-			"attributeGroups": [{
-				"id": "group-1",
-				"name": "Test",
-				"groupReference": "https://example.com/Test",
-				"attributes": [{"attributeRef": "Test.id"}]
-			}]
-		}
-	}`
+	crtdlContent := wrapCRTDL(`{
+		"attributeGroups": [{
+			"id": "group-1",
+			"name": "Test",
+			"groupReference": "https://example.com/Test",
+			"attributes": [{"attributeRef": "Test.id", "mustHave": true}]
+		}]
+	}`)
 	require.NoError(t, os.WriteFile(crtdlPath, []byte(crtdlContent), 0644))
 
 	job := &models.PipelineJob{
@@ -343,16 +355,14 @@ func TestExecuteFlatteningStep_NoInputFiles(t *testing.T) {
 
 	// Create valid CRTDL
 	crtdlPath := filepath.Join(tempDir, "test.json")
-	crtdlContent := `{
-		"dataExtraction": {
-			"attributeGroups": [{
-				"id": "group-1",
-				"name": "Test",
-				"groupReference": "https://example.com/Test",
-				"attributes": [{"attributeRef": "Test.id"}]
-			}]
-		}
-	}`
+	crtdlContent := wrapCRTDL(`{
+		"attributeGroups": [{
+			"id": "group-1",
+			"name": "Test",
+			"groupReference": "https://example.com/Test",
+			"attributes": [{"attributeRef": "Test.id", "mustHave": true}]
+		}]
+	}`)
 	require.NoError(t, os.WriteFile(crtdlPath, []byte(crtdlContent), 0644))
 
 	// Create valid lookup table
@@ -405,16 +415,14 @@ func TestExecuteFlatteningStep_FlattenerServiceError(t *testing.T) {
 
 	// Create CRTDL
 	crtdlPath := filepath.Join(tempDir, "test.json")
-	crtdlContent := `{
-		"dataExtraction": {
-			"attributeGroups": [{
-				"id": "` + groupID + `",
-				"name": "Test",
-				"groupReference": "https://example.com/Patient",
-				"attributes": [{"attributeRef": "Patient.id"}]
-			}]
-		}
-	}`
+	crtdlContent := wrapCRTDL(`{
+		"attributeGroups": [{
+			"id": "` + groupID + `",
+			"name": "Test",
+			"groupReference": "https://example.com/Patient",
+			"attributes": [{"attributeRef": "Patient.id", "mustHave": true}]
+		}]
+	}`)
 	require.NoError(t, os.WriteFile(crtdlPath, []byte(crtdlContent), 0644))
 
 	// Create lookup table
@@ -496,19 +504,17 @@ func TestExecuteFlatteningStep_NonBundleStreamRouting(t *testing.T) {
 	groupID := "group-patient-nb"
 
 	crtdlPath := filepath.Join(tempDir, "test.json")
-	crtdlContent := `{
-		"dataExtraction": {
-			"attributeGroups": [{
-				"id": "` + groupID + `",
-				"name": "Patients",
-				"groupReference": "https://example.com/Patient",
-				"attributes": [
-					{"attributeRef": "Patient.id", "mustHave": true},
-					{"attributeRef": "Patient.name", "mustHave": false}
-				]
-			}]
-		}
-	}`
+	crtdlContent := wrapCRTDL(`{
+		"attributeGroups": [{
+			"id": "` + groupID + `",
+			"name": "Patients",
+			"groupReference": "https://example.com/Patient",
+			"attributes": [
+				{"attributeRef": "Patient.id", "mustHave": true},
+				{"attributeRef": "Patient.name", "mustHave": false}
+			]
+		}]
+	}`)
 	require.NoError(t, os.WriteFile(crtdlPath, []byte(crtdlContent), 0644))
 
 	lookupPath := filepath.Join(tempDir, "lookup.json")

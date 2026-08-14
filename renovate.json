@@ -17,6 +17,9 @@
   "labels": [
     "dependencies"
   ],
+  "postUpdateOptions": [
+    "gomodTidy"
+  ],
   "prConcurrentLimit": 1,
   "packageRules": [
     {

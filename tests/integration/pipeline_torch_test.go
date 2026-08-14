@@ -858,34 +858,16 @@ func TestPipeline_TORCHExtraction_WithPreprocessing(t *testing.T) {
 
 	// Create CRTDL file with a Patient group (missing the enrichment attributes)
 	crtdlPath := filepath.Join(tempDir, "test-preprocessing.json")
-	crtdlContent := map[string]any{
-		"version": "http://json-schema.org/to-be-methodically-defined",
-		"cohortDefinition": map[string]any{
-			"version": "http://to_be_decided.com/draft-1/schema#",
-			"display": "Test cohort",
-			"inclusionCriteria": []any{
-				[]any{
-					map[string]any{
-						"context": map[string]any{
-							"code": "Patient", "system": "http://example.org/cs", "display": "Patient",
-						},
-						"termCodes": []any{
-							map[string]any{"code": "263495000", "system": "http://snomed.info/sct", "display": "Gender"},
-						},
-					},
-				},
-			},
-		},
-		"dataExtraction": map[string]any{
-			"attributeGroups": []map[string]any{
-				{
-					"id":             "patient-group",
-					"name":           "Patient",
-					"groupReference": "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient",
-					"attributes": []map[string]any{
-						{"attributeRef": "Patient.id", "mustHave": true},
-						{"attributeRef": "Patient.gender", "mustHave": false},
-					},
+	crtdlContent := schemaValidCRTDL()
+	crtdlContent["dataExtraction"] = map[string]any{
+		"attributeGroups": []map[string]any{
+			{
+				"id":             "patient-group",
+				"name":           "Patient",
+				"groupReference": "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient",
+				"attributes": []map[string]any{
+					{"attributeRef": "Patient.id", "mustHave": true},
+					{"attributeRef": "Patient.gender", "mustHave": false},
 				},
 			},
 		},
@@ -1420,18 +1402,25 @@ func TestPipeline_TORCHExtraction_DeadHandleResubmitsViaImportStep(t *testing.T)
 // Integration test - verify error handling when CRTDL preprocessing fails
 // Covers error paths in internal/pipeline/import.go (preprocessCRTDL function)
 
-func TestPipeline_TORCHExtraction_PreprocessingError_InvalidEnrichmentsPath(t *testing.T) {
-	// Setup: Create test environment
-	tempDir := t.TempDir()
-	jobsDir := filepath.Join(tempDir, "jobs")
-	_ = os.MkdirAll(jobsDir, 0755)
-
-	// Create valid CRTDL file
-	crtdlPath := filepath.Join(tempDir, "valid.json")
-	crtdlContent := map[string]any{
+// schemaValidCRTDL returns a CRTDL document that passes the full startup
+// validation, with one Patient attribute group.
+func schemaValidCRTDL() map[string]any {
+	return map[string]any{
+		"version": "http://json-schema.org/to-be-methodically-defined",
 		"cohortDefinition": map[string]any{
-			"version":           "1.0.0",
-			"inclusionCriteria": []any{},
+			"version": "http://to_be_decided.com/draft-1/schema#",
+			"inclusionCriteria": []any{
+				[]any{
+					map[string]any{
+						"context": map[string]any{
+							"code": "Patient", "system": "http://example.org/cs", "display": "Patient",
+						},
+						"termCodes": []any{
+							map[string]any{"code": "263495000", "system": "http://snomed.info/sct", "display": "Gender"},
+						},
+					},
+				},
+			},
 		},
 		"dataExtraction": map[string]any{
 			"attributeGroups": []map[string]any{
@@ -1446,6 +1435,17 @@ func TestPipeline_TORCHExtraction_PreprocessingError_InvalidEnrichmentsPath(t *t
 			},
 		},
 	}
+}
+
+func TestPipeline_TORCHExtraction_PreprocessingError_InvalidEnrichmentsPath(t *testing.T) {
+	// Setup: Create test environment
+	tempDir := t.TempDir()
+	jobsDir := filepath.Join(tempDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	// Create valid CRTDL file
+	crtdlPath := filepath.Join(tempDir, "valid.json")
+	crtdlContent := schemaValidCRTDL()
 	crtdlJSON, _ := json.Marshal(crtdlContent)
 	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
 
@@ -1500,24 +1500,7 @@ func TestPipeline_TORCHExtraction_PreprocessingDisabled_UsesOriginalCRTDL(t *tes
 
 	// Create CRTDL file
 	crtdlPath := filepath.Join(tempDir, "original.json")
-	crtdlContent := map[string]any{
-		"cohortDefinition": map[string]any{
-			"version":           "1.0.0",
-			"inclusionCriteria": []any{},
-		},
-		"dataExtraction": map[string]any{
-			"attributeGroups": []map[string]any{
-				{
-					"id":             "patient-group",
-					"name":           "Patient",
-					"groupReference": "https://example.org/Patient",
-					"attributes": []map[string]any{
-						{"attributeRef": "Patient.id", "mustHave": true},
-					},
-				},
-			},
-		},
-	}
+	crtdlContent := schemaValidCRTDL()
 	crtdlJSON, _ := json.Marshal(crtdlContent)
 	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
 
@@ -1702,24 +1685,7 @@ func TestPipeline_TORCHExtraction_PreprocessingEnabled_EmptyEnrichments(t *testi
 
 	// Create valid CRTDL file
 	crtdlPath := filepath.Join(tempDir, "valid.json")
-	crtdlContent := map[string]any{
-		"cohortDefinition": map[string]any{
-			"version":           "1.0.0",
-			"inclusionCriteria": []any{},
-		},
-		"dataExtraction": map[string]any{
-			"attributeGroups": []map[string]any{
-				{
-					"id":             "patient-group",
-					"name":           "Patient",
-					"groupReference": "https://example.org/Patient",
-					"attributes": []map[string]any{
-						{"attributeRef": "Patient.id", "mustHave": true},
-					},
-				},
-			},
-		},
-	}
+	crtdlContent := schemaValidCRTDL()
 	crtdlJSON, _ := json.Marshal(crtdlContent)
 	_ = os.WriteFile(crtdlPath, crtdlJSON, 0644)
 

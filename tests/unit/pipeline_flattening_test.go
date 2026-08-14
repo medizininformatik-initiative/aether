@@ -307,18 +307,40 @@ func createFlatteningTestJob(serviceURL, lookupPath, crtdlPath string) *models.P
 	}
 }
 
+// validCRTDLEnvelope returns the top-level fields, other than dataExtraction,
+// that the CRTDL schema requires.
+func validCRTDLEnvelope() map[string]any {
+	return map[string]any{
+		"version": "http://json-schema.org/to-be-methodically-defined",
+		"cohortDefinition": map[string]any{
+			"version": "http://to_be_decided.com/draft-1/schema#",
+			"inclusionCriteria": []any{
+				[]any{
+					map[string]any{
+						"context": map[string]any{
+							"code": "Patient", "system": "http://example.org/cs", "display": "Patient",
+						},
+						"termCodes": []any{
+							map[string]any{"code": "263495000", "system": "http://snomed.info/sct", "display": "Gender"},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 // Helper to write a valid CRTDL file with group ID
 func writeTestCRTDL(t *testing.T, path string, groupID, groupName, groupRef string) {
-	crtdl := map[string]any{
-		"dataExtraction": map[string]any{
-			"attributeGroups": []map[string]any{
-				{
-					"id":             groupID,
-					"name":           groupName,
-					"groupReference": groupRef,
-					"attributes": []map[string]any{
-						{"attributeRef": groupName + ".id", "mustHave": true},
-					},
+	crtdl := validCRTDLEnvelope()
+	crtdl["dataExtraction"] = map[string]any{
+		"attributeGroups": []map[string]any{
+			{
+				"id":             groupID,
+				"name":           groupName,
+				"groupReference": groupRef,
+				"attributes": []map[string]any{
+					{"attributeRef": groupName + ".id", "mustHave": true},
 				},
 			},
 		},
@@ -914,17 +936,16 @@ func TestExecuteFlatteningStep_SiblingGroupFailureKeepsPartial(t *testing.T) {
 	urlAlpha := "https://example.com/PatientAlpha"
 	urlBeta := "https://example.com/PatientBeta"
 
-	crtdl := map[string]any{
-		"dataExtraction": map[string]any{
-			"attributeGroups": []map[string]any{
-				{
-					"id": "g-alpha", "name": "Alpha", "groupReference": urlAlpha,
-					"attributes": []map[string]any{{"attributeRef": "Patient.id", "mustHave": true}},
-				},
-				{
-					"id": "g-beta", "name": "Beta", "groupReference": urlBeta,
-					"attributes": []map[string]any{{"attributeRef": "Patient.id", "mustHave": true}},
-				},
+	crtdl := validCRTDLEnvelope()
+	crtdl["dataExtraction"] = map[string]any{
+		"attributeGroups": []map[string]any{
+			{
+				"id": "g-alpha", "name": "Alpha", "groupReference": urlAlpha,
+				"attributes": []map[string]any{{"attributeRef": "Patient.id", "mustHave": true}},
+			},
+			{
+				"id": "g-beta", "name": "Beta", "groupReference": urlBeta,
+				"attributes": []map[string]any{{"attributeRef": "Patient.id", "mustHave": true}},
 			},
 		},
 	}

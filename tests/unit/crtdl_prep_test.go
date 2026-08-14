@@ -19,37 +19,21 @@ import (
 // attribute group has no identifier attribute. The enrichment should add
 // Patient.identifier so downstream steps (flattening) see the enriched group.
 func crtdlWithoutPatientIdentifier() map[string]any {
-	return map[string]any{
-		"version": "http://json-schema.org/to-be-methodically-defined",
-		"cohortDefinition": map[string]any{
-			"version": "http://to_be_decided.com/draft-1/schema#",
-			"inclusionCriteria": []any{
-				[]any{
-					map[string]any{
-						"context": map[string]any{
-							"code": "Patient", "system": "http://example.org/cs", "display": "Patient",
-						},
-						"termCodes": []any{
-							map[string]any{"code": "263495000", "system": "http://snomed.info/sct", "display": "Gender"},
-						},
-					},
-				},
-			},
-		},
-		"dataExtraction": map[string]any{
-			"attributeGroups": []map[string]any{
-				{
-					"id":             "patient-group",
-					"name":           "PatientPseudonymisiert",
-					"groupReference": "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/PatientPseudonymisiert",
-					"attributes": []map[string]any{
-						{"attributeRef": "Patient.id", "mustHave": true},
-						{"attributeRef": "Patient.gender", "mustHave": false},
-					},
+	crtdl := validCRTDLEnvelope()
+	crtdl["dataExtraction"] = map[string]any{
+		"attributeGroups": []map[string]any{
+			{
+				"id":             "patient-group",
+				"name":           "PatientPseudonymisiert",
+				"groupReference": "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/PatientPseudonymisiert",
+				"attributes": []map[string]any{
+					{"attributeRef": "Patient.id", "mustHave": true},
+					{"attributeRef": "Patient.gender", "mustHave": false},
 				},
 			},
 		},
 	}
+	return crtdl
 }
 
 func writeCRTDLFile(t *testing.T, dir, filename string, content map[string]any) string {

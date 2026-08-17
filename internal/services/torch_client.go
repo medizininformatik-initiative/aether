@@ -187,7 +187,7 @@ func (c *TORCHClient) SubmitExtraction(crtdlPath string) (string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/fhir+json")
-	if err := c.httpClient.ApplyAuth(req, c.authConfig()); err != nil {
+	if err := c.httpClient.ApplyAuth(req, c.config.EffectiveAuth()); err != nil {
 		return "", fmt.Errorf("failed to add auth header: %w", err)
 	}
 
@@ -308,7 +308,7 @@ func (c *TORCHClient) SubmitExtractionWithContent(crtdlContent []byte) (string, 
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if err := c.httpClient.ApplyAuth(req, c.authConfig()); err != nil {
+	if err := c.httpClient.ApplyAuth(req, c.config.EffectiveAuth()); err != nil {
 		return "", fmt.Errorf("failed to add auth header: %w", err)
 	}
 
@@ -596,7 +596,7 @@ func (c *TORCHClient) downloadFileOnce(fileURL, destPath string, compress bool, 
 		return models.FHIRDataFile{}, fmt.Errorf("failed to create download request: %w", err)
 	}
 
-	if err := c.httpClient.ApplyAuth(req, c.authConfig()); err != nil {
+	if err := c.httpClient.ApplyAuth(req, c.config.EffectiveAuth()); err != nil {
 		return models.FHIRDataFile{}, fmt.Errorf("failed to add auth header: %w", err)
 	}
 	req.Header.Set("Accept", "application/fhir+ndjson")
@@ -701,7 +701,7 @@ func (c *TORCHClient) Ping() error {
 		return fmt.Errorf("failed to create ping request: %w", err)
 	}
 
-	if err := c.httpClient.ApplyAuth(req, c.authConfig()); err != nil {
+	if err := c.httpClient.ApplyAuth(req, c.config.EffectiveAuth()); err != nil {
 		return fmt.Errorf("failed to add auth header: %w", err)
 	}
 
@@ -845,19 +845,6 @@ func (c *TORCHClient) extractURLsFromFHIRFormat(result TORCHExtractionResult) []
 	return fileURLs
 }
 
-// authConfig returns the TORCH server's credentials for the shared auth
-// mechanism (HTTPClient.ApplyAuth). Basic auth takes precedence; OAuth2
-// client-credentials is used when configured instead.
-func (c *TORCHClient) authConfig() models.AuthConfig {
-	return models.AuthConfig{
-		Username:          c.config.Username,
-		Password:          c.config.Password,
-		OAuthIssuerURI:    c.config.OAuthIssuerURI,
-		OAuthClientID:     c.config.OAuthClientID,
-		OAuthClientSecret: c.config.OAuthClientSecret,
-	}
-}
-
 // waitForFileAvailability waits until a file URL is available for download.
 // Skips the check if FileReadyRetries <= 0 (zero-value means disabled).
 func (c *TORCHClient) waitForFileAvailability(fileURL string) error {
@@ -893,7 +880,7 @@ func (c *TORCHClient) checkFileAvailable(fileURL string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("failed to create HEAD request: %w", err)
 	}
-	if err := c.httpClient.ApplyAuth(req, c.authConfig()); err != nil {
+	if err := c.httpClient.ApplyAuth(req, c.config.EffectiveAuth()); err != nil {
 		return false, fmt.Errorf("failed to add auth header: %w", err)
 	}
 
@@ -921,7 +908,7 @@ func (c *TORCHClient) checkFileAvailableWithRange(fileURL string) (bool, error) 
 	if err != nil {
 		return false, fmt.Errorf("failed to create Range GET request: %w", err)
 	}
-	if err := c.httpClient.ApplyAuth(req, c.authConfig()); err != nil {
+	if err := c.httpClient.ApplyAuth(req, c.config.EffectiveAuth()); err != nil {
 		return false, fmt.Errorf("failed to add auth header: %w", err)
 	}
 	req.Header.Set("Range", "bytes=0-0")

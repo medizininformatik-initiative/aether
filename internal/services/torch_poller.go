@@ -43,7 +43,7 @@ func createPollRequest(extractionURL string, c *TORCHClient) (*http.Request, err
 		return nil, fmt.Errorf("failed to create poll request: %w", err)
 	}
 
-	if err := c.httpClient.ApplyAuth(req, c.authConfig()); err != nil {
+	if err := c.httpClient.ApplyAuth(req, c.config.EffectiveAuth()); err != nil {
 		return nil, fmt.Errorf("failed to add auth header: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")

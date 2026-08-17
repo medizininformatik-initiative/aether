@@ -168,8 +168,7 @@ func (c *ProjectConfig) Validate() error {
 
 	// Validate TORCH config if torch import step is enabled OR if TORCH is explicitly configured
 	// Check if any TORCH field is non-empty (indicates explicit configuration)
-	torchIsConfigured := c.Services.TORCH.BaseURL != "" || c.Services.TORCH.Username != "" || c.Services.TORCH.Password != "" ||
-		c.Services.TORCH.OAuthIssuerURI != "" || c.Services.TORCH.OAuthClientID != "" || c.Services.TORCH.OAuthClientSecret != ""
+	torchIsConfigured := c.Services.TORCH.BaseURL != "" || c.Services.TORCH.EffectiveAuth() != (AuthConfig{})
 	if c.Pipeline.IsStepEnabled(StepTorchImport) || torchIsConfigured {
 		if err := c.Services.TORCH.Validate(); err != nil {
 			return fmt.Errorf("TORCH config validation failed: %w", err)

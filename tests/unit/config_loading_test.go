@@ -361,8 +361,9 @@ services:
     url: ""
   torch:
     base_url: "http://localhost:8080"
-    username: "testuser"
-    password: "testpass"
+    auth:
+      username: "testuser"
+      password: "testpass"
     extraction_timeout: PT30M
     polling_interval: PT5S
     max_polling_interval: PT30S
@@ -386,8 +387,8 @@ jobs_dir: "` + jobsDir + `"
 
 	// Verify TORCH config is loaded
 	assert.Equal(t, "http://localhost:8080", config.Services.TORCH.BaseURL)
-	assert.Equal(t, "testuser", config.Services.TORCH.Username)
-	assert.Equal(t, "testpass", config.Services.TORCH.Password)
+	assert.Equal(t, models.AuthConfig{Username: "testuser", Password: "testpass"},
+		config.Services.TORCH.Auth)
 	assert.Equal(t, 30*time.Minute, config.Services.TORCH.ExtractionTimeout)
 	assert.Equal(t, 5*time.Second, config.Services.TORCH.PollingInterval)
 	assert.Equal(t, 30*time.Second, config.Services.TORCH.MaxPollingInterval)
@@ -531,8 +532,7 @@ jobs_dir: "` + jobsDir + `"
 	config, err := services.LoadConfig(configFile)
 	require.NoError(t, err, "Missing credentials should be allowed for TORCH")
 	assert.Equal(t, "http://localhost:8080", config.Services.TORCH.BaseURL)
-	assert.Equal(t, "", config.Services.TORCH.Username)
-	assert.Equal(t, "", config.Services.TORCH.Password)
+	assert.Equal(t, models.AuthConfig{}, config.Services.TORCH.EffectiveAuth())
 }
 
 func TestTORCHConfig_ValidateInvalidTimeout(t *testing.T) {
@@ -677,8 +677,7 @@ func TestTORCHConfig_WithDefaults(t *testing.T) {
 
 	// Verify TORCH section exists with defaults
 	assert.Equal(t, "", config.Services.TORCH.BaseURL, "BaseURL should default to empty")
-	assert.Equal(t, "", config.Services.TORCH.Username, "Username should default to empty")
-	assert.Equal(t, "", config.Services.TORCH.Password, "Password should default to empty")
+	assert.Equal(t, models.AuthConfig{}, config.Services.TORCH.Auth, "Auth should default to empty")
 	assert.Equal(t, 30*time.Minute, config.Services.TORCH.ExtractionTimeout, "Should default to 30 minutes")
 	assert.Equal(t, 5*time.Second, config.Services.TORCH.PollingInterval, "Should default to 5 seconds")
 	assert.Equal(t, 30*time.Second, config.Services.TORCH.MaxPollingInterval, "Should default to 30 seconds")
@@ -696,8 +695,9 @@ func TestTORCHConfig_FileReadySettings(t *testing.T) {
 services:
   torch:
     base_url: "http://localhost:8080"
-    username: "testuser"
-    password: "testpass"
+    auth:
+      username: "testuser"
+      password: "testpass"
     extraction_timeout: PT30M
     polling_interval: PT5S
     max_polling_interval: PT30S

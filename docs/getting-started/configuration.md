@@ -8,8 +8,9 @@ Aether uses a YAML configuration file. Create an `aether.yaml` anywhere on disk 
 services:
   torch:
     base_url: "https://your-torch-server.org"
-    username: "your-username"
-    password: "your-password"
+    auth:
+      username: "your-username"
+      password: "your-password"
 
   dimp:
     url: "http://your-dimp-server:32861"
@@ -30,16 +31,22 @@ jobs_dir: "./jobs"
 services:
   torch:
     base_url: "https://your-torch-server.org"
-    username: "your-username"
-    password: "your-password"
-    # OAuth2 client credentials (alternative to username/password):
-    # oauth_issuer_uri: "${TORCH_OAUTH_ISSUER_URI}"
-    # oauth_client_id: "${TORCH_OAUTH_CLIENT_ID}"
-    # oauth_client_secret: "${TORCH_OAUTH_CLIENT_SECRET}"
+    auth:
+      username: "your-username"
+      password: "your-password"
+      # OAuth2 client credentials (alternative to username/password):
+      # oauth_issuer_uri: "${TORCH_OAUTH_ISSUER_URI}"
+      # oauth_client_id: "${TORCH_OAUTH_CLIENT_ID}"
+      # oauth_client_secret: "${TORCH_OAUTH_CLIENT_SECRET}"
     extraction_timeout: PT30M         # liveness window (silence before giving up)
     polling_interval: PT5S
     download_stall_timeout: PT1M      # cancel a result download after this much inactivity
 ```
+
+The `auth` block is the same for `torch`, `dimp`, and `send`. Aether still
+accepts the older shape, which puts `username`, `password`, and the `oauth_*`
+keys directly in the `torch` block. Do not use both shapes together: Aether
+refuses such a configuration file.
 
 ### DIMP
 
@@ -238,8 +245,9 @@ secrets out of the file:
 ```yaml
 services:
   torch:
-    username: "${TORCH_USERNAME}"
-    password: "${TORCH_PASSWORD}"
+    auth:
+      username: "${TORCH_USERNAME}"
+      password: "${TORCH_PASSWORD}"
 ```
 
 ```bash
@@ -257,6 +265,7 @@ is the full config path, uppercased, with dots replaced by underscores:
 | ----------------------------------- | ------------------------------------------ |
 | `jobs_dir`                          | `AETHER_JOBS_DIR`                          |
 | `services.torch.base_url`           | `AETHER_SERVICES_TORCH_BASE_URL`          |
+| `services.torch.auth.username`      | `AETHER_SERVICES_TORCH_AUTH_USERNAME`     |
 | `services.dimp.url`                 | `AETHER_SERVICES_DIMP_URL`                |
 | `retry.max_attempts`                | `AETHER_RETRY_MAX_ATTEMPTS`               |
 | `services.send.s3.bucket`           | `AETHER_SERVICES_SEND_S3_BUCKET`          |

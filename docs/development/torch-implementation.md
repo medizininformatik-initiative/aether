@@ -301,14 +301,19 @@ Sentinel errors: `ErrExtractionTimeout`, `ErrHandleDead`, `ErrInvalidCRTDL`.
 | Field | Default | Effect |
 |-------|---------|--------|
 | `base_url` | — | TORCH server base URL (required when the torch step is enabled) |
-| `username` / `password` | — | Basic auth (takes precedence over OAuth) |
-| `oauth_issuer_uri` / `oauth_client_id` / `oauth_client_secret` | — | OAuth 2.0 client-credentials auth |
+| `auth` | — | `models.AuthConfig`, the same block as `dimp` and `send`. `TORCHConfig.EffectiveAuth` reads it. |
 | `extraction_timeout` | `30m` | Liveness window — max time to wait **without** a response; reset on every `200`/`202` |
 | `polling_interval` | `5s` | Initial status poll interval (must be ≥ `1s`) |
 | `max_polling_interval` | `30s` | Backoff cap (must be ≥ `polling_interval`) |
 | `file_ready_retries` | `10` | Availability checks before download; `0` disables the check |
 | `file_ready_interval` | `10s` | Delay between availability checks |
 | `download_stall_timeout` | `60s` | Inactivity window while streaming a file; `0` uses the built-in default |
+
+`TORCHConfig` also keeps the deprecated flat auth fields (`Username`,
+`Password`, `OAuthIssuerURI`, `OAuthClientID`, `OAuthClientSecret`) for older
+configuration files. `EffectiveAuth` maps them to an `AuthConfig`, thus the
+client reads one shape only. `Validate` refuses a config that sets both shapes,
+and `LoadConfig` writes a deprecation warning for the flat fields.
 
 See the [Configuration Reference](../api-reference/config-reference.md#torch) for
 the operator-facing table.

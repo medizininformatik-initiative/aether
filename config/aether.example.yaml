@@ -9,16 +9,21 @@ services:
     # TORCH server base URL
     base_url: "http://localhost:8080"
 
-    # TORCH authentication credentials (Basic Auth)
-    username: "test"
-    password: "test"
+    # TORCH authentication. Use Basic Auth or OAuth2 client credentials, not both.
+    # The same auth block applies to the dimp and send steps.
+    # Keep secrets in environment variables.
+    # The flat username/password/oauth_* keys are deprecated. They still work,
+    # but a later major version removes them.
+    auth:
+      username: "test"
+      password: "test"
 
-    # OAuth2 client-credentials auth (alternative to username/password).
-    # When oauth_issuer_uri is set, aether fetches a bearer token from the issuer
-    # and uses it instead of Basic Auth. Keep secrets in environment variables.
-    # oauth_issuer_uri: "${TORCH_OAUTH_ISSUER_URI}"
-    # oauth_client_id: "${TORCH_OAUTH_CLIENT_ID}"
-    # oauth_client_secret: "${TORCH_OAUTH_CLIENT_SECRET}"
+      # OAuth2 client-credentials auth (alternative to username/password).
+      # When oauth_issuer_uri is set, aether fetches a bearer token from the
+      # issuer and uses it instead of Basic Auth.
+      # oauth_issuer_uri: "${TORCH_OAUTH_ISSUER_URI}"
+      # oauth_client_id: "${TORCH_OAUTH_CLIENT_ID}"
+      # oauth_client_secret: "${TORCH_OAUTH_CLIENT_SECRET}"
 
     # Liveness window: max time to wait WITHOUT a response from TORCH, not a
     # total cap. Reset on every status response (200/202), so a long-running

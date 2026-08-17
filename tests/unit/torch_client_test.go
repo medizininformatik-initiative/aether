@@ -86,6 +86,42 @@ func TestTORCHClient_SubmitExtraction_Success(t *testing.T) {
 	assert.Equal(t, server.URL+"/fhir/extraction/job-abc123", extractionURL)
 }
 
+// The client reads the credentials from the auth block.
+func TestTORCHClient_SubmitExtraction_UsesAuthBlock(t *testing.T) {
+	tempDir := t.TempDir()
+	crtdlPath := filepath.Join(tempDir, "test.json")
+	crtdlJSON := []byte(`{"cohortDefinition":{"inclusionCriteria":[]},"dataExtraction":{"attributeGroups":[]}}`)
+	require.NoError(t, os.WriteFile(crtdlPath, crtdlJSON, 0644))
+
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username, password, ok := r.BasicAuth()
+		assert.True(t, ok)
+		assert.Equal(t, "block-user", username)
+		assert.Equal(t, "block-pass", password)
+
+		w.Header().Set("Content-Location", serverURL+"/fhir/extraction/job-abc123")
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelDebug)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:            server.URL,
+		Auth:               models.AuthConfig{Username: "block-user", Password: "block-pass"},
+		ExtractionTimeout:  30 * time.Minute,
+		PollingInterval:    1 * time.Second,
+		MaxPollingInterval: 5 * time.Second,
+	}
+
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+	_, err := client.SubmitExtraction(crtdlPath)
+
+	assert.NoError(t, err)
+}
+
 func TestTORCHClient_SubmitExtraction_FileNotFound(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)

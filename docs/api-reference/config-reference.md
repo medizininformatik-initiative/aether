@@ -8,11 +8,14 @@ Complete reference for all Aether configuration options.
 services:
   torch:
     base_url: string
-    username: string
-    password: string
-    oauth_issuer_uri: string        # OAuth2 client-credentials (alt to username/password)
-    oauth_client_id: string
-    oauth_client_secret: string
+    auth:
+      username: string
+      password: string
+      oauth_issuer_uri: string      # OAuth2 client-credentials (alt to username/password)
+      oauth_client_id: string
+      oauth_client_secret: string
+      api_key: string
+      api_key_header: string        # default: x-api-key
     extraction_timeout: duration    # default: PT30M
     polling_interval: duration      # default: PT5S
     max_polling_interval: duration  # default: PT30S
@@ -112,25 +115,35 @@ TORCH server for FHIR data extraction.
 services:
   torch:
     base_url: "https://torch.example.org"
-    username: "${TORCH_USER}"
-    password: "${TORCH_PASSWORD}"
+    auth:
+      username: "${TORCH_USER}"
+      password: "${TORCH_PASSWORD}"
     extraction_timeout: PT30M
     polling_interval: PT5S
     max_polling_interval: PT30S
 ```
 
-Authenticate with either Basic Auth (`username`/`password`) or OAuth 2.0
-client credentials (`oauth_issuer_uri`/`oauth_client_id`/`oauth_client_secret`);
-when `oauth_issuer_uri` is set, Aether uses bearer tokens instead of Basic Auth.
+The `auth` block has the same fields and the same rules as the `auth` block of
+[DIMP](#dimp) and [Send](#send).
+
+::: warning Deprecated
+Earlier versions put `username`, `password`, `oauth_issuer_uri`,
+`oauth_client_id`, and `oauth_client_secret` directly in the `torch` block.
+Aether still accepts these keys, and the matching `AETHER_SERVICES_TORCH_USERNAME`
+style variables, but writes a warning. A later major version removes them.
+A configuration file that uses both shapes together is an error.
+:::
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `base_url` | string | - | TORCH server URL (required if torch step enabled) |
-| `username` | string | - | Basic Auth username |
-| `password` | string | - | Basic Auth password |
-| `oauth_issuer_uri` | string | - | OAuth 2.0 issuer URI. When set, Aether fetches client-credentials bearer tokens instead of using Basic Auth. |
-| `oauth_client_id` | string | - | OAuth 2.0 client ID |
-| `oauth_client_secret` | string | - | OAuth 2.0 client secret |
+| `auth.username` | string | - | Basic Auth username |
+| `auth.password` | string | - | Basic Auth password |
+| `auth.oauth_issuer_uri` | string | - | OAuth 2.0 issuer URI. When set, Aether fetches client-credentials bearer tokens instead of using Basic Auth. |
+| `auth.oauth_client_id` | string | - | OAuth 2.0 client ID |
+| `auth.oauth_client_secret` | string | - | OAuth 2.0 client secret |
+| `auth.api_key` | string | - | API key. Sent in its own header, not in `Authorization`. |
+| `auth.api_key_header` | string | `x-api-key` | Header that carries `api_key` |
 | `extraction_timeout` | duration | PT30M | Liveness window, not a total cap: max time to wait without a response from TORCH. Reset on every status response (200/202), so a long but responsive extraction never trips it. See [ADR 0001](../adr/0001-extraction-timeout-liveness.md). |
 | `polling_interval` | duration | PT5S | Initial status check interval |
 | `max_polling_interval` | duration | PT30S | Max interval (exponential backoff cap) |
@@ -499,8 +512,9 @@ All string values support `${VAR}` substitution, expanded when the file is read:
 ```yaml
 services:
   torch:
-    username: "${TORCH_USERNAME}"
-    password: "${TORCH_PASSWORD}"
+    auth:
+      username: "${TORCH_USERNAME}"
+      password: "${TORCH_PASSWORD}"
   send:
     url: "${FHIR_SERVER_URL}"
 ```
@@ -529,8 +543,9 @@ variable leaves the key at its file value or default.
 services:
   torch:
     base_url: "https://torch.hospital.org"
-    username: "${TORCH_USER}"
-    password: "${TORCH_PASS}"
+    auth:
+      username: "${TORCH_USER}"
+      password: "${TORCH_PASS}"
   dimp:
     url: "http://dimp:32861"
 
@@ -573,8 +588,9 @@ jobs_dir: "./jobs"
 services:
   torch:
     base_url: "https://torch.hospital.org"
-    username: "${TORCH_USER}"
-    password: "${TORCH_PASS}"
+    auth:
+      username: "${TORCH_USER}"
+      password: "${TORCH_PASS}"
   dimp:
     url: "http://dimp:32861"
   send:

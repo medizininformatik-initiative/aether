@@ -89,12 +89,21 @@ func (c *DIMPConfig) Validate() error {
 
 // TORCHConfig contains TORCH server connection and extraction behavior settings
 type TORCHConfig struct {
-	BaseURL            string        `yaml:"base_url" json:"base_url" mapstructure:"base_url"`
-	Username           string        `yaml:"username" json:"username" mapstructure:"username"`
-	Password           string        `yaml:"password" json:"password" mapstructure:"password"`
-	OAuthIssuerURI     string        `yaml:"oauth_issuer_uri" json:"oauth_issuer_uri" mapstructure:"oauth_issuer_uri"`
-	OAuthClientID      string        `yaml:"oauth_client_id" json:"oauth_client_id" mapstructure:"oauth_client_id"`
-	OAuthClientSecret  string        `yaml:"oauth_client_secret" json:"oauth_client_secret" mapstructure:"oauth_client_secret"`
+	BaseURL string `yaml:"base_url" json:"base_url" mapstructure:"base_url"`
+	// Auth holds authentication settings for the TORCH server.
+	Auth AuthConfig `yaml:"auth" json:"auth" mapstructure:"auth"`
+	// Deprecated: put these fields in the Auth block. They stay for
+	// compatibility with configuration files that predate the auth block.
+	Username string `yaml:"username" json:"username" mapstructure:"username"`
+	// Deprecated: use Auth.Password.
+	Password string `yaml:"password" json:"password" mapstructure:"password"`
+	// Deprecated: use Auth.OAuthIssuerURI.
+	OAuthIssuerURI string `yaml:"oauth_issuer_uri" json:"oauth_issuer_uri" mapstructure:"oauth_issuer_uri"`
+	// Deprecated: use Auth.OAuthClientID.
+	OAuthClientID string `yaml:"oauth_client_id" json:"oauth_client_id" mapstructure:"oauth_client_id"`
+	// Deprecated: use Auth.OAuthClientSecret.
+	OAuthClientSecret string `yaml:"oauth_client_secret" json:"oauth_client_secret" mapstructure:"oauth_client_secret"`
+
 	ExtractionTimeout  time.Duration `yaml:"extraction_timeout" json:"extraction_timeout" mapstructure:"extraction_timeout"`
 	PollingInterval    time.Duration `yaml:"polling_interval" json:"polling_interval" mapstructure:"polling_interval"`
 	MaxPollingInterval time.Duration `yaml:"max_polling_interval" json:"max_polling_interval" mapstructure:"max_polling_interval"`
@@ -106,6 +115,45 @@ type TORCHConfig struct {
 	// connection fails fast. Unlike a whole-request deadline, it never has to be
 	// sized to the largest expected download.
 	DownloadStallTimeout time.Duration `yaml:"download_stall_timeout" json:"download_stall_timeout" mapstructure:"download_stall_timeout"`
+}
+
+// EffectiveAuth returns the authentication settings for the TORCH server. It
+// maps the deprecated flat fields to the auth block, so that configuration
+// files of both shapes work. Validate refuses a file that uses both shapes.
+func (c *TORCHConfig) EffectiveAuth() AuthConfig {
+	deprecated := AuthConfig{
+		Username:          c.Username,
+		Password:          c.Password,
+		OAuthIssuerURI:    c.OAuthIssuerURI,
+		OAuthClientID:     c.OAuthClientID,
+		OAuthClientSecret: c.OAuthClientSecret,
+	}
+	if deprecated != (AuthConfig{}) {
+		return deprecated
+	}
+	return c.Auth
+}
+
+// DeprecatedAuthFields returns the names of the flat auth keys that the config
+// sets. Validate uses it to name the keys in the error that refuses a file
+// which uses both shapes.
+func (c *TORCHConfig) DeprecatedAuthFields() []string {
+	var names []string
+	for _, field := range []struct {
+		name  string
+		value string
+	}{
+		{"username", c.Username},
+		{"password", c.Password},
+		{"oauth_issuer_uri", c.OAuthIssuerURI},
+		{"oauth_client_id", c.OAuthClientID},
+		{"oauth_client_secret", c.OAuthClientSecret},
+	} {
+		if field.value != "" {
+			names = append(names, field.name)
+		}
+	}
+	return names
 }
 
 // SendMode defines the mode for sending data
@@ -431,8 +479,6 @@ func DefaultConfig() ProjectConfig {
 			},
 			TORCH: TORCHConfig{
 				BaseURL:              "",
-				Username:             "",
-				Password:             "",
 				ExtractionTimeout:    30 * time.Minute,
 				PollingInterval:      5 * time.Second,
 				MaxPollingInterval:   30 * time.Second,
@@ -483,7 +529,17 @@ func (c *TORCHConfig) Validate() error {
 		return fmt.Errorf("invalid TORCH base_url: must use http or https scheme, got '%s'", parsedURL.Scheme)
 	}
 
-	// Username and password are optional - TORCH may not require authentication in all environments
+	// Authentication is optional - TORCH may not require it in all environments.
+	// Two shapes together are ambiguous, thus EffectiveAuth cannot resolve them.
+	if deprecated := c.DeprecatedAuthFields(); len(deprecated) > 0 && c.Auth != (AuthConfig{}) {
+		return fmt.Errorf("torch auth: set the auth block or the deprecated flat fields (%s), not both",
+			strings.Join(deprecated, ", "))
+	}
+
+	auth := c.EffectiveAuth()
+	if err := auth.Validate("torch"); err != nil {
+		return err
+	}
 
 	if c.ExtractionTimeout <= 0 {
 		return fmt.Errorf("extraction_timeout must be > 0, got %s", c.ExtractionTimeout)

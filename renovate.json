@@ -20,7 +20,7 @@
   "postUpdateOptions": [
     "gomodTidy"
   ],
-  "prConcurrentLimit": 1,
+  "prConcurrentLimit": 5,
   "packageRules": [
     {
       "description": "Use semver for MII pre-release Docker images so alpha.N increments are tracked",

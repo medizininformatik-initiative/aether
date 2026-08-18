@@ -1,0 +1,10 @@
+{
+  "repository": "medizininformatik-initiative/dataportal-backend",
+  "path": "src/main/resources/de/medizininformatikinitiative/dataportal/backend/query/api/validation",
+  "ref": "v8.7.0",
+  "drift_ref": "develop",
+  "files": {
+    "crtdl-schema.json": "f61ca533a0ffdb6f3dc27d647e54469cdc8a09a7203005dbc95fd0c308a84e6f",
+    "ccdl-schema.json": "e74a5c34e5f97119afccc3f7f57bd2c238a4a055a8540ed2183dee1ee7b23c75"
+  }
+}

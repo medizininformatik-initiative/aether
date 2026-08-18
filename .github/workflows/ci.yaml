@@ -40,6 +40,10 @@ jobs:
     name: Docs Lint
     uses: ./.github/workflows/_docs-lint.yaml
 
+  schemas:
+    name: Schemas
+    uses: ./.github/workflows/_schemas.yaml
+
   codeql:
     name: CodeQL
     uses: ./.github/workflows/_codeql.yaml

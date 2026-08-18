@@ -1,0 +1,79 @@
+name: Schema Drift
+
+# The CI check compares the vendored CRTDL and CCDL schemas with the pinned
+# ref. Both sides are fixed, so that check never reports a change upstream.
+# This workflow compares the pin with the drift ref and opens an issue.
+on:
+  schedule:
+    - cron: '30 6 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  drift:
+    name: Schema Drift
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Exit 3 means drift and is the expected outcome to act on. Any other
+      # non-zero code is a fault and must fail the job.
+      - name: Compare the pin with upstream
+        id: drift
+        run: |
+          set +e
+          report="$(.github/scripts/verify-crtdl-schemas.sh --drift-only 2>&1)"
+          code=$?
+          set -e
+          printf '%s\n' "$report"
+          if [ "$code" -ne 0 ] && [ "$code" -ne 3 ]; then
+            exit "$code"
+          fi
+          {
+            echo "drift=$([ "$code" -eq 3 ] && echo true || echo false)"
+            echo 'report<<REPORT_EOF'
+            printf '%s\n' "$report"
+            echo 'REPORT_EOF'
+          } >>"$GITHUB_OUTPUT"
+
+      # One open issue at a time. A second issue each week would train readers
+      # to close it unread.
+      - name: Open an issue
+        if: ${{ steps.drift.outputs.drift == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT: ${{ steps.drift.outputs.report }}
+        run: |
+          gh label create schema-drift \
+            --description "The vendored schemas differ from upstream" \
+            --color D93F0B --force
+          open="$(gh issue list --label schema-drift --state open --json number --jq 'length')"
+          if [ "$open" -gt 0 ]; then
+            echo "An open schema-drift issue exists. No new issue."
+            exit 0
+          fi
+          {
+            echo 'The vendored CRTDL and CCDL schemas differ from upstream:'
+            echo
+            echo '```'
+            printf '%s\n' "$REPORT"
+            echo '```'
+            echo
+            echo 'Read the upstream changes, then follow the update steps in'
+            # shellcheck disable=SC2016  # backticks are Markdown here, not a command
+            echo '`internal/lib/crtdl/schema/SOURCE.md`.'
+          } >body.md
+          gh issue create \
+            --title "The vendored CRTDL and CCDL schemas differ from upstream" \
+            --label schema-drift \
+            --body-file body.md

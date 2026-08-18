@@ -19,6 +19,9 @@ import (
 // by its $id URL; both are registered locally, so validation needs no
 // network access.
 //
+// schema/SOURCE.md names the upstream files, and schema/upstream.json pins
+// them. Do not edit the schema files.
+//
 //go:embed schema/crtdl-schema.json
 var SchemaJSON []byte
 

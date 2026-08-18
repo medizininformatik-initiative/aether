@@ -1,0 +1,29 @@
+name: Schemas
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  schemas:
+    name: Schemas
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Test the check
+        run: .github/scripts/verify-crtdl-schemas_test.sh
+
+      # Compares the vendored CRTDL and CCDL schemas with the pinned checksums
+      # and with upstream at the pinned ref. A change on the drift ref is a
+      # warning here; the Schema Drift workflow opens an issue for it.
+      - name: Verify the vendored schemas
+        run: .github/scripts/verify-crtdl-schemas.sh

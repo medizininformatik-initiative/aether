@@ -96,6 +96,86 @@ If a profile URL agrees with no attribute group, the pipeline stops with an
 error that gives the group, the attribute, and the URL. Aether writes no
 `enriched-crtdl.json`. Correct the URL, or add a rule that creates the group.
 
+## Experimental v3 Endpoint
+
+The FHIR-Pseudonymizer has an experimental `v3alpha1` endpoint that receives the anonymization configuration with each request. With this endpoint, you can change the anonymization rules without a restart of the service.
+
+This endpoint needs FHIR-Pseudonymizer v2.31.0 or later.
+
+```yaml
+services:
+  dimp:
+    url: "http://your-dimp-server:32861"
+    experimental_v3:
+      anonymization_config: "/path/to/anonymization.yaml"
+```
+
+The `anonymization_config` path selects the endpoint. If you give a path, Aether
+uses the `v3alpha1` endpoint. If you give no path, Aether uses the default
+endpoint, and the service reads its anonymization configuration from its own
+file.
+
+Aether reads the anonymization YAML at the start of the dimp step and sends it with each request. The upstream endpoint is experimental and can change.
+
+## Key Derivation
+
+The `cryptoHash` method of the FHIR-Pseudonymizer needs a key. A different key
+for each project keeps the pseudonyms of the projects separate. But then you
+must generate and store one secret for each project.
+
+The FHIR-Pseudonymizer can instead derive the key of each project from one
+master key. It uses HKDF (RFC 5869) with a derivation context. Key derivation
+needs FHIR-Pseudonymizer v2.30.0 or later.
+
+Generate one master key for all projects:
+
+```bash
+openssl rand -hex 32
+```
+
+Set this master key on the FHIR-Pseudonymizer server:
+
+```yaml
+# compose.yaml of the FHIR-Pseudonymizer
+environment:
+  Anonymization__CryptoHashKey: "<master key>"
+```
+
+Then give each project a different context in the anonymization YAML:
+
+```yaml
+fhirVersion: R4
+fhirPathRules:
+  - path: Resource.id
+    method: cryptoHash
+parameters:
+  keyDerivationContext: "project-a"
+```
+
+The FHIR-Pseudonymizer derives the hash key from the master key and the
+context. The same master key with the same context always gives the same key.
+Two different contexts give two independent keys. Thus one master key is
+sufficient for many projects.
+
+Keep the master key on the server. Do not set `parameters.cryptoHashKey` in the
+anonymization YAML. A key in `parameters` has precedence over
+`Anonymization__CryptoHashKey`, and the secret then moves with each request to
+the service.
+
+You can also set a context on the server with
+`Anonymization__KeyDerivationContext`. A `parameters.keyDerivationContext` in
+the YAML has precedence over it. With the experimental v3 endpoint, Aether
+sends the YAML with each request. Thus the anonymization YAML of the project
+selects the key, and the server keeps only the master key.
+
+The pseudonyms change if the master key or the context changes. Data that you
+send after a change does not agree with data from before the change. Use a
+stable context for each project.
+
+The `encrypt` method uses the same mechanism for `encryptKey`. The
+FHIR-Pseudonymizer derives the hash key and the encryption key independently of
+each other.
+
 ## Large Bundles
 
 For large datasets, Aether automatically splits bundles before sending to DIMP:

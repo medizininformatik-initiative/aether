@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -72,6 +73,94 @@ func TestDIMPService_Pseudonymize_Success(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "pseudonym-abc123xyz", result["id"])
 	assert.Equal(t, "REDACTED", result["name"].([]any)[0].(map[string]any)["family"])
+}
+
+func TestDIMPService_V3Pseudonymize_Success(t *testing.T) {
+	anonymizationYAML := []byte("fhirVersion: R4\nfhirPathRules:\n  - path: Patient.name\n    method: redact\n")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "POST", r.Method)
+		assert.Equal(t, "/v3alpha1/fhir/$de-identify", r.URL.Path)
+		assert.Equal(t, "application/fhir+json", r.Header.Get("Content-Type"))
+
+		var params map[string]any
+		err := json.NewDecoder(r.Body).Decode(&params)
+		assert.NoError(t, err)
+		assert.Equal(t, "Parameters", params["resourceType"])
+
+		parts, ok := params["parameter"].([]any)
+		assert.True(t, ok, "parameter must be a list")
+
+		var configPart, resourcePart map[string]any
+		for _, p := range parts {
+			part := p.(map[string]any)
+			switch part["name"] {
+			case "config":
+				configPart = part
+			case "resource":
+				resourcePart = part
+			}
+		}
+
+		assert.NotNil(t, configPart, "Parameters must have a config part")
+		attachment := configPart["valueAttachment"].(map[string]any)
+		assert.Equal(t, "application/yaml", attachment["contentType"])
+		assert.Equal(t, base64.StdEncoding.EncodeToString(anonymizationYAML), attachment["data"])
+
+		assert.NotNil(t, resourcePart, "Parameters must have a resource part")
+		resource := resourcePart["resource"].(map[string]any)
+		assert.Equal(t, "Patient", resource["resourceType"])
+		assert.Equal(t, "example-patient-123", resource["id"])
+
+		w.Header().Set("Content-Type", "application/fhir+json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"resourceType": "Patient",
+			"id":           "pseudonym-abc123xyz",
+		})
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	client := services.NewDIMPV3Client(models.DIMPConfig{URL: server.URL}, anonymizationYAML, httpClient, logger)
+
+	result, err := client.Pseudonymize(map[string]any{
+		"resourceType": "Patient",
+		"id":           "example-patient-123",
+		"name": []map[string]any{
+			{"family": "Doe", "given": []string{"John"}},
+		},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "pseudonym-abc123xyz", result["id"])
+}
+
+func TestDIMPService_V3_400OperationOutcome(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/fhir+json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"resourceType": "OperationOutcome",
+			"issue": []map[string]any{
+				{
+					"severity":    "error",
+					"code":        "processing",
+					"diagnostics": "Failed to parse the received config attachment",
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	client := services.NewDIMPV3Client(models.DIMPConfig{URL: server.URL}, []byte("not: valid: anonymization"), httpClient, logger)
+
+	_, err := client.Pseudonymize(map[string]any{"resourceType": "Patient", "id": "p1"})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "400")
+	assert.Contains(t, err.Error(), "Failed to parse the received config attachment")
 }
 
 func TestDIMPService_400BadRequest(t *testing.T) {

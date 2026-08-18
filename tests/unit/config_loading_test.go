@@ -99,6 +99,41 @@ jobs_dir: "` + jobsDir + `"
 	assert.Equal(t, expectedFlatteningUrl, config.Services.Flattening.ServiceURL, "Flattening URL should be loaded correctly")
 }
 
+// TestConfigLoading_DIMPExperimentalV3 verifies the experimental v3 DIMP
+// settings are loaded and default to empty.
+func TestConfigLoading_DIMPExperimentalV3(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  dimp:
+    url: "http://dimp.example.com:8080"
+    experimental_v3:
+      anonymization_config: "/etc/aether/anonymization.yaml"
+
+pipeline:
+  enabled_steps:
+    - local_import
+    - dimp
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err)
+
+	assert.Equal(t, "/etc/aether/anonymization.yaml", config.Services.DIMP.ExperimentalV3.AnonymizationConfig)
+
+	defaults := models.DefaultConfig()
+	assert.Empty(t, defaults.Services.DIMP.ExperimentalV3.AnonymizationConfig,
+		"experimental v3 must be off by default")
+}
+
 // TestConfigLoading_RetrySettings verifies retry configuration is loaded
 func TestConfigLoading_RetrySettings(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -345,6 +380,36 @@ jobs_dir: "` + jobsDir + `"
 	assert.Error(t, err, "Invalid DIMP URL should fail during config loading")
 	assert.Nil(t, config)
 	assert.Contains(t, err.Error(), "invalid dimp url")
+}
+
+// TestConfigValidation_DIMPExperimentalV3WithoutConfigPath verifies an
+// experimental_v3 block without an anonymization config path loads. The DIMP
+// step then uses the default endpoint.
+func TestConfigValidation_DIMPExperimentalV3WithoutConfigPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  dimp:
+    url: "http://localhost:32861"
+    experimental_v3:
+
+pipeline:
+  enabled_steps:
+    - local_import
+    - dimp
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err)
+	assert.Empty(t, config.Services.DIMP.ExperimentalV3.AnonymizationConfig)
 }
 
 // Unit tests for TORCHConfig validation

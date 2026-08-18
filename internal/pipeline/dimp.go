@@ -15,8 +15,14 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/ui"
 )
 
-// defaultDIMPFactory is the production DIMP client constructor.
-var defaultDIMPFactory = func(config models.DIMPConfig, httpClient *services.HTTPClient, logger *lib.Logger) services.DIMPProcessor {
+// defaultDIMPFactory is the production DIMP client constructor. It returns the
+// experimental v3alpha1 client when the job configuration asks for it.
+// anonymizationConfig holds the raw anonymization YAML and is empty for the
+// default endpoint.
+var defaultDIMPFactory = func(config models.DIMPConfig, anonymizationConfig []byte, httpClient *services.HTTPClient, logger *lib.Logger) services.DIMPProcessor {
+	if config.ExperimentalV3.AnonymizationConfig != "" {
+		return services.NewDIMPV3Client(config, anonymizationConfig, httpClient, logger)
+	}
 	return services.NewDIMPClient(config, httpClient, logger)
 }
 
@@ -24,13 +30,29 @@ var defaultDIMPFactory = func(config models.DIMPConfig, httpClient *services.HTT
 var dimpFactory = defaultDIMPFactory
 
 // SetDIMPFactoryForTesting replaces the DIMP client factory for tests.
-func SetDIMPFactoryForTesting(factory func(models.DIMPConfig, *services.HTTPClient, *lib.Logger) services.DIMPProcessor) {
+func SetDIMPFactoryForTesting(factory func(models.DIMPConfig, []byte, *services.HTTPClient, *lib.Logger) services.DIMPProcessor) {
 	dimpFactory = factory
 }
 
 // ResetDIMPFactory restores the default DIMP client factory.
 func ResetDIMPFactory() {
 	dimpFactory = defaultDIMPFactory
+}
+
+// newDIMPProcessor selects the DIMP client for the job configuration. A
+// configured anonymization YAML selects the experimental v3 endpoint: the step
+// reads the file and returns a v3 client that sends it with each request.
+func newDIMPProcessor(config models.DIMPConfig, httpClient *services.HTTPClient, logger *lib.Logger) (services.DIMPProcessor, error) {
+	if config.ExperimentalV3.AnonymizationConfig == "" {
+		return dimpFactory(config, nil, httpClient, logger), nil
+	}
+
+	anonymizationConfig, err := os.ReadFile(config.ExperimentalV3.AnonymizationConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read DIMP anonymization config: %w", err)
+	}
+
+	return dimpFactory(config, anonymizationConfig, httpClient, logger), nil
 }
 
 // dimpStep pseudonymizes FHIR resources through the DIMP service.
@@ -50,7 +72,10 @@ func (dimpStep) Run(ctx *StepContext) (StepResult, error) {
 	}
 
 	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
-	dimpClient := dimpFactory(job.Config.Services.DIMP, httpClient, logger)
+	dimpClient, err := newDIMPProcessor(job.Config.Services.DIMP, httpClient, logger)
+	if err != nil {
+		return StepResult{}, err
+	}
 
 	importDir := ctx.Layout.InputDir(stepName)
 	outputDir := ctx.Layout.OutputDir(stepName)

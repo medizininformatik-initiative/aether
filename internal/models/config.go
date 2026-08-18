@@ -70,14 +70,16 @@ type LocalImportConfig struct {
 
 // DIMPConfig contains DIMP pseudonymization service settings
 type DIMPConfig struct {
-	URL                    string `yaml:"url" json:"url" mapstructure:"url"`
-	BundleSplitThresholdMB int    `yaml:"bundle_split_threshold_mb" json:"bundle_split_threshold_mb" mapstructure:"bundle_split_threshold_mb"` // Default 10MB - threshold for splitting large Bundles to prevent HTTP 413 errors
+	URL                    string                   `yaml:"url" json:"url" mapstructure:"url"`
+	BundleSplitThresholdMB int                      `yaml:"bundle_split_threshold_mb" json:"bundle_split_threshold_mb" mapstructure:"bundle_split_threshold_mb"` // Default 10MB - threshold for splitting large Bundles to prevent HTTP 413 errors
+	ExperimentalV3         DIMPExperimentalV3Config `yaml:"experimental_v3" json:"experimental_v3" mapstructure:"experimental_v3"`
 	// Auth holds authentication settings for the DIMP service
 	Auth AuthConfig `yaml:"auth" json:"auth" mapstructure:"auth"`
 }
 
 // Validate checks that the DIMP config is well-formed. An empty URL is allowed
 // here; ProjectConfig.Validate refuses it only when the dimp step is enabled.
+// The experimental v3 option needs an anonymization config path when it is on.
 func (c *DIMPConfig) Validate() error {
 	if c.URL != "" {
 		if _, err := url.Parse(c.URL); err != nil {
@@ -85,6 +87,16 @@ func (c *DIMPConfig) Validate() error {
 		}
 	}
 	return c.Auth.Validate("dimp")
+}
+
+// DIMPExperimentalV3Config opts into the experimental v3alpha1 endpoint of the
+// FHIR-Pseudonymizer. That endpoint receives the anonymization configuration
+// with each request, so the service does not need a restart for configuration
+// changes. The endpoint is experimental upstream and can change.
+type DIMPExperimentalV3Config struct {
+	// AnonymizationConfig is the path to the anonymization YAML file that is
+	// sent with each request. A non-empty path selects the v3alpha1 endpoint.
+	AnonymizationConfig string `yaml:"anonymization_config" json:"anonymization_config" mapstructure:"anonymization_config"`
 }
 
 // TORCHConfig contains TORCH server connection and extraction behavior settings

@@ -32,6 +32,8 @@ services:
       oauth_client_secret: string
       api_key: string
       api_key_header: string             # default: x-api-key
+    experimental_v3:
+      anonymization_config: string       # a path selects the v3alpha1 endpoint
 
   flattening:
     service_url: string
@@ -162,6 +164,8 @@ services:
     bundle_split_threshold_mb: 10
     auth:
       api_key: "${DIMP_API_KEY}"
+    experimental_v3:
+      anonymization_config: "/path/to/anonymization.yaml"
 ```
 
 | Option | Type | Default | Description |
@@ -175,6 +179,7 @@ services:
 | `auth.oauth_client_secret` | string | - | OAuth 2.0 client secret |
 | `auth.api_key` | string | - | API key. Sent in its own header, not in `Authorization`. |
 | `auth.api_key_header` | string | `x-api-key` | Header that carries `api_key`. The FHIR Pseudonymizer reads `x-api-key`; change it only for a proxy that expects a different header. |
+| `experimental_v3.anonymization_config` | string | - | Path to the anonymization YAML file. A path selects the experimental `v3alpha1` endpoint, which needs FHIR-Pseudonymizer v2.31.0 or later. The YAML travels with each request, so the service does not need a restart for configuration changes. Without a path, Aether uses the default endpoint. Set `parameters.keyDerivationContext` in this file to derive a project key from a master key on the server. See [Key Derivation](../guides/dimp.md#key-derivation). |
 
 Basic Auth and OAuth 2.0 both set the `Authorization` header. Aether rejects a
 config that sets both. The API key uses its own header, thus you can set it

@@ -105,6 +105,9 @@ func TestDeriveJobStatus(t *testing.T) {
 		{"failed wins over in_progress", steps(models.StepStatusInProgress, models.StepStatusFailed), models.JobStatusFailed},
 		{"all pending -> pending", steps(models.StepStatusPending, models.StepStatusPending), models.JobStatusPending},
 		{"no steps -> pending", nil, models.JobStatusPending},
+		{"a waiting step -> waiting", steps(models.StepStatusCompleted, models.StepStatusWaiting), models.JobStatusWaiting},
+		{"waiting wins over in_progress", steps(models.StepStatusInProgress, models.StepStatusWaiting), models.JobStatusWaiting},
+		{"failed wins over waiting", steps(models.StepStatusWaiting, models.StepStatusFailed), models.JobStatusFailed},
 	}
 
 	for _, tt := range tests {

@@ -227,18 +227,24 @@ func IsJobComplete(job PipelineJob) bool {
 // rather than left stale after out-of-band mutations (e.g. `job run --step X [--force]`).
 // Precedence:
 //   - any failed           -> failed
+//   - any waiting          -> waiting
 //   - all completed        -> completed
 //   - any underway/partial -> in_progress
 //   - otherwise (none, or all pending) -> pending
 //
+// waiting outranks in_progress because a job at a wait step has no live process:
+// it needs `pipeline continue`, which in_progress would hide.
+//
 // Pure function - no mutations.
 func DeriveJobStatus(job PipelineJob) JobStatus {
-	anyFailed, anyUnderway, anyCompleted, anyPending := false, false, false, false
+	anyFailed, anyWaiting, anyUnderway, anyCompleted, anyPending := false, false, false, false, false
 	for _, step := range job.Steps {
 		switch step.Status {
 		case StepStatusFailed:
 			anyFailed = true
-		case StepStatusInProgress, StepStatusWaiting:
+		case StepStatusWaiting:
+			anyWaiting = true
+		case StepStatusInProgress:
 			anyUnderway = true
 		case StepStatusCompleted:
 			anyCompleted = true
@@ -250,6 +256,8 @@ func DeriveJobStatus(job PipelineJob) JobStatus {
 	switch {
 	case anyFailed:
 		return JobStatusFailed
+	case anyWaiting:
+		return JobStatusWaiting
 	case anyCompleted && !anyPending && !anyUnderway:
 		return JobStatusCompleted
 	case anyUnderway || anyCompleted:

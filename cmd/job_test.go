@@ -19,9 +19,15 @@ import (
 )
 
 func TestFormatStatusField_DisplayWidthMatchesHeader(t *testing.T) {
-	statuses := []string{"completed", "in_progress", "failed", "pending"}
+	statuses := []models.JobStatus{
+		models.JobStatusCompleted,
+		models.JobStatusInProgress,
+		models.JobStatusFailed,
+		models.JobStatusPending,
+		models.JobStatusWaiting,
+	}
 	for _, status := range statuses {
-		t.Run(status, func(t *testing.T) {
+		t.Run(string(status), func(t *testing.T) {
 			symbol := getJobStatusSymbol(status)
 			field := formatStatusField(symbol, status)
 			assert.Equal(t, statusFieldWidth, runewidth.StringWidth(field),

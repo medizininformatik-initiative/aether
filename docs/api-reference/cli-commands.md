@@ -120,7 +120,7 @@ aether job list <config>
 
 **Output columns:**
 - JOB ID - Job ID (`YYYYMMDD_HHMM_UUID`)
-- STATUS - completed/in_progress/failed/pending
+- STATUS - completed/in_progress/failed/pending/waiting
 - STEP - Current step
 - FILES - Total files processed
 - AGE - Time since creation
@@ -130,6 +130,22 @@ aether job list <config>
 - `→` - In progress
 - `✗` - Failed
 - `○` - Pending
+- `‖` - Waiting at the wait step
+
+**Waiting jobs:**
+
+A job becomes `waiting` when the wait step pauses it. No process runs it: the
+job waits for you. Continue it:
+
+```bash
+aether pipeline continue aether.yaml <job-id>
+```
+
+::: warning State file compatibility
+The `waiting` job status is new. An older Aether binary rejects a state file
+that holds it, and `job list` skips that job with a warning. Do not change to an
+older version while a job is in this state.
+:::
 
 **Example:**
 ```bash

@@ -122,10 +122,15 @@ func TestRunLoop_PauseStopsWithoutFailing(t *testing.T) {
 	final, err := pipeline.RunLoop(job, seamLogger(), pipeline.RunOptions{})
 
 	require.ErrorIs(t, err, pipeline.ErrPaused)
-	assert.Equal(t, models.JobStatusInProgress, final.Status, "pause must not fail the job")
+	assert.Equal(t, models.JobStatusWaiting, final.Status, "pause must not fail the job")
 	s, _ := models.GetStepByName(*final, models.StepLocalImport)
 	assert.Equal(t, models.StepStatusWaiting, s.Status)
 	assert.Equal(t, 0, dimp.calls)
+
+	// A paused job has no live process, so the persisted status must say waiting.
+	reloaded, loadErr := pipeline.LoadJob(job.Config.JobsDir, job.JobID)
+	require.NoError(t, loadErr)
+	assert.Equal(t, models.JobStatusWaiting, reloaded.Status)
 }
 
 func TestRunLoop_UnknownStepErrors(t *testing.T) {

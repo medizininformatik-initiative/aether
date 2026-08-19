@@ -18,6 +18,7 @@ func TestIsValidJobStatus(t *testing.T) {
 		{"in_progress", models.JobStatusInProgress, true},
 		{"completed", models.JobStatusCompleted, true},
 		{"failed", models.JobStatusFailed, true},
+		{"stopped", models.JobStatusStopped, true},
 		{"waiting", models.JobStatusWaiting, true},
 		{"unknown value", models.JobStatus("bogus"), false},
 		{"empty value", models.JobStatus(""), false},

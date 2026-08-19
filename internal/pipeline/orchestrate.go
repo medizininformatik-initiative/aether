@@ -19,7 +19,7 @@ type RunOptions struct {
 // as in_progress, executes the current step through runStep, persists after the
 // step, advances to the next, and completes the job when no step remains. On
 // ErrPaused it stops cleanly (the job becomes waiting); on any other step error
-// it fails the job.
+// it fails the job. UpdateJob drops every write after a recorded stop.
 //
 // The job must already be positioned at the step to run (CurrentStep set). Fake
 // steps injected via SetStepRegistryForTesting make this loop unit-testable
@@ -32,9 +32,9 @@ func RunLoop(job *models.PipelineJob, logger *lib.Logger, opts RunOptions) (*mod
 			return job, fmt.Errorf("unknown step: %s", stepName)
 		}
 
-		// A resumed job carries the waiting status that paused it. The loop owns
-		// the job while a step runs, so claim it before the step starts: state
-		// persisted during the step must not report the old pause.
+		// A resumed job carries the status that stopped it (stopped or waiting).
+		// The loop owns the job while a step runs, so claim it before the step
+		// starts: state persisted during the step must not report the old stop.
 		if job.Status != models.JobStatusInProgress {
 			running := models.UpdateJobStatus(*job, models.JobStatusInProgress)
 			job = &running

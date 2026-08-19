@@ -29,10 +29,10 @@ func (s *statusProbeStep) Run(_ *pipeline.StepContext) (pipeline.StepResult, err
 }
 
 // TestRunLoop_ResumeClearsNonRunningStatus proves a resumed job reports in_progress
-// while it runs. Without this, a job resumed from a wait step keeps waiting on
-// disk and `job list` shows a running job as waiting.
+// while it runs. Without this, a job resumed after Ctrl+C keeps stopped on disk and
+// `job list` shows a running job as stopped.
 func TestRunLoop_ResumeClearsNonRunningStatus(t *testing.T) {
-	for _, status := range []models.JobStatus{models.JobStatusWaiting} {
+	for _, status := range []models.JobStatus{models.JobStatusStopped, models.JobStatusWaiting} {
 		t.Run(string(status), func(t *testing.T) {
 			probe := &statusProbeStep{name: models.StepLocalImport}
 			dimp := &seamFakeStep{name: models.StepDIMP}
@@ -63,7 +63,7 @@ func TestRunLoop_ResumeSaveErrorSurfaces(t *testing.T) {
 		models.StepLocalImport: imp,
 		models.StepDIMP:        dimp,
 	})
-	job.Status = models.JobStatusWaiting
+	job.Status = models.JobStatusStopped
 	require.NoError(t, pipeline.UpdateJob(job.Config.JobsDir, job))
 
 	failSaveOnNth(t, 1) // the resume-claim save is the first save attempt

@@ -304,6 +304,8 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to update job state: %w", err)
 	}
 
+	defer installStopHandler(config.JobsDir, job.JobID, logger)()
+
 	fmt.Printf("Starting %s step...\n", startedJob.CurrentStep)
 
 	final, err := pipeline.RunLoop(startedJob, logger, pipeline.RunOptions{NoProgress: noProgress})
@@ -333,7 +335,10 @@ func runPipelineStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load job: %w", err)
 	}
 
-	fmt.Println(pipeline.GetJobSummary(job))
+	// Report the status the user sees elsewhere: an in_progress job that no
+	// process holds is stopped, and the text names the cause. This is display
+	// only; the state file keeps its value.
+	fmt.Println(pipeline.GetJobSummary(job, services.EffectiveJobStatusText(config.JobsDir, *job)))
 
 	fmt.Println("Steps:")
 	for _, step := range job.Steps {
@@ -394,7 +399,7 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Printf("Current status: %s\n", job.Status)
+	fmt.Printf("Current status: %s\n", services.EffectiveJobStatusText(config.JobsDir, *job))
 	fmt.Printf("Current step: %s\n", job.CurrentStep)
 
 	lock, err := services.AcquireJobLock(config.JobsDir, jobID, logger)
@@ -451,6 +456,8 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("\nResuming pipeline execution...\n")
+
+	defer installStopHandler(config.JobsDir, jobID, logger)()
 
 	final, err := pipeline.RunLoop(job, logger, pipeline.RunOptions{NoProgress: noProgress})
 	if err != nil {

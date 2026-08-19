@@ -15,10 +15,11 @@ type RunOptions struct {
 }
 
 // RunLoop drives a job from its current step to completion or a wait-step pause.
-// It is the single loop shared by pipeline start and continue: it executes the
-// current step through runStep, persists after each step, advances to the next,
-// and completes the job when no step remains. On ErrPaused it stops cleanly
-// (the job stays in_progress); on any other step error it fails the job.
+// It is the single loop shared by pipeline start and continue: it claims the job
+// as in_progress, executes the current step through runStep, persists after the
+// step, advances to the next, and completes the job when no step remains. On
+// ErrPaused it stops cleanly (the job becomes waiting); on any other step error
+// it fails the job.
 //
 // The job must already be positioned at the step to run (CurrentStep set). Fake
 // steps injected via SetStepRegistryForTesting make this loop unit-testable
@@ -31,6 +32,17 @@ func RunLoop(job *models.PipelineJob, logger *lib.Logger, opts RunOptions) (*mod
 			return job, fmt.Errorf("unknown step: %s", stepName)
 		}
 
+		// A resumed job carries the waiting status that paused it. The loop owns
+		// the job while a step runs, so claim it before the step starts: state
+		// persisted during the step must not report the old pause.
+		if job.Status != models.JobStatusInProgress {
+			running := models.UpdateJobStatus(*job, models.JobStatusInProgress)
+			job = &running
+			if err := UpdateJob(job.Config.JobsDir, job); err != nil {
+				return job, fmt.Errorf("failed to save job state: %w", err)
+			}
+		}
+
 		ctx := &StepContext{
 			Job:          job,
 			Layout:       services.NewJobLayout(job.Config.JobsDir, job.JobID, job.Config.Pipeline.EnabledSteps),
@@ -40,6 +52,8 @@ func RunLoop(job *models.PipelineJob, logger *lib.Logger, opts RunOptions) (*mod
 
 		if err := runStep(step, ctx); err != nil {
 			if errors.Is(err, ErrPaused) {
+				paused := models.UpdateJobStatus(*job, models.JobStatusWaiting)
+				job = &paused
 				_ = UpdateJob(job.Config.JobsDir, job)
 				return job, ErrPaused
 			}

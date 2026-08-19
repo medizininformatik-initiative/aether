@@ -473,6 +473,8 @@ func getStatusSymbol(status models.StepStatus) string {
 		return "→"
 	case models.StepStatusFailed:
 		return "✗"
+	case models.StepStatusWaiting:
+		return "‖"
 	case models.StepStatusPending:
 		return " "
 	default:

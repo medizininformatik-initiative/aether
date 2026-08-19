@@ -40,7 +40,7 @@ Arguments:
 
 Shows:
   • Job ID (YYYYMMDD_HHMM_UUID or legacy UUID)
-  • Status (✓ completed, → in_progress, ✗ failed, ○ pending)
+  • Status (✓ completed, → in_progress, ✗ failed, ○ pending, ‖ waiting)
   • Current step being executed
   • Total files processed
   • Retry count for current step
@@ -53,6 +53,7 @@ Status Symbols:
   →  - Job in progress
   ✗  - Job failed
   ○  - Job pending
+  ‖  - Job waits at the wait step (use 'pipeline continue')
 
 Examples:
   # List all jobs
@@ -160,7 +161,7 @@ func runJobList(cmd *cobra.Command, args []string) error {
 	// Load each job and display summary
 	type jobSummary struct {
 		ID         string
-		Status     string
+		Status     models.JobStatus
 		Step       string
 		Files      int
 		CreatedAt  time.Time
@@ -180,7 +181,7 @@ func runJobList(cmd *cobra.Command, args []string) error {
 
 		jobs = append(jobs, jobSummary{
 			ID:         job.JobID,
-			Status:     string(job.Status),
+			Status:     job.Status,
 			Step:       job.CurrentStep,
 			Files:      job.TotalFiles,
 			CreatedAt:  job.CreatedAt,
@@ -217,20 +218,22 @@ func runJobList(cmd *cobra.Command, args []string) error {
 // display columns. Go's fmt width specifier pads by rune count, which mismatches
 // terminal display width for East Asian Ambiguous symbols like → (U+2192) and
 // ○ (U+25CB); runewidth handles the LANG/LC_CTYPE-driven width correctly.
-func formatStatusField(symbol, status string) string {
-	return runewidth.FillRight(symbol+" "+status, statusFieldWidth)
+func formatStatusField(symbol string, status models.JobStatus) string {
+	return runewidth.FillRight(symbol+" "+string(status), statusFieldWidth)
 }
 
-func getJobStatusSymbol(status string) string {
+func getJobStatusSymbol(status models.JobStatus) string {
 	switch status {
-	case "completed":
+	case models.JobStatusCompleted:
 		return "✓"
-	case "in_progress":
+	case models.JobStatusInProgress:
 		return "→"
-	case "failed":
+	case models.JobStatusFailed:
 		return "✗"
-	case "pending":
+	case models.JobStatusPending:
 		return "○"
+	case models.JobStatusWaiting:
+		return "‖"
 	default:
 		return " "
 	}

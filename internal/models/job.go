@@ -39,6 +39,8 @@ const (
 	JobStatusInProgress JobStatus = "in_progress"
 	JobStatusCompleted  JobStatus = "completed"
 	JobStatusFailed     JobStatus = "failed"
+	// JobStatusWaiting marks a job paused at a wait step. No process runs it.
+	JobStatusWaiting JobStatus = "waiting"
 )
 
 // IsValidInputType checks if the input type is recognized
@@ -49,7 +51,8 @@ func IsValidInputType(t InputType) bool {
 // IsValidJobStatus checks if the job status is recognized
 func IsValidJobStatus(s JobStatus) bool {
 	switch s {
-	case JobStatusPending, JobStatusInProgress, JobStatusCompleted, JobStatusFailed:
+	case JobStatusPending, JobStatusInProgress, JobStatusCompleted, JobStatusFailed,
+		JobStatusWaiting:
 		return true
 	default:
 		return false

@@ -49,13 +49,8 @@ func (v *BundleChunkValidator) ValidateChunkStructure(chunk map[string]any) erro
 		return fmt.Errorf("missing required field: entry")
 	}
 
-	entries, ok := chunk["entry"].([]any)
-	if !ok {
+	if _, ok := chunk["entry"].([]any); !ok {
 		return fmt.Errorf("entry must be array, got %T", chunk["entry"])
-	}
-
-	if len(entries) == 0 {
-		return fmt.Errorf("entry array must contain at least one entry")
 	}
 
 	return nil

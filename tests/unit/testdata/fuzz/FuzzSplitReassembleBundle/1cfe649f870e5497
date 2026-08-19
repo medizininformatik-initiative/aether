@@ -1,0 +1,3 @@
+go test fuzz v1
+[]byte("{\"resourceType\":\"Bundle\",\"id\":\"\",\"type\":\"\",\"entry\":[]}")
+int(239)

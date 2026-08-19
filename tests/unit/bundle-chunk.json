@@ -28,13 +28,13 @@
     },
     "total": {
       "type": "integer",
-      "minimum": 1,
+      "minimum": 0,
       "description": "Number of entries in THIS chunk (not the original Bundle). FHIR spec requires total to match entry count."
     },
     "entry": {
       "type": "array",
-      "minItems": 1,
-      "description": "Array of Bundle entries. Each chunk must contain at least one entry.",
+      "minItems": 0,
+      "description": "Array of Bundle entries. A Bundle without entries becomes one chunk with an empty entry array.",
       "items": {
         "type": "object",
         "required": ["resource"],

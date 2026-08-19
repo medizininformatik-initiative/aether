@@ -174,7 +174,8 @@ func TestSplitBundle_InvalidEntries(t *testing.T) {
 	assert.Contains(t, err.Error(), "extract entries")
 }
 
-// TestSplitBundle_NoEntries tests that a Bundle without entries passes through unchanged
+// TestSplitBundle_NoEntries tests that a Bundle without entries becomes one
+// empty chunk, so that ReassembleBundle always accepts the split result.
 func TestSplitBundle_NoEntries(t *testing.T) {
 	testCases := []struct {
 		name   string
@@ -209,11 +210,17 @@ func TestSplitBundle_NoEntries(t *testing.T) {
 
 			require.NoError(t, err, "Bundle without entries should not error")
 			assert.False(t, result.WasSplit, "Bundle without entries should not be split")
-			assert.Equal(t, 0, result.TotalChunks, "Bundle without entries should produce no chunks")
-			assert.Empty(t, result.Chunks, "Bundle without entries should produce no chunks")
+			assert.Equal(t, 1, result.TotalChunks, "Bundle without entries should produce one empty chunk")
+			require.Len(t, result.Chunks, 1)
+			assert.Empty(t, result.Chunks[0].Entries, "The single chunk should hold no entries")
 			assert.Greater(t, result.OriginalSize, 0, "Original size should be recorded")
 			assert.Equal(t, tc.bundle["id"], result.Metadata.ID)
 			assert.Equal(t, tc.bundle["type"], result.Metadata.Type)
+
+			chunkBundle := models.ConvertChunkToBundle(result.Chunks[0])
+			reassembled, err := services.ReassembleBundle(result.Metadata, []map[string]any{chunkBundle})
+			require.NoError(t, err, "ReassembleBundle should accept the chunks that SplitBundle produced")
+			assert.Equal(t, 0, reassembled.EntryCount)
 		})
 	}
 }

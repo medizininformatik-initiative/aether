@@ -95,10 +95,6 @@ func CreateBundleChunk(metadata BundleMetadata, entries []map[string]any,
 		return BundleChunk{}, fmt.Errorf("chunk index %d out of range [0, %d)", index, totalChunks)
 	}
 
-	if len(entries) == 0 {
-		return BundleChunk{}, fmt.Errorf("chunk must contain at least one entry")
-	}
-
 	id := chunkID(metadata.ID, index)
 
 	// Calculate estimated size of chunk

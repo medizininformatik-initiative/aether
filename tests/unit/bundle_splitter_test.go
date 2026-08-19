@@ -195,9 +195,11 @@ func TestCreateChunk(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("Empty entries returns error", func(t *testing.T) {
-		_, err := models.CreateBundleChunk(metadata, []map[string]any{}, 0, 1)
-		assert.Error(t, err)
+	t.Run("Empty entries create an empty chunk", func(t *testing.T) {
+		chunk, err := models.CreateBundleChunk(metadata, []map[string]any{}, 0, 1)
+		require.NoError(t, err)
+		assert.Empty(t, chunk.Entries)
+		assert.Greater(t, chunk.EstimatedSize, 0)
 	})
 }
 

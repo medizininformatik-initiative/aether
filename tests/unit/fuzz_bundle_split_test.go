@@ -81,9 +81,6 @@ func FuzzSplitBundleAcceptsValidBundle(f *testing.F) {
 		}
 
 		if _, err := services.SplitBundle(bundle, size+1<<20); err != nil {
-			if strings.Contains(err.Error(), "chunk must contain at least one entry") {
-				t.Skipf("known defect (issue #650): SplitBundle rejects the empty entry array of %s", data)
-			}
 			t.Fatalf("SplitBundle rejected a structurally valid Bundle that needs no split: %v\ninput: %s", err, data)
 		}
 	})

@@ -1,0 +1,58 @@
+name: Fuzz
+
+# CI runs the fuzz targets only over their seed corpus. This workflow does
+# real fuzzing with -fuzz on a schedule. It does not run on pull requests,
+# because fuzzing is not deterministic and a new finding would block an
+# unrelated pull request.
+on:
+  schedule:
+    - cron: '15 3 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Run all fuzz targets
+        run: |
+          set -u
+          targets=$(grep -rho 'func Fuzz[A-Za-z0-9_]*' ./tests | sed 's/^func //' | sort -u)
+          echo "Targets:"
+          echo "$targets"
+          failed=0
+          for target in $targets; do
+            echo "::group::$target"
+            if ! go test ./tests/unit/ -run="^$target\$" -fuzz="^$target\$" -fuzztime=60s; then
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $failed
+
+      - name: Upload new corpus entries
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-failing-inputs
+          # go test writes an input that causes a failure to testdata. Commit
+          # the uploaded file as a regression test together with the fix.
+          path: tests/unit/testdata/fuzz/
+          if-no-files-found: warn

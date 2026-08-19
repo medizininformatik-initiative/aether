@@ -171,11 +171,13 @@ func PartitionEntries(entries []map[string]any, thresholdBytes int, wrapperBytes
 // Process:
 //  1. Calculate Bundle size
 //  2. Check if splitting needed (size > threshold)
-//  3. If not needed, return single-chunk result (zero chunks for a Bundle without entries)
-//  4. If needed, extract metadata and entries
-//  5. Partition entries using greedy algorithm
-//  6. Create Bundle chunks from partitions
-//  7. Return complete SplitResult
+//  3. If not needed, or if the Bundle has no entries, return single-chunk result
+//  4. If needed, partition entries using greedy algorithm
+//  5. Create Bundle chunks from partitions
+//  6. Return complete SplitResult
+//
+// The result always holds at least one chunk, so ReassembleBundle accepts it.
+// A Bundle without entries becomes one chunk with an empty entry array.
 //
 // Parameters:
 //
@@ -202,24 +204,14 @@ func SplitBundle(bundle map[string]any, thresholdBytes int) (models.SplitResult,
 		return models.SplitResult{}, fmt.Errorf("failed to calculate Bundle size: %w", err)
 	}
 
-	// Check if splitting needed
-	if !ShouldSplit(bundleSize, thresholdBytes) {
-		// Bundle is small enough - return as single chunk
-		entries, err := lib.ExtractEntriesFromBundle(bundle)
-		if err != nil {
-			return models.SplitResult{}, fmt.Errorf("failed to extract entries: %w", err)
-		}
+	entries, err := lib.ExtractEntriesFromBundle(bundle)
+	if err != nil {
+		return models.SplitResult{}, fmt.Errorf("failed to extract entries: %w", err)
+	}
 
-		// A Bundle without entries has nothing to chunk - return it unchanged
-		if len(entries) == 0 {
-			return models.SplitResult{
-				Metadata:     metadata,
-				WasSplit:     false,
-				OriginalSize: bundleSize,
-				TotalChunks:  0,
-			}, nil
-		}
-
+	// A Bundle without entries cannot shrink by splitting, so both cases below
+	// yield a single chunk.
+	if !ShouldSplit(bundleSize, thresholdBytes) || len(entries) == 0 {
 		chunk, err := models.CreateBundleChunk(metadata, entries, 0, 1)
 		if err != nil {
 			return models.SplitResult{}, fmt.Errorf("failed to create chunk: %w", err)
@@ -232,12 +224,6 @@ func SplitBundle(bundle map[string]any, thresholdBytes int) (models.SplitResult,
 			OriginalSize: bundleSize,
 			TotalChunks:  1,
 		}, nil
-	}
-
-	// Bundle needs splitting - extract entries
-	entries, err := lib.ExtractEntriesFromBundle(bundle)
-	if err != nil {
-		return models.SplitResult{}, fmt.Errorf("failed to extract entries: %w", err)
 	}
 
 	wrapperBytes := models.MaxChunkWrapperSize(metadata, len(entries))

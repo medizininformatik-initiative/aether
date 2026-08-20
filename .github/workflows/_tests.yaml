@@ -93,8 +93,8 @@ jobs:
       - name: Download flattening lookup release
         env:
           # renovate: datasource=github-release-attachments depName=medizininformatik-initiative/fhir-ontology-generator
-          FLATTENING_VERSION: v4.3.0
-          FLATTENING_CHECKSUM: 2b0486ce9b1807d5ccaadda94cf1012e0605a635c7a9408f9e15a2d33a565fc9
+          FLATTENING_VERSION: v5.0.0
+          FLATTENING_CHECKSUM: 1544d8a0668d0413c4a08b7a169ba1084814622a4d1afc4af8a0fa8656a0f498
         run: .github/scripts/download-flattening-lookup.sh
 
       - name: Run lookup compatibility test

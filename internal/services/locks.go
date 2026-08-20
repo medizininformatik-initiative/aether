@@ -8,6 +8,17 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 )
 
+// lockRetries and lockRetryInterval absorb a lock that another process holds for
+// a very short time. EffectiveJobStatus must take the lock to find out if it is
+// free, so `job list` holds it for some microseconds. Without a retry, a
+// `pipeline start` that runs at the same moment refuses to start. A process that
+// truly runs a job holds the lock for the full run, thus this short retry does
+// not weaken the guard against two runs of one job.
+const (
+	lockRetries       = 20
+	lockRetryInterval = 5 * time.Millisecond
+)
+
 // JobLock represents a file lock for a specific job
 // Prevents concurrent modification of job state by multiple processes
 type JobLock struct {

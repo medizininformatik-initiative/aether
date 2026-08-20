@@ -24,14 +24,15 @@ func TestFormatStatusField_DisplayWidthMatchesHeader(t *testing.T) {
 		models.JobStatusInProgress,
 		models.JobStatusFailed,
 		models.JobStatusPending,
+		models.JobStatusStopped,
 		models.JobStatusWaiting,
 	}
 	for _, status := range statuses {
 		t.Run(string(status), func(t *testing.T) {
 			symbol := getJobStatusSymbol(status)
-			field := formatStatusField(symbol, status)
+			field := formatStatusField(symbol, string(status))
 			assert.Equal(t, statusFieldWidth, runewidth.StringWidth(field),
-				"status field must occupy exactly %d display columns to align with the %%-15s header",
+				"status field must occupy exactly %d display columns to align with the header",
 				statusFieldWidth)
 		})
 	}
@@ -39,6 +40,14 @@ func TestFormatStatusField_DisplayWidthMatchesHeader(t *testing.T) {
 
 func TestFormatStatusField_UnknownStatusStillPads(t *testing.T) {
 	field := formatStatusField(getJobStatusSymbol("mystery"), "mystery")
+	assert.Equal(t, statusFieldWidth, runewidth.StringWidth(field))
+}
+
+// TestFormatStatusField_DiedTextFitsColumn proves the STATUS column holds the
+// longest status text, the one for a job whose process died.
+func TestFormatStatusField_DiedTextFitsColumn(t *testing.T) {
+	symbol := getJobStatusSymbol(models.JobStatusStopped)
+	field := formatStatusField(symbol, "stopped (process died)")
 	assert.Equal(t, statusFieldWidth, runewidth.StringWidth(field))
 }
 

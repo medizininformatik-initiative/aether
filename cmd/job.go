@@ -15,8 +15,9 @@ import (
 )
 
 // statusFieldWidth is the display width of the combined status symbol + text
-// column, matching the "%-15s" header allocation.
-const statusFieldWidth = 15
+// column, matching the "%-24s" header allocation. The longest text is
+// "stopped (process died)" plus the symbol and a space.
+const statusFieldWidth = 24
 
 // jobCmd represents the job command group
 var jobCmd = &cobra.Command{
@@ -40,7 +41,7 @@ Arguments:
 
 Shows:
   • Job ID (YYYYMMDD_HHMM_UUID or legacy UUID)
-  • Status (✓ completed, → in_progress, ✗ failed, ○ pending, ‖ waiting)
+  • Status (✓ completed, → in_progress, ✗ failed, ○ pending, ■ stopped, ‖ waiting)
   • Current step being executed
   • Total files processed
   • Retry count for current step
@@ -53,6 +54,7 @@ Status Symbols:
   →  - Job in progress
   ✗  - Job failed
   ○  - Job pending
+  ■  - Job stopped (no process runs it; use 'pipeline continue')
   ‖  - Job waits at the wait step (use 'pipeline continue')
 
 Examples:
@@ -162,6 +164,7 @@ func runJobList(cmd *cobra.Command, args []string) error {
 	type jobSummary struct {
 		ID         string
 		Status     models.JobStatus
+		StatusText string
 		Step       string
 		Files      int
 		CreatedAt  time.Time
@@ -181,7 +184,8 @@ func runJobList(cmd *cobra.Command, args []string) error {
 
 		jobs = append(jobs, jobSummary{
 			ID:         job.JobID,
-			Status:     job.Status,
+			Status:     services.EffectiveJobStatus(config.JobsDir, *job),
+			StatusText: services.EffectiveJobStatusText(config.JobsDir, *job),
 			Step:       job.CurrentStep,
 			Files:      job.TotalFiles,
 			CreatedAt:  job.CreatedAt,
@@ -195,14 +199,14 @@ func runJobList(cmd *cobra.Command, args []string) error {
 	})
 
 	// Print table header
-	fmt.Printf("%-52s %-15s %-20s %-8s %s\n", "JOB ID", "STATUS", "STEP", "FILES", "AGE")
-	fmt.Println("--------------------------------------------------------------------------------------------------------------")
+	fmt.Printf("%-52s %-24s %-20s %-8s %s\n", "JOB ID", "STATUS", "STEP", "FILES", "AGE")
+	fmt.Println("-----------------------------------------------------------------------------------------------------------------------")
 
 	// Print jobs
 	for _, j := range jobs {
 		fmt.Printf("%-52s %s %-20s %-8d %s\n",
 			j.ID,
-			formatStatusField(getJobStatusSymbol(j.Status), j.Status),
+			formatStatusField(getJobStatusSymbol(j.Status), j.StatusText),
 			j.Step,
 			j.Files,
 			j.ElapsedStr,
@@ -218,8 +222,8 @@ func runJobList(cmd *cobra.Command, args []string) error {
 // display columns. Go's fmt width specifier pads by rune count, which mismatches
 // terminal display width for East Asian Ambiguous symbols like → (U+2192) and
 // ○ (U+25CB); runewidth handles the LANG/LC_CTYPE-driven width correctly.
-func formatStatusField(symbol string, status models.JobStatus) string {
-	return runewidth.FillRight(symbol+" "+string(status), statusFieldWidth)
+func formatStatusField(symbol string, statusText string) string {
+	return runewidth.FillRight(symbol+" "+statusText, statusFieldWidth)
 }
 
 func getJobStatusSymbol(status models.JobStatus) string {
@@ -232,6 +236,8 @@ func getJobStatusSymbol(status models.JobStatus) string {
 		return "✗"
 	case models.JobStatusPending:
 		return "○"
+	case models.JobStatusStopped:
+		return "■"
 	case models.JobStatusWaiting:
 		return "‖"
 	default:
@@ -298,6 +304,8 @@ func runJobRun(cmd *cobra.Command, args []string) error {
 			logger.Error("Failed to release job lock", "error", err)
 		}
 	}()
+
+	defer installStopHandler(config.JobsDir, jobID, logger)()
 
 	// Execute the step (with lock held). executeStepManually already contextualizes
 	// every error path, so return it as-is rather than double-wrapping.
@@ -388,7 +396,9 @@ func executeStepManually(job *models.PipelineJob, stepName models.StepName, conf
 	}
 
 	// Re-derive job status from its steps: finishing the last step completes the job,
-	// a forced re-run settles back to completed — status is derived, never stale.
+	// a forced re-run settles back to completed. A job left mid-pipeline stays
+	// in_progress on disk; because no process runs it after this command exits,
+	// EffectiveJobStatus shows it as stopped.
 	derived := models.DeriveJobStatus(*job)
 	*job = models.UpdateJobStatus(*job, derived)
 	if derived == models.JobStatusCompleted {

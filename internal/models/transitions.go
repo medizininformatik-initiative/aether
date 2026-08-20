@@ -235,6 +235,10 @@ func IsJobComplete(job PipelineJob) bool {
 // waiting outranks in_progress because a job at a wait step has no live process:
 // it needs `pipeline continue`, which in_progress would hide.
 //
+// The steps cannot show JobStatusStopped: a stopped job says its process died,
+// which is a fact about the process, not about a step. The signal handler writes
+// that status, and EffectiveJobStatus infers it from the job lock.
+//
 // Pure function - no mutations.
 func DeriveJobStatus(job PipelineJob) JobStatus {
 	anyFailed, anyWaiting, anyUnderway, anyCompleted, anyPending := false, false, false, false, false

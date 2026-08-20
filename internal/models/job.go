@@ -39,6 +39,12 @@ const (
 	JobStatusInProgress JobStatus = "in_progress"
 	JobStatusCompleted  JobStatus = "completed"
 	JobStatusFailed     JobStatus = "failed"
+	// JobStatusStopped marks a job that no process runs any more, but which is
+	// not complete. The signal handler writes it on SIGINT and SIGTERM.
+	// EffectiveJobStatus also reports it for a process that died without a
+	// chance to write, for example from SIGKILL or a crash.
+	// It is resumable: `pipeline continue` re-enters the current step.
+	JobStatusStopped JobStatus = "stopped"
 	// JobStatusWaiting marks a job paused at a wait step. No process runs it.
 	JobStatusWaiting JobStatus = "waiting"
 )
@@ -52,7 +58,7 @@ func IsValidInputType(t InputType) bool {
 func IsValidJobStatus(s JobStatus) bool {
 	switch s {
 	case JobStatusPending, JobStatusInProgress, JobStatusCompleted, JobStatusFailed,
-		JobStatusWaiting:
+		JobStatusStopped, JobStatusWaiting:
 		return true
 	default:
 		return false

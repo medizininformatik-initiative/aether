@@ -127,9 +127,21 @@ func LoadJob(jobsDir string, jobID string) (*models.PipelineJob, error) {
 	return services.LoadJobState(jobsDir, jobID)
 }
 
-// UpdateJob updates job state on disk
-// Uses pure functions to create new job instance before saving
+// UpdateJob writes job state to disk and sets UpdatedAt.
+//
+// It writes nothing and gives no error if MarkJobStopped already recorded a stop
+// for this job. The process is ending, thus the stop is the last state it writes.
 func UpdateJob(jobsDir string, job *models.PipelineJob) error {
+	stopMu.Lock()
+	defer stopMu.Unlock()
+	if stoppedJobs[stopKey(jobsDir, job.JobID)] {
+		return nil
+	}
+	return saveJob(jobsDir, job)
+}
+
+// saveJob writes the state file. The caller must hold stopMu.
+func saveJob(jobsDir string, job *models.PipelineJob) error {
 	job.UpdatedAt = time.Now()
 	return services.SaveJobState(jobsDir, job)
 }
@@ -218,12 +230,13 @@ func IsJobComplete(job *models.PipelineJob) bool {
 	return models.IsJobComplete(*job)
 }
 
-// GetJobSummary returns a human-readable summary of the job
-func GetJobSummary(job *models.PipelineJob) string {
+// GetJobSummary returns a human-readable summary of the job. The caller gives
+// the status text, because the shown status can differ from the persisted one.
+func GetJobSummary(job *models.PipelineJob, statusText string) string {
 	duration := time.Since(job.CreatedAt)
 
 	summary := fmt.Sprintf("Job %s\n", job.JobID)
-	summary += fmt.Sprintf("Status: %s\n", job.Status)
+	summary += fmt.Sprintf("Status: %s\n", statusText)
 	summary += fmt.Sprintf("Current Step: %s\n", job.CurrentStep)
 	summary += fmt.Sprintf("Files: %d\n", job.TotalFiles)
 	summary += fmt.Sprintf("Duration: %v\n", duration.Round(time.Second))

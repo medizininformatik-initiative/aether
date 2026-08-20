@@ -87,5 +87,6 @@ aether pipeline continue aether.yaml <job-id>
 Completed steps are not re-run. To re-run a completed step manually, use
 `aether job run <config> <job-id> --step <step> --force`. Forcing a re-run also
 resets every step after it to pending — its output is now stale — so the job
-stays `in_progress` until you re-run those downstream steps (or resume the
-pipeline).
+does not become `completed` until you re-run those downstream steps (or resume
+the pipeline). The state file holds `in_progress`, but no process runs the job
+after the command exits, thus `job list` shows the job as `stopped`.

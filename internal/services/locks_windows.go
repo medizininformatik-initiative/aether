@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
@@ -45,15 +46,25 @@ func AcquireJobLock(jobsDir string, jobID string, logger *lib.Logger) (*JobLock,
 	handle := syscall.Handle(lockFile.Fd())
 	overlapped := syscall.Overlapped{}
 
-	// LockFileEx with FAIL_IMMEDIATELY flag for non-blocking behavior
-	r1, _, err := procLockFileEx.Call(
-		uintptr(handle),
-		uintptr(LOCKFILE_EXCLUSIVE_LOCK|LOCKFILE_FAIL_IMMEDIATELY),
-		0,
-		uintptr(1),
-		0,
-		uintptr(unsafe.Pointer(&overlapped)),
-	)
+	// Each attempt uses FAIL_IMMEDIATELY; the loop retries for
+	// lockRetries*lockRetryInterval.
+	var r1 uintptr
+	for attempt := range lockRetries {
+		r1, _, err = procLockFileEx.Call(
+			uintptr(handle),
+			uintptr(LOCKFILE_EXCLUSIVE_LOCK|LOCKFILE_FAIL_IMMEDIATELY),
+			0,
+			uintptr(1),
+			0,
+			uintptr(unsafe.Pointer(&overlapped)),
+		)
+		if r1 != 0 || err != ERROR_LOCK_VIOLATION {
+			break
+		}
+		if attempt < lockRetries-1 {
+			time.Sleep(lockRetryInterval)
+		}
+	}
 
 	if r1 == 0 {
 		_ = lockFile.Close()
@@ -117,7 +128,9 @@ func (jl *JobLock) Release() error {
 }
 
 // IsJobLocked checks if a job is currently locked by any process (Windows implementation)
-// This is a non-destructive check that doesn't acquire the lock
+// It takes the lock for a very short time to find out if the lock is free, and
+// then releases it. AcquireJobLock retries, thus this probe does not make a
+// concurrent acquisition fail.
 func IsJobLocked(jobsDir string, jobID string) bool {
 	jobDir := GetJobDir(jobsDir, jobID)
 	lockPath := filepath.Join(jobDir, ".lock")

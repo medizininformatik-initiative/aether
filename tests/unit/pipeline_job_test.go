@@ -165,12 +165,22 @@ func TestGetJobSummary(t *testing.T) {
 	job.TotalFiles = 42
 	job.TotalBytes = 12345
 
-	summary := pipeline.GetJobSummary(&job)
+	summary := pipeline.GetJobSummary(&job, string(job.Status))
 
 	assert.Contains(t, summary, job.JobID)
 	assert.Contains(t, summary, string(job.Status))
 	assert.Contains(t, summary, job.CurrentStep)
 	assert.Contains(t, summary, "42") // TotalFiles
+}
+
+// TestGetJobSummary_ShowsStatusText proves the summary shows the status text
+// the caller derives, which can differ from the persisted status.
+func TestGetJobSummary_ShowsStatusText(t *testing.T) {
+	job := createJobForPipelineTests([]models.StepName{models.StepLocalImport})
+
+	summary := pipeline.GetJobSummary(&job, "stopped (process died)")
+
+	assert.Contains(t, summary, "Status: stopped (process died)")
 }
 
 // TestGetJobSummary_WithError tests summary with error message
@@ -179,7 +189,7 @@ func TestGetJobSummary_WithError(t *testing.T) {
 	errorMsg := "test error occurred"
 	job = *pipeline.FailJob(&job, errorMsg)
 
-	summary := pipeline.GetJobSummary(&job)
+	summary := pipeline.GetJobSummary(&job, string(job.Status))
 
 	assert.Contains(t, summary, errorMsg)
 	assert.Contains(t, summary, string(models.JobStatusFailed))

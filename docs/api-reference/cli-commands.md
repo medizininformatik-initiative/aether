@@ -120,7 +120,7 @@ aether job list <config>
 
 **Output columns:**
 - JOB ID - Job ID (`YYYYMMDD_HHMM_UUID`)
-- STATUS - completed/in_progress/failed/pending/waiting
+- STATUS - completed/in_progress/failed/pending/stopped/waiting
 - STEP - Current step
 - FILES - Total files processed
 - AGE - Time since creation
@@ -130,21 +130,36 @@ aether job list <config>
 - `→` - In progress
 - `✗` - Failed
 - `○` - Pending
+- `■` - Stopped
 - `‖` - Waiting at the wait step
 
-**Waiting jobs:**
+**Stopped jobs:**
 
-A job becomes `waiting` when the wait step pauses it. No process runs it: the
-job waits for you. Continue it:
+A job becomes `stopped` when its process ends before the pipeline is complete.
+Aether finds this in two ways:
+
+1. If you press Ctrl+C, or the process receives SIGTERM, Aether writes the
+   `stopped` status to the state file before it exits.
+2. If the process dies without a chance to write, for example from SIGKILL, a
+   crash, or a power loss, the state file keeps `in_progress`. `job list` and
+   `pipeline status` then test the job lock. If no process holds the lock, they
+   show the job as `stopped`.
+
+Both commands only read. They do not change the state file in the second case.
+
+A `stopped` job is not terminal. Continue it:
 
 ```bash
 aether pipeline continue aether.yaml <job-id>
 ```
 
+A `waiting` job also has no live process, but that state is intended: the wait
+step paused the job. Continue it with the same command.
+
 ::: warning State file compatibility
-The `waiting` job status is new. An older Aether binary rejects a state file
-that holds it, and `job list` skips that job with a warning. Do not change to an
-older version while a job is in this state.
+The `stopped` and `waiting` job statuses are new. An older Aether binary rejects
+a state file that holds one of them, and `job list` skips that job with a
+warning. Do not change to an older version while jobs are in these states.
 :::
 
 **Example:**
@@ -185,6 +200,9 @@ returns to `completed` only if every step is completed — so re-running the las
 step completes the job, while re-running an earlier step leaves it `in_progress`
 until the invalidated downstream steps re-run. Likewise, a manual run that
 finishes the last outstanding step sets the job to `completed`.
+
+After the command exits, no process runs the job. Thus a job left mid-pipeline
+holds `in_progress` in the state file, but `job list` shows it as `stopped`.
 
 **Examples:**
 ```bash

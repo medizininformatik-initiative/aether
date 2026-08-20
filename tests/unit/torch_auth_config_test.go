@@ -65,9 +65,9 @@ func TestTORCHConfig_EffectiveAuth_UsesAuthBlock(t *testing.T) {
 func TestTORCHConfig_EffectiveAuth_FallsBackToDeprecatedFlatFields(t *testing.T) {
 	cfg := models.TORCHConfig{
 		BaseURL:           "http://torch.example",
-		OAuthIssuerURI:    "https://idp.example",
-		OAuthClientID:     "flat-client",
-		OAuthClientSecret: "flat-secret",
+		OAuthIssuerURI:    "https://idp.example", //nolint:staticcheck // the test covers the deprecated shape
+		OAuthClientID:     "flat-client",         //nolint:staticcheck // the test covers the deprecated shape
+		OAuthClientSecret: "flat-secret",         //nolint:staticcheck // the test covers the deprecated shape
 	}
 
 	assert.Equal(t, models.AuthConfig{

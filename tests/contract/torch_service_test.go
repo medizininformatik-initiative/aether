@@ -89,8 +89,7 @@ func TestTORCHService_SubmitExtraction_Success(t *testing.T) {
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:            server.URL,
-		Username:           "testuser",
-		Password:           "testpass",
+		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  30 * time.Minute,
 		PollingInterval:    1 * time.Second,
 		MaxPollingInterval: 5 * time.Second,
@@ -130,9 +129,8 @@ func TestTORCHService_SubmitExtraction_InvalidCRTDL(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
-		BaseURL:  server.URL,
-		Username: "testuser",
-		Password: "testpass",
+		BaseURL: server.URL,
+		Auth:    models.AuthConfig{Username: "testuser", Password: "testpass"},
 	}
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
 
@@ -160,9 +158,8 @@ func TestTORCHService_SubmitExtraction_Unauthorized(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
-		BaseURL:  server.URL,
-		Username: "wronguser",
-		Password: "wrongpass",
+		BaseURL: server.URL,
+		Auth:    models.AuthConfig{Username: "wronguser", Password: "wrongpass"},
 	}
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
 
@@ -193,8 +190,7 @@ func TestTORCHService_PollStatus_InProgress(t *testing.T) {
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:            server.URL,
-		Username:           "testuser",
-		Password:           "testpass",
+		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  0 * time.Minute, // Immediate timeout
 		PollingInterval:    1 * time.Second,
 		MaxPollingInterval: 1 * time.Second,
@@ -245,8 +241,7 @@ func TestTORCHService_PollStatus_Complete(t *testing.T) {
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:            server.URL,
-		Username:           "testuser",
-		Password:           "testpass",
+		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  30 * time.Minute,
 		PollingInterval:    1 * time.Second,
 		MaxPollingInterval: 5 * time.Second,
@@ -283,8 +278,7 @@ func TestTORCHService_PollStatus_Failed(t *testing.T) {
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:            server.URL,
-		Username:           "testuser",
-		Password:           "testpass",
+		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  30 * time.Minute,
 		PollingInterval:    1 * time.Second,
 		MaxPollingInterval: 5 * time.Second,
@@ -322,9 +316,8 @@ func TestTORCHService_DownloadFile_Success(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
-		BaseURL:  server.URL,
-		Username: "testuser",
-		Password: "testpass",
+		BaseURL: server.URL,
+		Auth:    models.AuthConfig{Username: "testuser", Password: "testpass"},
 	}
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
 
@@ -353,9 +346,8 @@ func TestTORCHService_DownloadFile_NotFound(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
-		BaseURL:  server.URL,
-		Username: "testuser",
-		Password: "testpass",
+		BaseURL: server.URL,
+		Auth:    models.AuthConfig{Username: "testuser", Password: "testpass"},
 	}
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
 
@@ -382,9 +374,8 @@ func TestTORCHService_DownloadFile_ServerError(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
-		BaseURL:  server.URL,
-		Username: "testuser",
-		Password: "testpass",
+		BaseURL: server.URL,
+		Auth:    models.AuthConfig{Username: "testuser", Password: "testpass"},
 	}
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
 
@@ -476,8 +467,7 @@ func TestTORCHService_EndToEnd_SubmitPollDownload(t *testing.T) {
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
 	torchConfig := models.TORCHConfig{
 		BaseURL:            server.URL,
-		Username:           "testuser",
-		Password:           "testpass",
+		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  30 * time.Minute,
 		PollingInterval:    1 * time.Second,
 		MaxPollingInterval: 5 * time.Second,

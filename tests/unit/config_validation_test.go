@@ -194,8 +194,7 @@ func TestProjectConfig_Validate(t *testing.T) {
 				Services: models.ServiceConfig{
 					TORCH: models.TORCHConfig{
 						BaseURL:            "http://localhost:8080",
-						Username:           "testuser",
-						Password:           "testpass",
+						Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 						ExtractionTimeout:  30 * time.Minute,
 						PollingInterval:    5 * time.Second,
 						MaxPollingInterval: 30 * time.Second,

@@ -829,8 +829,7 @@ func TestTORCHConfig_ValidateMalformedURL(t *testing.T) {
 	// Test URL that causes url.Parse to fail (contains invalid characters)
 	config := models.TORCHConfig{
 		BaseURL:            "http://[invalid",
-		Username:           "user",
-		Password:           "pass",
+		Auth:               models.AuthConfig{Username: "user", Password: "pass"},
 		ExtractionTimeout:  30 * time.Minute,
 		PollingInterval:    5 * time.Second,
 		MaxPollingInterval: 30 * time.Second,
@@ -845,8 +844,7 @@ func TestTORCHConfig_ValidateLargePollingInterval(t *testing.T) {
 	// Arbitrarily large polling intervals are now allowed
 	config := models.TORCHConfig{
 		BaseURL:            "http://localhost:8080",
-		Username:           "user",
-		Password:           "pass",
+		Auth:               models.AuthConfig{Username: "user", Password: "pass"},
 		ExtractionTimeout:  30 * time.Minute,
 		PollingInterval:    5 * time.Minute,
 		MaxPollingInterval: 5 * time.Minute,

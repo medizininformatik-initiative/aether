@@ -21,19 +21,21 @@ func VerifyLookupFile(path string) ([]string, error) {
 }
 
 // verifyLookupData validates raw lookup-file bytes and splits the findings
-// into warnings and one combined error.
+// into warnings and one combined error. Warning findings that share a code
+// collapse into one warning, so a job logs at most one line per code.
 func verifyLookupData(data []byte) ([]string, error) {
 	result := flattenlookup.Validate(data)
 
-	var warnings []string
 	var errorMessages []string
+	var warningFindings []flattenlookup.Finding
 	for _, finding := range result.Findings {
 		if finding.Severity == flattenlookup.SeverityError {
 			errorMessages = append(errorMessages, formatFinding(finding))
 		} else {
-			warnings = append(warnings, formatFinding(finding))
+			warningFindings = append(warningFindings, finding)
 		}
 	}
+	warnings := groupWarningsByCode(warningFindings)
 
 	// The library validates each table alone; uniqueness across tables is
 	// checked here because a JSON Schema cannot express it.
@@ -69,8 +71,34 @@ func duplicateURLMessages(data []byte) []string {
 	return messages
 }
 
+// groupWarningsByCode renders one warning per finding code, in the order the
+// codes first occur. The locations of all findings with the same code join
+// into that one warning.
+func groupWarningsByCode(findings []flattenlookup.Finding) []string {
+	var codes []string
+	locations := make(map[string][]string)
+	for _, finding := range findings {
+		if _, seen := locations[finding.Code]; !seen {
+			codes = append(codes, finding.Code)
+		}
+		locations[finding.Code] = append(locations[finding.Code], formatFindingLocation(finding))
+	}
+
+	var warnings []string
+	for _, code := range codes {
+		warnings = append(warnings, fmt.Sprintf("[%s] %s", code, strings.Join(locations[code], "; ")))
+	}
+	return warnings
+}
+
 // formatFinding renders one finding with its location context.
 func formatFinding(finding flattenlookup.Finding) string {
+	return fmt.Sprintf("[%s] %s", finding.Code, formatFindingLocation(finding))
+}
+
+// formatFindingLocation renders the message of a finding with its location
+// context, without the code prefix.
+func formatFindingLocation(finding flattenlookup.Finding) string {
 	msg := finding.Message
 	if finding.Element != "" {
 		msg = fmt.Sprintf("element '%s': %s", finding.Element, msg)
@@ -78,5 +106,5 @@ func formatFinding(finding flattenlookup.Finding) string {
 	if finding.Table != "" {
 		msg = fmt.Sprintf("profile '%s': %s", finding.Table, msg)
 	}
-	return fmt.Sprintf("[%s] %s", finding.Code, msg)
+	return msg
 }

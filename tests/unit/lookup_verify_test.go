@@ -39,21 +39,72 @@ func TestVerifyLookupFileAcceptsValidFile(t *testing.T) {
 	assert.Empty(t, warnings)
 }
 
-func TestVerifyLookupFileRejectsUnresolvedChild(t *testing.T) {
+func TestVerifyLookupFileAggregatesUnresolvedChildrenIntoOneWarning(t *testing.T) {
 	path := writeLookupFile(t, `[
 		{
 			"url": "https://example.com/StructureDefinition/TestProfile",
 			"resourceType": "Patient",
 			"elements": {
-				"Patient.name": {"viewDefinition": `+minimalViewDefinition+`, "children": ["Patient.name.missing"]}
+				"Patient.name": {"viewDefinition": `+minimalViewDefinition+`, "children": ["Patient.name.missing", "Patient.name.gone"]}
 			}
 		}
 	]`)
 
-	_, err := services.VerifyLookupFile(path)
+	warnings, err := services.VerifyLookupFile(path)
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Patient.name.missing")
+	require.NoError(t, err)
+	require.Len(t, warnings, 1)
+	assert.Contains(t, warnings[0], "unresolved-child")
+	assert.Contains(t, warnings[0], "Patient.name.missing")
+	assert.Contains(t, warnings[0], "Patient.name.gone")
+}
+
+func TestVerifyLookupFileMergesOneWarningCodeAcrossTables(t *testing.T) {
+	path := writeLookupFile(t, `[
+		{
+			"url": "https://example.com/StructureDefinition/ProfileA",
+			"resourceType": "Patient",
+			"elements": {
+				"Patient.name": {"viewDefinition": `+minimalViewDefinition+`, "children": ["Patient.name.missing"]}
+			}
+		},
+		{
+			"url": "https://example.com/StructureDefinition/ProfileB",
+			"resourceType": "Patient",
+			"elements": {
+				"Patient.contact": {"viewDefinition": `+minimalViewDefinition+`, "children": ["Patient.contact.missing"]}
+			}
+		}
+	]`)
+
+	warnings, err := services.VerifyLookupFile(path)
+
+	require.NoError(t, err)
+	require.Len(t, warnings, 1)
+	assert.Contains(t, warnings[0], "ProfileA")
+	assert.Contains(t, warnings[0], "ProfileB")
+}
+
+func TestVerifyLookupFileKeepsDistinctWarningCodesSeparate(t *testing.T) {
+	// "Patient.name" has an unresolved child, and "Patient.other" does not
+	// extend "Patient.name", so two different warning codes fire.
+	path := writeLookupFile(t, `[
+		{
+			"url": "https://example.com/StructureDefinition/TestProfile",
+			"resourceType": "Patient",
+			"elements": {
+				"Patient.name": {"viewDefinition": `+minimalViewDefinition+`, "children": ["Patient.name.missing", "Patient.other"]},
+				"Patient.other": {"viewDefinition": `+minimalViewDefinition+`}
+			}
+		}
+	]`)
+
+	warnings, err := services.VerifyLookupFile(path)
+
+	require.NoError(t, err)
+	require.Len(t, warnings, 2)
+	assert.Contains(t, warnings[0], "unresolved-child")
+	assert.Contains(t, warnings[1], "parent-not-prefix")
 }
 
 func TestVerifyLookupFileReturnsWarningsWithoutError(t *testing.T) {

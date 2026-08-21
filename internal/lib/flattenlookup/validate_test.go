@@ -82,7 +82,7 @@ func TestMissingURLIsASchemaError(t *testing.T) {
 	}
 }
 
-func TestUnresolvedChildIsAnError(t *testing.T) {
+func TestUnresolvedChildIsAWarning(t *testing.T) {
 	result := flattenlookup.Validate([]byte(`[
 	  {
 	    "url": "https://example.org/StructureDefinition/Patient",
@@ -96,15 +96,15 @@ func TestUnresolvedChildIsAnError(t *testing.T) {
 	  }
 	]`))
 
-	if result.Valid() {
-		t.Fatal("expected invalid result for an unresolved child reference")
+	if !result.Valid() {
+		t.Fatalf("an unresolved child must not make the file invalid, got: %v", result.Findings)
 	}
 	if len(result.Findings) != 1 {
 		t.Fatalf("expected one finding, got: %v", result.Findings)
 	}
 	f := result.Findings[0]
-	if f.Code != "unresolved-child" || f.Severity != flattenlookup.SeverityError {
-		t.Fatalf("expected unresolved-child error, got: %+v", f)
+	if f.Code != "unresolved-child" || f.Severity != flattenlookup.SeverityWarning {
+		t.Fatalf("expected unresolved-child warning, got: %+v", f)
 	}
 	if f.Table != "https://example.org/StructureDefinition/Patient" || f.Element != "Patient.name" {
 		t.Fatalf("expected table and element set, got: %+v", f)

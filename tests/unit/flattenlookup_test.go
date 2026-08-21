@@ -34,18 +34,21 @@ func TestFlattenlookupValidFileIsValidWithoutFindings(t *testing.T) {
 }
 
 func TestFlattenlookupErrorFindingMakesResultInvalid(t *testing.T) {
+	// Two elements claim "Patient.name.family" as a child, so the
+	// multiple-parents error fires.
 	result := flattenlookup.Validate(lookupDoc(`{
-		"Patient.name": {"viewDefinition": ` + viewDef + `, "children": ["Patient.name.missing"]}
+		"Patient.name": {"viewDefinition": ` + viewDef + `, "children": ["Patient.name.family"]},
+		"Patient.other": {"viewDefinition": ` + viewDef + `, "children": ["Patient.name.family"]},
+		"Patient.name.family": {"viewDefinition": ` + viewDef + `}
 	}`))
 
 	assert.False(t, result.Valid())
 	require.NotEmpty(t, result.Findings)
 	finding := result.Findings[0]
 	assert.Equal(t, flattenlookup.SeverityError, finding.Severity)
-	assert.Equal(t, "unresolved-child", finding.Code)
+	assert.Equal(t, "multiple-parents", finding.Code)
 	assert.Equal(t, "https://example.com/StructureDefinition/TestProfile", finding.Table)
-	assert.Equal(t, "Patient.name", finding.Element)
-	assert.Contains(t, finding.Message, "Patient.name.missing")
+	assert.Equal(t, "Patient.name.family", finding.Element)
 }
 
 func TestFlattenlookupWarningFindingKeepsResultValid(t *testing.T) {

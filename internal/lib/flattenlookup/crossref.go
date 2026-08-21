@@ -54,7 +54,7 @@ func deriveParents(table lookupTable) (map[string]string, map[string]bool, []Fin
 		for _, child := range table.Elements[id].Children {
 			if _, ok := table.Elements[child]; !ok {
 				findings = append(findings, Finding{
-					Severity: SeverityError,
+					Severity: SeverityWarning,
 					Code:     "unresolved-child",
 					Table:    table.URL,
 					Element:  id,

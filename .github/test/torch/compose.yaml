@@ -16,7 +16,7 @@ services:
         - torch
   torch:
     restart: unless-stopped
-    image: ghcr.io/medizininformatik-initiative/torch:1.0.0@sha256:beee1e3a5dc83c029b7ebda0f90332451ad92060cfd5f0ea6166e2d384c2cc76
+    image: ghcr.io/medizininformatik-initiative/torch:1.0.1@sha256:5132af069711147d89a689ba818f58400177db392055dc1fb10bccfb4ac82088
     # image: torch:latest
     networks: [ "aether", "torch" ]
     ports:

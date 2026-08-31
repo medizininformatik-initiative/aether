@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/schollz/progressbar/v3"
@@ -150,4 +151,17 @@ func (s *Spinner) UpdateMessage(message string) {
 // IsActive returns whether the spinner is currently running
 func (s *Spinner) IsActive() bool {
 	return s.active
+}
+
+// RenderBar returns a textual progress bar of the given width for a fraction
+// in [0, 1]. Out-of-range fractions are clamped.
+func RenderBar(fraction float64, width int) string {
+	if fraction < 0 {
+		fraction = 0
+	}
+	if fraction > 1 {
+		fraction = 1
+	}
+	filled := int(fraction * float64(width))
+	return "[" + strings.Repeat("#", filled) + strings.Repeat(".", width-filled) + "]"
 }

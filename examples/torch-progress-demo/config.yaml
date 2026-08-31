@@ -1,0 +1,13 @@
+# Demo configuration: run the torch step against the mock TORCH server
+# (make demo-torch-progress) and watch the extraction progress.
+services:
+  torch:
+    base_url: "http://localhost:8086"
+    extraction_timeout: PT5M
+    polling_interval: PT1S
+    max_polling_interval: PT1S
+
+pipeline:
+  enabled_steps: ["torch"]
+
+jobs_dir: "jobs"

@@ -25,7 +25,7 @@ LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 PLATFORMS := linux darwin
 ARCHITECTURES := amd64 arm64
 
-.PHONY: all build build-all build-linux build-mac build-mac-arm build-windows build-windows-arm clean test test-unit test-integration test-contract test-fuzz coverage fmt vet vuln lint lint-docs install help release
+.PHONY: all build build-all build-linux build-mac build-mac-arm build-windows build-windows-arm clean test test-unit test-integration test-contract test-fuzz coverage fmt vet vuln lint lint-docs install help release demo-torch-progress
 
 # Default target
 all: clean fmt vet test build
@@ -48,6 +48,11 @@ build:
 	@mkdir -p $(BUILD_DIR)
 	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PATH)
 	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
+
+## demo-torch-progress: Start a mock TORCH server that reports batch progress
+demo-torch-progress:
+	@echo "Starting mock TORCH on :8086 — point services.torch.base_url at http://localhost:8086"
+	$(GOCMD) run ./cmd/mocktorch
 
 ## build-linux: Build binary for Linux (amd64)
 build-linux:

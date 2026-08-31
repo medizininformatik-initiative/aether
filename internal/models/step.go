@@ -15,6 +15,17 @@ type PipelineStep struct {
 	FilesProcessed int        `json:"files_processed"`
 	BytesProcessed int64      `json:"bytes_processed"`
 	LastError      *StepError `json:"last_error,omitempty"`
+	// Progress holds the most recent in-step progress report, if the step
+	// supplies one (currently only the torch step).
+	Progress *StepProgress `json:"progress,omitempty"`
+}
+
+// StepProgress is a point-in-time progress report from a running step.
+type StepProgress struct {
+	Message   string    `json:"message"`
+	Completed int       `json:"completed"`
+	Total     int       `json:"total"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // StepName defines the available pipeline steps

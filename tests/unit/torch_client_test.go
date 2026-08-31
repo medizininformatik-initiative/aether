@@ -341,6 +341,12 @@ func TestTORCHClient_PollExtractionStatus_DiagnosticsNotRepeated(t *testing.T) {
 	pollCount := 0
 	var serverURL string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The client also probes /fhir/Task/{id} for batch progress; only
+		// status requests count as polls.
+		if r.URL.Path != "/fhir/extraction/job-123" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		pollCount++
 		if pollCount < 4 {
 			// Return same diagnostic message for first 3 polls
@@ -782,6 +788,12 @@ func TestTORCHClient_PollExtractionStatus_ExponentialBackoff(t *testing.T) {
 
 	var serverURL string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The client also probes /fhir/Task/{id} for batch progress; only
+		// status requests count for the backoff timing.
+		if r.URL.Path != "/fhir/extraction/job-123" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		pollTimes = append(pollTimes, time.Now())
 		pollCount++
 

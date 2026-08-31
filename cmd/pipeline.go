@@ -353,6 +353,8 @@ func runPipelineStatus(cmd *cobra.Command, args []string) error {
 			fmt.Printf(")")
 		}
 
+		fmt.Print(stepProgressSuffix(step))
+
 		if step.LastError != nil {
 			fmt.Printf("\n    Error: %s", step.LastError.Message)
 		}
@@ -361,6 +363,15 @@ func runPipelineStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// stepProgressSuffix returns the in-step progress for the status line, or ""
+// when the step is not running or reports no progress.
+func stepProgressSuffix(step models.PipelineStep) string {
+	if step.Status != models.StepStatusInProgress || step.Progress == nil {
+		return ""
+	}
+	return " — " + step.Progress.Message
 }
 
 func runPipelineContinue(cmd *cobra.Command, args []string) error {

@@ -255,6 +255,74 @@ func TestTORCHService_PollStatus_Complete(t *testing.T) {
 	assert.Equal(t, server.URL+"/output/batch-2.ndjson", urls[1])
 }
 
+// Contract: TORCH with PR 1221 serves batch progress on GET /fhir/Task/{jobId}
+// as a torch-job-progress extension. The client reports it via the progress
+// handler while the status endpoint returns 202.
+func TestTORCHService_PollStatus_WithTaskProgress(t *testing.T) {
+	const jobID = "job-123"
+
+	var pollCount int
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/fhir/__status/" + jobID:
+			pollCount++
+			if pollCount < 2 {
+				w.WriteHeader(http.StatusAccepted)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"requiresAccessToken":false,"output":[{"type":"Patient","url":"` + serverURL + `/output/batch-1.ndjson"}]}`))
+		case "/fhir/Task/" + jobID:
+			assert.Equal(t, "GET", r.Method)
+			w.Header().Set("Content-Type", "application/fhir+json")
+			_, _ = w.Write([]byte(`{
+				"resourceType": "Task", "id": "` + jobID + `", "status": "in-progress",
+				"extension": [{
+					"url": "https://torch.mii.de/fhir/torch-job-progress",
+					"extension": [
+						{"url": "cohortSize", "valueInteger": 1200},
+						{"url": "batchSize", "valueInteger": 500},
+						{"url": "batchesTotal", "valueInteger": 3},
+						{"url": "batchesCompleted", "valueInteger": 1},
+						{"url": "activeBatch", "extension": [
+							{"url": "batchId", "valueString": "b-1"},
+							{"url": "stage", "valueString": "DIRECT_LOAD"}
+						]}
+					]
+				}]
+			}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{
+		BaseURL:            server.URL,
+		ExtractionTimeout:  30 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 10 * time.Millisecond,
+	}
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+
+	var reported []services.TORCHProgress
+	client.SetProgressHandler(func(p services.TORCHProgress) { reported = append(reported, p) })
+
+	urls, err := client.PollExtractionStatus(server.URL+"/fhir/__status/"+jobID, false)
+
+	require.NoError(t, err)
+	require.Len(t, urls, 1)
+	require.Len(t, reported, 1)
+	assert.Equal(t, 1, reported[0].BatchesCompleted)
+	assert.Equal(t, 3, reported[0].BatchesTotal)
+	require.Len(t, reported[0].ActiveBatches, 1)
+	assert.Equal(t, "DIRECT_LOAD", reported[0].ActiveBatches[0].Stage)
+}
+
 func TestTORCHService_PollStatus_Failed(t *testing.T) {
 	// Mock TORCH server returning extraction failure
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

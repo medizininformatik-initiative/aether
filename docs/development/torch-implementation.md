@@ -203,6 +203,35 @@ Transient network failures on the GET itself (timeouts, connection resets) are
 swallowed and retried — the extraction may still be running server-side, and the
 liveness window is the safety net.
 
+**Batch progress.** After each in-progress poll, the loop calls
+`FetchJobProgress(jobID)` (`internal/services/torch_progress.go`), which reads
+`GET {base_url}/fhir/Task/{jobID}` and parses the `torch-job-progress`
+extension (`cohortSize`, `batchSize`, `batchesTotal`, `batchesCompleted`, and
+one `activeBatch` sub-extension per running batch with `batchId` and `stage`).
+When the progress changes, the loop:
+
+- writes a structured log line,
+- updates the terminal line (`TORCHProgress.TerminalLine()`: bar + percent +
+  `Summary()`),
+- calls the optional progress handler (`SetProgressHandler`). The pipeline
+  registers a handler (`attachTORCHProgressPersistence` in
+  `internal/pipeline/import.go`) that persists a `models.StepProgress` on the
+  torch step, so `pipeline status` shows progress from another process.
+
+The percent value is an estimate: an active batch counts as
+`stage index / 5` of a batch (stage order `CONSENT_FETCH`, `DIRECT_LOAD`,
+`REFERENCE_RESOLVE`, `CASCADING_DELETE`, `COPY_REDACT`).
+
+The fetch is best effort. On any error, non-`200`, or missing extension it
+returns `nil`, and the loop falls back to the `OperationOutcome` diagnostics —
+the behavior for TORCH versions without
+[TORCH PR #1221](https://github.com/medizininformatik-initiative/torch/pull/1221).
+
+To see the progress display without a real TORCH, run the mock server:
+`make demo-torch-progress` starts `cmd/mocktorch` (package
+`internal/mocktorch`) on `:8086`; point `services.torch.base_url` at
+`http://localhost:8086` and start a pipeline.
+
 ### 5. Result parsing
 
 `parseExtractionResult` accepts two shapes and extracts absolute file URLs:

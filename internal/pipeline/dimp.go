@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
@@ -74,7 +73,7 @@ func (dimpStep) Run(ctx *StepContext) (StepResult, error) {
 		return StepResult{}, fmt.Errorf("DIMP service URL not configured")
 	}
 
-	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
+	httpClient := services.NewHTTPClient(job.Config.Services.DIMP.RequestTimeout(), job.Config.Retry, job.Config.TLS, logger)
 	dimpClient, err := newDIMPProcessor(job.Config.Services.DIMP, httpClient, logger)
 	if err != nil {
 		return StepResult{}, err

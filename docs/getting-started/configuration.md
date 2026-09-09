@@ -55,6 +55,7 @@ services:
   dimp:
     url: "http://your-dimp-server:32861"  # server root; /fhir appended by client
     bundle_split_threshold_mb: 10  # Auto-split large bundles
+    timeout: 30s                   # Timeout of one request
     auth:                          # optional
       api_key: "your-api-key"      # sent as x-api-key
 ```

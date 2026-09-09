@@ -69,6 +69,11 @@ services:
     # Default: 10 MB
     bundle_split_threshold_mb: 10
 
+    # Timeout of one pseudonymization request
+    # Increase it if DIMP needs more time for a large bundle
+    # Default: 30s
+    timeout: 30s
+
     # Authentication (optional)
     # Basic auth and OAuth2 both set Authorization; use one of them only.
     # The API key uses its own header, thus it can accompany either scheme.

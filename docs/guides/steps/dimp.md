@@ -15,6 +15,7 @@ services:
   dimp:
     url: "http://your-dimp-server:32861"  # server root; /fhir appended by client
     bundle_split_threshold_mb: 10  # 1-100 MB, default: 10
+    timeout: 30s                   # timeout of one request, default: 30s
     auth:                          # optional; use one scheme only
       api_key: "${DIMP_API_KEY}"
 
@@ -30,6 +31,7 @@ pipeline:
 |--------|------|---------|-------------|
 | `url` | string | - | DIMP server root URL (required). Do not include `/fhir` — the client appends it. |
 | `bundle_split_threshold_mb` | int | 10 | Split Bundles larger than this (1-100 MB) |
+| `timeout` | duration | PT30S | Timeout of one pseudonymization request. Increase it for large bundles. |
 | `auth.username` | string | - | Basic Auth username |
 | `auth.password` | string | - | Basic Auth password |
 | `auth.oauth_issuer_uri` | string | - | OAuth 2.0 issuer URI. When set, Aether fetches client-credentials bearer tokens. |

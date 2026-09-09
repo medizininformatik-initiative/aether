@@ -86,6 +86,22 @@ func bindEnvOverrides(t reflect.Type, prefix string) {
 	}
 }
 
+// refuseRemovedKeys stops a config file that still uses a key that aether no
+// longer reads. Silence would let the pipeline run with different behavior than
+// the file asks for, so each removed key gets an error that names its
+// replacement. It examines the parsed file, because a key with an empty value
+// is absent from viper.AllKeys().
+func refuseRemovedKeys() error {
+	dimp, ok := viper.Get("services.dimp").(map[string]any)
+	if !ok {
+		return nil
+	}
+	if _, found := dimp["experimental_v3"]; found {
+		return fmt.Errorf("services.dimp.experimental_v3 is removed: the FHIR-Pseudonymizer accepts the anonymization configuration on the stable $de-identify operation since v2.34.0. Move the path to services.dimp.anonymization_config")
+	}
+	return nil
+}
+
 // LoadConfig loads configuration from the given file and merges with CLI flags.
 // The config file path is required; auto-discovery of ./aether.yaml or
 // ~/.config/aether/aether.yaml is intentionally not performed.
@@ -118,6 +134,10 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 
 	if err := viper.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("failed to read config file %q: %w", configFile, err)
+	}
+
+	if err := refuseRemovedKeys(); err != nil {
+		return nil, err
 	}
 
 	// Start from the declared defaults and overlay only the keys present in the

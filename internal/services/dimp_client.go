@@ -1,6 +1,8 @@
 package services
 
 import (
+	"encoding/base64"
+
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 )
@@ -8,25 +10,46 @@ import (
 // DIMPClient handles communication with the DIMP pseudonymization service
 // Per contracts/dimp-service.md
 type DIMPClient struct {
-	baseURL    string
-	auth       models.AuthConfig
-	httpClient *HTTPClient
-	logger     *lib.Logger
+	baseURL string
+	auth    models.AuthConfig
+	// configParameter is the immutable "config" part of the Parameters
+	// resource, built once and sent with every request. It is nil when no
+	// anonymization configuration is configured.
+	configParameter map[string]any
+	httpClient      *HTTPClient
+	logger          *lib.Logger
 }
 
-// NewDIMPClient creates a new DIMP client from the DIMP service config
-func NewDIMPClient(config models.DIMPConfig, httpClient *HTTPClient, logger *lib.Logger) *DIMPClient {
-	return &DIMPClient{
+// NewDIMPClient creates a new DIMP client from the DIMP service config.
+// anonymizationConfig is the raw content of the anonymization YAML. The client
+// sends it with each request, so the service does not need a restart for
+// configuration changes. An empty anonymizationConfig makes the service use its
+// own anonymization file.
+func NewDIMPClient(config models.DIMPConfig, anonymizationConfig []byte, httpClient *HTTPClient, logger *lib.Logger) *DIMPClient {
+	client := &DIMPClient{
 		baseURL:    config.URL,
 		auth:       config.Auth,
 		httpClient: httpClient,
 		logger:     logger,
 	}
+	if len(anonymizationConfig) > 0 {
+		client.configParameter = map[string]any{
+			"name": "config",
+			"valueAttachment": map[string]any{
+				"contentType": "application/yaml",
+				"data":        base64.StdEncoding.EncodeToString(anonymizationConfig),
+			},
+		}
+	}
+	return client
 }
 
 // Pseudonymize sends a FHIR resource to the DIMP service for pseudonymization
 // Returns the pseudonymized resource or an error.
-// Per contract: POST /fhir/$de-identify with single FHIR resource.
+// Per contract: POST /fhir/$de-identify with a single FHIR resource, or with a
+// Parameters resource that holds a "config" Attachment part (base64
+// anonymization YAML) and a "resource" part when an anonymization
+// configuration is configured.
 func (c *DIMPClient) Pseudonymize(resource map[string]any) (map[string]any, error) {
 	resourceType := lib.ResourceType(resource)
 	resourceID := lib.ResourceID(resource)
@@ -39,12 +62,28 @@ func (c *DIMPClient) Pseudonymize(resource map[string]any) (map[string]any, erro
 		"id", resourceID,
 		"url", url)
 
+	contentType := "application/json"
+	body := any(resource)
+	if c.configParameter != nil {
+		contentType = "application/fhir+json"
+		body = map[string]any{
+			"resourceType": "Parameters",
+			"parameter": []any{
+				c.configParameter,
+				map[string]any{
+					"name":     "resource",
+					"resource": resource,
+				},
+			},
+		}
+	}
+
 	var pseudonymized map[string]any
 	err := c.httpClient.DoFHIRJSON(FHIRRequest{
 		Method:      "POST",
 		URL:         url,
-		ContentType: "application/json",
-		Body:        resource,
+		ContentType: contentType,
+		Body:        body,
 		Auth:        c.auth,
 		Service:     "DIMP",
 	}, &pseudonymized)

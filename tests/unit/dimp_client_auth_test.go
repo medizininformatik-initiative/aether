@@ -24,7 +24,7 @@ func newDIMPTestClient(url string, auth models.AuthConfig) *services.DIMPClient 
 		models.TLSConfig{},
 		logger,
 	)
-	return services.NewDIMPClient(models.DIMPConfig{URL: url, Auth: auth}, httpClient, logger)
+	return services.NewDIMPClient(models.DIMPConfig{URL: url, Auth: auth}, nil, httpClient, logger)
 }
 
 // The DIMP client passes its configured auth to the shared HTTP client, so each

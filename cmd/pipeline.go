@@ -14,9 +14,10 @@ import (
 )
 
 var (
-	noProgress     bool
-	localImportDir string // CLI flag for local import directory override
-	allowHTTPCRTDL bool   // CLI flag acknowledging http_import + CRTDL semantic mismatch
+	noProgress          bool
+	localImportDir      string // CLI flag for local import directory override
+	allowHTTPCRTDL      bool   // CLI flag acknowledging http_import + CRTDL semantic mismatch
+	anonymizationConfig string // CLI flag for the DIMP anonymization YAML override
 )
 
 // pipelineCmd represents the pipeline command group
@@ -52,6 +53,10 @@ Arguments:
 Combining http_import with a CRTDL requires --allow-http-crtdl since HTTP
 data may not match the CRTDL query.
 
+--anonymization-config gives the anonymization YAML that aether sends to DIMP
+with each request. It overrides services.dimp.anonymization_config. Without a
+path, DIMP uses its own anonymization file.
+
 Examples:
   # Extract data using CRTDL query via TORCH
   aether pipeline start aether.yaml crtdl.json
@@ -72,6 +77,10 @@ Examples:
   # Direct TORCH URL (skip extraction, poll and download results)
   aether pipeline start aether.yaml crtdl.json \
       "https://torch.example.com/fhir/extraction/result-123"
+
+  # Send an anonymization YAML to DIMP with each request
+  aether pipeline start aether.yaml crtdl.json \
+      --anonymization-config anonymization.yaml
 
   # Start without progress indicators
   aether pipeline start aether.yaml crtdl.json --no-progress`,
@@ -166,6 +175,7 @@ func init() {
 	pipelineStartCmd.Flags().BoolVar(&noProgress, "no-progress", false, "Disable progress indicators")
 	pipelineStartCmd.Flags().StringVar(&localImportDir, "dir", "", "Directory for local import (overrides config)")
 	pipelineStartCmd.Flags().BoolVar(&allowHTTPCRTDL, "allow-http-crtdl", false, "Acknowledge that combining http_import with a CRTDL may not match the endpoint's data")
+	pipelineStartCmd.Flags().StringVar(&anonymizationConfig, "anonymization-config", "", "Anonymization YAML sent to DIMP with each request (overrides config)")
 
 	pipelineContinueCmd.Flags().BoolVar(&noProgress, "no-progress", false, "Disable progress indicators")
 }
@@ -224,6 +234,12 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	// Apply --dir flag override if provided
 	if localImportDir != "" {
 		config.Services.LocalImport.Dir = localImportDir
+	}
+
+	// The job keeps the resolved config, so `pipeline continue` sends the same
+	// anonymization YAML without the flag.
+	if anonymizationConfig != "" {
+		config.Services.DIMP.AnonymizationConfig = anonymizationConfig
 	}
 
 	// Validate local_import directory is configured when local_import step is enabled

@@ -55,7 +55,7 @@ func TestDIMPService_Pseudonymize_Success(t *testing.T) {
 	// Test the contract
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, httpClient, logger)
+	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, nil, httpClient, logger)
 
 	originalPatient := map[string]any{
 		"resourceType": "Patient",
@@ -75,12 +75,12 @@ func TestDIMPService_Pseudonymize_Success(t *testing.T) {
 	assert.Equal(t, "REDACTED", result["name"].([]any)[0].(map[string]any)["family"])
 }
 
-func TestDIMPService_V3Pseudonymize_Success(t *testing.T) {
+func TestDIMPService_PseudonymizeWithAnonymizationConfig_Success(t *testing.T) {
 	anonymizationYAML := []byte("fhirVersion: R4\nfhirPathRules:\n  - path: Patient.name\n    method: redact\n")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "POST", r.Method)
-		assert.Equal(t, "/v3alpha1/fhir/$de-identify", r.URL.Path)
+		assert.Equal(t, "/fhir/$de-identify", r.URL.Path)
 		assert.Equal(t, "application/fhir+json", r.Header.Get("Content-Type"))
 
 		var params map[string]any
@@ -123,7 +123,7 @@ func TestDIMPService_V3Pseudonymize_Success(t *testing.T) {
 
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-	client := services.NewDIMPV3Client(models.DIMPConfig{URL: server.URL}, anonymizationYAML, httpClient, logger)
+	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, anonymizationYAML, httpClient, logger)
 
 	result, err := client.Pseudonymize(map[string]any{
 		"resourceType": "Patient",
@@ -136,7 +136,7 @@ func TestDIMPService_V3Pseudonymize_Success(t *testing.T) {
 	assert.Equal(t, "pseudonym-abc123xyz", result["id"])
 }
 
-func TestDIMPService_V3_400OperationOutcome(t *testing.T) {
+func TestDIMPService_AnonymizationConfig_400OperationOutcome(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/fhir+json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -155,7 +155,7 @@ func TestDIMPService_V3_400OperationOutcome(t *testing.T) {
 
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-	client := services.NewDIMPV3Client(models.DIMPConfig{URL: server.URL}, []byte("not: valid: anonymization"), httpClient, logger)
+	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, []byte("not: valid: anonymization"), httpClient, logger)
 
 	_, err := client.Pseudonymize(map[string]any{"resourceType": "Patient", "id": "p1"})
 	assert.Error(t, err)
@@ -180,7 +180,7 @@ func TestDIMPService_400BadRequest(t *testing.T) {
 	// Test will verify non-retryable error
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, httpClient, logger)
+	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, nil, httpClient, logger)
 
 	malformedResource := map[string]any{
 		"id": "no-resource-type",
@@ -211,7 +211,7 @@ func TestDIMPService_500InternalServerError(t *testing.T) {
 	// Test will verify retryable error behavior
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 100}, models.TLSConfig{}, logger)
-	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, httpClient, logger)
+	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, nil, httpClient, logger)
 
 	resource := map[string]any{
 		"resourceType": "Patient",
@@ -234,7 +234,7 @@ func TestDIMPService_502BadGateway(t *testing.T) {
 	// Test will verify this is treated as transient/retryable
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 100}, models.TLSConfig{}, logger)
-	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, httpClient, logger)
+	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, nil, httpClient, logger)
 
 	resource := map[string]any{
 		"resourceType": "Patient",
@@ -263,7 +263,7 @@ func TestDIMPService_422UnprocessableEntity(t *testing.T) {
 	// Test will verify non-retryable error
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, httpClient, logger)
+	client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, nil, httpClient, logger)
 
 	resource := map[string]any{
 		"resourceType": "Patient",

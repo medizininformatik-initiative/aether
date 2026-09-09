@@ -96,26 +96,41 @@ If a profile URL agrees with no attribute group, the pipeline stops with an
 error that gives the group, the attribute, and the URL. Aether writes no
 `enriched-crtdl.json`. Correct the URL, or add a rule that creates the group.
 
-## Experimental v3 Endpoint
+## Anonymization Configuration
 
-The FHIR-Pseudonymizer has an experimental `v3alpha1` endpoint that receives the anonymization configuration with each request. With this endpoint, you can change the anonymization rules without a restart of the service.
+The `$de-identify` operation of the FHIR-Pseudonymizer accepts the anonymization
+configuration with each request. With this configuration, you can change the
+anonymization rules without a restart of the service.
 
-This endpoint needs FHIR-Pseudonymizer v2.31.0 or later.
+This needs FHIR-Pseudonymizer v2.34.0 or later.
+
+Give the path on the command line:
+
+```bash
+aether pipeline start aether.yaml crtdl.json \
+    --anonymization-config anonymization.yaml
+```
+
+You can also put the path in the configuration file. The flag overrides it:
 
 ```yaml
 services:
   dimp:
     url: "http://your-dimp-server:32861"
-    experimental_v3:
-      anonymization_config: "/path/to/anonymization.yaml"
+    anonymization_config: "/path/to/anonymization.yaml"
 ```
 
-The `anonymization_config` path selects the endpoint. If you give a path, Aether
-uses the `v3alpha1` endpoint. If you give no path, Aether uses the default
-endpoint, and the service reads its anonymization configuration from its own
-file.
+If you give no path, the service reads its anonymization configuration from its
+own file.
 
-Aether reads the anonymization YAML at the start of the dimp step and sends it with each request. The upstream endpoint is experimental and can change.
+Aether reads the anonymization YAML at the start of the dimp step and sends it
+with each request. The job keeps the path, thus `aether pipeline continue` sends
+the same file without the flag. If the file is empty, or Aether cannot read it,
+the dimp step stops before it sends a request.
+
+Earlier versions of Aether used the `services.dimp.experimental_v3` block for
+this. That block is removed. A configuration file that still has it stops with
+an error. Move the path to `services.dimp.anonymization_config`.
 
 ## Key Derivation
 

@@ -468,8 +468,8 @@ jobs:
         if: always()
         run: docker compose -f .github/test/compose.yaml down -v
 
-  e2e-test-dimp-v3:
-    name: E2E DIMP Experimental v3 Tests
+  e2e-test-dimp-anonymization-config:
+    name: E2E DIMP Anonymization Config Tests
     runs-on: ubuntu-24.04
     needs: [detect-changes, test]
     if: needs.detect-changes.outputs.code == 'true'
@@ -511,15 +511,15 @@ jobs:
         working-directory: .github/test
         run: docker compose up -d --wait aether-runner fhir-pseudonymizer
 
-      - name: Run DIMP experimental v3 E2E test
+      - name: Run DIMP anonymization config E2E test
         working-directory: .github/test
-        run: ../scripts/run-dimp-v3-e2e-test.sh
+        run: ../scripts/run-dimp-anonymization-config-e2e-test.sh
 
       - name: Upload DIMP job outputs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: e2e-dimp-v3-outputs-${{ github.run_id }}
+          name: e2e-dimp-anonymization-config-outputs-${{ github.run_id }}
           path: .github/test/jobs/
           retention-days: 7
           if-no-files-found: warn
@@ -527,14 +527,14 @@ jobs:
       - name: Capture service logs on failure
         if: failure()
         run: |
-          docker compose -f .github/test/compose.yaml logs fhir-pseudonymizer > docker-logs-dimp-v3.txt
+          docker compose -f .github/test/compose.yaml logs fhir-pseudonymizer > docker-logs-dimp-anonymization-config.txt
 
       - name: Upload service logs
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: docker-logs-dimp-v3-${{ github.run_id }}
-          path: docker-logs-dimp-v3.txt
+          name: docker-logs-dimp-anonymization-config-${{ github.run_id }}
+          path: docker-logs-dimp-anonymization-config.txt
           retention-days: 7
 
       - name: Cleanup Docker services
@@ -544,7 +544,7 @@ jobs:
   test-status:
     name: Test Status
     runs-on: ubuntu-24.04
-    needs: [detect-changes, lookup-compat, e2e-test, e2e-test-direct-load, e2e-test-flattening, e2e-test-validation, e2e-test-dimp-v3]
+    needs: [detect-changes, lookup-compat, e2e-test, e2e-test-direct-load, e2e-test-flattening, e2e-test-validation, e2e-test-dimp-anonymization-config]
     if: always()
     timeout-minutes: 5
     steps:
@@ -560,7 +560,7 @@ jobs:
           echo "E2E Direct Load Tests Result: ${{ needs.e2e-test-direct-load.result }}"
           echo "E2E Flattening Tests Result: ${{ needs.e2e-test-flattening.result }}"
           echo "E2E Validation Tests Result: ${{ needs.e2e-test-validation.result }}"
-          echo "E2E DIMP Experimental v3 Tests Result: ${{ needs.e2e-test-dimp-v3.result }}"
+          echo "E2E DIMP Anonymization Config Tests Result: ${{ needs.e2e-test-dimp-anonymization-config.result }}"
           echo "Code Changed: ${{ needs.detect-changes.outputs.code }}"
 
           # Pass if all e2e tests succeeded or were skipped (docs-only changes)
@@ -569,7 +569,7 @@ jobs:
           DIRECT_OK=false
           FLAT_OK=false
           VAL_OK=false
-          DIMP_V3_OK=false
+          DIMP_ANON_OK=false
 
           if [[ "${{ needs.lookup-compat.result }}" == "success" ]] || [[ "${{ needs.lookup-compat.result }}" == "skipped" ]]; then
             COMPAT_OK=true
@@ -591,11 +591,11 @@ jobs:
             VAL_OK=true
           fi
 
-          if [[ "${{ needs.e2e-test-dimp-v3.result }}" == "success" ]] || [[ "${{ needs.e2e-test-dimp-v3.result }}" == "skipped" ]]; then
-            DIMP_V3_OK=true
+          if [[ "${{ needs.e2e-test-dimp-anonymization-config.result }}" == "success" ]] || [[ "${{ needs.e2e-test-dimp-anonymization-config.result }}" == "skipped" ]]; then
+            DIMP_ANON_OK=true
           fi
 
-          if [[ "$COMPAT_OK" == "true" ]] && [[ "$E2E_OK" == "true" ]] && [[ "$DIRECT_OK" == "true" ]] && [[ "$FLAT_OK" == "true" ]] && [[ "$VAL_OK" == "true" ]] && [[ "$DIMP_V3_OK" == "true" ]]; then
+          if [[ "$COMPAT_OK" == "true" ]] && [[ "$E2E_OK" == "true" ]] && [[ "$DIRECT_OK" == "true" ]] && [[ "$FLAT_OK" == "true" ]] && [[ "$VAL_OK" == "true" ]] && [[ "$DIMP_ANON_OK" == "true" ]]; then
             echo "Tests passed or were not required"
             exit 0
           else

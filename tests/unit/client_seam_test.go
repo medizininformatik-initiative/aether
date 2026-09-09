@@ -49,7 +49,7 @@ func TestDIMPStep_UsesFakeDIMPProcessor(t *testing.T) {
 	assert.Equal(t, "fake-p1", out[0]["id"])
 }
 
-func TestDIMPStep_ExperimentalV3_PassesAnonymizationConfigToFactory(t *testing.T) {
+func TestDIMPStep_PassesAnonymizationConfigToFactory(t *testing.T) {
 	tmpDir := t.TempDir()
 	anonPath := filepath.Join(tmpDir, "anonymization.yaml")
 	require.NoError(t, os.WriteFile(anonPath, []byte("fhirVersion: R4\n"), 0644))
@@ -63,9 +63,7 @@ func TestDIMPStep_ExperimentalV3_PassesAnonymizationConfigToFactory(t *testing.T
 	defer pipeline.ResetDIMPFactory()
 
 	job := createDIMPTestJob("http://unused-by-fake")
-	job.Config.Services.DIMP.ExperimentalV3 = models.DIMPExperimentalV3Config{
-		AnonymizationConfig: anonPath,
-	}
+	job.Config.Services.DIMP.AnonymizationConfig = anonPath
 	importDir := filepath.Join(tmpDir, "import")
 	require.NoError(t, os.MkdirAll(importDir, 0755))
 	writeDIMPNDJSON(t, filepath.Join(importDir, "patients.ndjson"), []map[string]any{
@@ -75,16 +73,30 @@ func TestDIMPStep_ExperimentalV3_PassesAnonymizationConfigToFactory(t *testing.T
 	require.NoError(t, runPipelineStep(models.StepDIMP, job, tmpDir, createDIMPTestLogger()))
 
 	require.NotEmpty(t, mock.Calls, "step must call the injected fake")
-	assert.Equal(t, "fhirVersion: R4\n", string(gotConfig), "step must pass the anonymization YAML to the v3 client")
+	assert.Equal(t, "fhirVersion: R4\n", string(gotConfig), "step must pass the anonymization YAML to the client")
+}
+
+// An empty file gives the service no rules. Silence would let the service apply
+// its own file instead, thus the step stops.
+func TestDIMPStep_EmptyAnonymizationConfigFails(t *testing.T) {
+	tmpDir := t.TempDir()
+	anonPath := filepath.Join(tmpDir, "anonymization.yaml")
+	require.NoError(t, os.WriteFile(anonPath, nil, 0644))
+
+	job := createDIMPTestJob("http://dimp.invalid")
+	job.Config.Services.DIMP.AnonymizationConfig = anonPath
+
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, createDIMPTestLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "anonymization config")
+	assert.Contains(t, err.Error(), "empty")
 }
 
 // The step fails in client construction, before it reads any input files.
-func TestDIMPStep_ExperimentalV3_UnreadableConfigFails(t *testing.T) {
+func TestDIMPStep_UnreadableAnonymizationConfigFails(t *testing.T) {
 	tmpDir := t.TempDir()
 	job := createDIMPTestJob("http://dimp.invalid")
-	job.Config.Services.DIMP.ExperimentalV3 = models.DIMPExperimentalV3Config{
-		AnonymizationConfig: filepath.Join(tmpDir, "does-not-exist.yaml"),
-	}
+	job.Config.Services.DIMP.AnonymizationConfig = filepath.Join(tmpDir, "does-not-exist.yaml")
 
 	err := runPipelineStep(models.StepDIMP, job, tmpDir, createDIMPTestLogger())
 	require.Error(t, err)

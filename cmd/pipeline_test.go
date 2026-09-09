@@ -19,3 +19,16 @@ func TestPipelineContinue_AcceptsNoProgressFlag(t *testing.T) {
 
 	assert.True(t, noProgress, "--no-progress must bind to the noProgress variable")
 }
+
+// The anonymization YAML is a config file of the run, like the CRTDL, so the
+// CLI supplies it. It overrides services.dimp.anonymization_config.
+func TestPipelineStart_AcceptsAnonymizationConfigFlag(t *testing.T) {
+	flag := pipelineStartCmd.Flags().Lookup("anonymization-config")
+	require.NotNil(t, flag, "start command must register --anonymization-config")
+
+	t.Cleanup(func() { anonymizationConfig = "" })
+	require.NoError(t, pipelineStartCmd.Flags().Set("anonymization-config", "/etc/aether/anonymization.yaml"))
+
+	assert.Equal(t, "/etc/aether/anonymization.yaml", anonymizationConfig,
+		"--anonymization-config must bind to the anonymizationConfig variable")
+}

@@ -1,6 +1,6 @@
 ---
-# Anonymization rules that aether sends with each request to the experimental
-# v3alpha1 endpoint of the FHIR-Pseudonymizer.
+# Anonymization rules that aether sends with each $de-identify request to the
+# FHIR-Pseudonymizer.
 #
 # Each rule is the opposite of the rule in dimp/anonymization.yaml, the file
 # that the service reads at start. The e2e test uses this difference to prove

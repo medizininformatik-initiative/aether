@@ -15,15 +15,11 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/ui"
 )
 
-// defaultDIMPFactory is the production DIMP client constructor. It returns the
-// experimental v3alpha1 client when the job configuration asks for it.
-// anonymizationConfig holds the raw anonymization YAML and is empty for the
-// default endpoint.
+// defaultDIMPFactory is the production DIMP client constructor.
+// anonymizationConfig holds the raw anonymization YAML and is empty when the
+// service uses its own anonymization file.
 var defaultDIMPFactory = func(config models.DIMPConfig, anonymizationConfig []byte, httpClient *services.HTTPClient, logger *lib.Logger) services.DIMPProcessor {
-	if config.ExperimentalV3.AnonymizationConfig != "" {
-		return services.NewDIMPV3Client(config, anonymizationConfig, httpClient, logger)
-	}
-	return services.NewDIMPClient(config, httpClient, logger)
+	return services.NewDIMPClient(config, anonymizationConfig, httpClient, logger)
 }
 
 // dimpFactory creates a DIMPProcessor. Overridable in tests.
@@ -39,17 +35,24 @@ func ResetDIMPFactory() {
 	dimpFactory = defaultDIMPFactory
 }
 
-// newDIMPProcessor selects the DIMP client for the job configuration. A
-// configured anonymization YAML selects the experimental v3 endpoint: the step
-// reads the file and returns a v3 client that sends it with each request.
+// newDIMPProcessor creates the DIMP client for the job configuration. When the
+// configuration gives an anonymization YAML path, the step reads the file and
+// the client sends its content with each request.
 func newDIMPProcessor(config models.DIMPConfig, httpClient *services.HTTPClient, logger *lib.Logger) (services.DIMPProcessor, error) {
-	if config.ExperimentalV3.AnonymizationConfig == "" {
+	if config.AnonymizationConfig == "" {
 		return dimpFactory(config, nil, httpClient, logger), nil
 	}
 
-	anonymizationConfig, err := os.ReadFile(config.ExperimentalV3.AnonymizationConfig)
+	anonymizationConfig, err := os.ReadFile(config.AnonymizationConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read DIMP anonymization config: %w", err)
+	}
+
+	// An empty file gives the service no rules. The client would then send no
+	// config part, and the service would apply its own file. That difference
+	// must not stay silent.
+	if len(anonymizationConfig) == 0 {
+		return nil, fmt.Errorf("DIMP anonymization config %s is empty", config.AnonymizationConfig)
 	}
 
 	return dimpFactory(config, anonymizationConfig, httpClient, logger), nil

@@ -99,9 +99,44 @@ jobs_dir: "` + jobsDir + `"
 	assert.Equal(t, expectedFlatteningUrl, config.Services.Flattening.ServiceURL, "Flattening URL should be loaded correctly")
 }
 
-// TestConfigLoading_DIMPExperimentalV3 verifies the experimental v3 DIMP
-// settings are loaded and default to empty.
-func TestConfigLoading_DIMPExperimentalV3(t *testing.T) {
+// TestConfigLoading_DIMPAnonymizationConfig verifies the DIMP anonymization
+// config path is loaded and defaults to empty.
+func TestConfigLoading_DIMPAnonymizationConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  dimp:
+    url: "http://dimp.example.com:8080"
+    anonymization_config: "/etc/aether/anonymization.yaml"
+
+pipeline:
+  enabled_steps:
+    - local_import
+    - dimp
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err)
+
+	assert.Equal(t, "/etc/aether/anonymization.yaml", config.Services.DIMP.AnonymizationConfig)
+
+	defaults := models.DefaultConfig()
+	assert.Empty(t, defaults.Services.DIMP.AnonymizationConfig,
+		"the service uses its own anonymization file by default")
+}
+
+// TestConfigLoading_DIMPExperimentalV3Refused verifies a config file that still
+// uses the removed experimental_v3 block fails with a message that names the
+// replacement key.
+func TestConfigLoading_DIMPExperimentalV3Refused(t *testing.T) {
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.yaml")
 	jobsDir := filepath.Join(tmpDir, "jobs")
@@ -124,14 +159,10 @@ jobs_dir: "` + jobsDir + `"
 	err := os.WriteFile(configFile, []byte(configContent), 0644)
 	require.NoError(t, err)
 
-	config, err := services.LoadConfig(configFile)
-	require.NoError(t, err)
-
-	assert.Equal(t, "/etc/aether/anonymization.yaml", config.Services.DIMP.ExperimentalV3.AnonymizationConfig)
-
-	defaults := models.DefaultConfig()
-	assert.Empty(t, defaults.Services.DIMP.ExperimentalV3.AnonymizationConfig,
-		"experimental v3 must be off by default")
+	_, err = services.LoadConfig(configFile)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "services.dimp.experimental_v3")
+	assert.Contains(t, err.Error(), "services.dimp.anonymization_config")
 }
 
 // TestConfigLoading_RetrySettings verifies retry configuration is loaded
@@ -382,10 +413,10 @@ jobs_dir: "` + jobsDir + `"
 	assert.Contains(t, err.Error(), "invalid dimp url")
 }
 
-// TestConfigValidation_DIMPExperimentalV3WithoutConfigPath verifies an
-// experimental_v3 block without an anonymization config path loads. The DIMP
-// step then uses the default endpoint.
-func TestConfigValidation_DIMPExperimentalV3WithoutConfigPath(t *testing.T) {
+// TestConfigValidation_DIMPExperimentalV3EmptyBlockRefused verifies an empty
+// experimental_v3 block is refused too. The key is removed, so its presence
+// always points to a config file that needs an update.
+func TestConfigValidation_DIMPExperimentalV3EmptyBlockRefused(t *testing.T) {
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.yaml")
 	jobsDir := filepath.Join(tmpDir, "jobs")
@@ -407,9 +438,9 @@ jobs_dir: "` + jobsDir + `"
 	err := os.WriteFile(configFile, []byte(configContent), 0644)
 	require.NoError(t, err)
 
-	config, err := services.LoadConfig(configFile)
-	require.NoError(t, err)
-	assert.Empty(t, config.Services.DIMP.ExperimentalV3.AnonymizationConfig)
+	_, err = services.LoadConfig(configFile)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "services.dimp.anonymization_config")
 }
 
 // Unit tests for TORCHConfig validation

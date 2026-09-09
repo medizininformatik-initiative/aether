@@ -26,74 +26,80 @@ fhirPathRules:
     method: redact
 `
 
-// mockV3DIMPServer records the requests that the experimental v3 endpoint gets.
-type mockV3DIMPServer struct {
-	mu            sync.Mutex
-	requestPaths  []string
-	configPayload [][]byte
+// mockDeIdentifyServer records the requests that the $de-identify operation
+// gets, and the shape of each request body.
+type mockDeIdentifyServer struct {
+	mu                 sync.Mutex
+	requestPaths       []string
+	configPayload      [][]byte
+	parametersRequests int
 }
 
-// createMockV3DIMPServer starts a mock FHIR-Pseudonymizer with the v3alpha1
-// endpoint. It reads the resource out of the Parameters resource, adds a
-// "pseudo-" prefix to the ID, and returns the resource.
-func createMockV3DIMPServer(t *testing.T) (*httptest.Server, *mockV3DIMPServer) {
-	recorder := &mockV3DIMPServer{}
+// createMockDeIdentifyServer starts a mock FHIR-Pseudonymizer. It accepts both
+// body shapes of the stable operation: a bare resource, and a Parameters
+// resource with a config part. It adds a "pseudo-" prefix to the resource ID
+// and returns the resource.
+func createMockDeIdentifyServer(t *testing.T) (*httptest.Server, *mockDeIdentifyServer) {
+	recorder := &mockDeIdentifyServer{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		recorder.mu.Lock()
 		recorder.requestPaths = append(recorder.requestPaths, r.URL.Path)
 		recorder.mu.Unlock()
 
-		if r.URL.Path != "/v3alpha1/fhir/$de-identify" {
+		if r.URL.Path != "/fhir/$de-identify" {
 			http.Error(w, "unexpected path", http.StatusNotFound)
 			return
 		}
 
-		var params map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "failed to decode request", http.StatusBadRequest)
 			return
 		}
-		if params["resourceType"] != "Parameters" {
-			http.Error(w, "request must be a Parameters resource", http.StatusBadRequest)
-			return
-		}
 
-		parts, ok := params["parameter"].([]any)
-		if !ok {
-			http.Error(w, "parameter must be a list", http.StatusBadRequest)
-			return
-		}
+		resource := body
+		if body["resourceType"] == "Parameters" {
+			recorder.mu.Lock()
+			recorder.parametersRequests++
+			recorder.mu.Unlock()
 
-		var resource map[string]any
-		for _, p := range parts {
-			part, ok := p.(map[string]any)
+			parts, ok := body["parameter"].([]any)
 			if !ok {
-				continue
+				http.Error(w, "parameter must be a list", http.StatusBadRequest)
+				return
 			}
-			switch part["name"] {
-			case "config":
-				attachment, ok := part["valueAttachment"].(map[string]any)
-				if !ok {
-					http.Error(w, "config part must have a valueAttachment", http.StatusBadRequest)
-					return
-				}
-				data, err := base64.StdEncoding.DecodeString(attachment["data"].(string))
-				if err != nil {
-					http.Error(w, "config attachment is not base64", http.StatusBadRequest)
-					return
-				}
-				recorder.mu.Lock()
-				recorder.configPayload = append(recorder.configPayload, data)
-				recorder.mu.Unlock()
-			case "resource":
-				resource, _ = part["resource"].(map[string]any)
-			}
-		}
 
-		if resource == nil {
-			http.Error(w, "Parameters must have a resource part", http.StatusBadRequest)
-			return
+			resource = nil
+			for _, p := range parts {
+				part, ok := p.(map[string]any)
+				if !ok {
+					continue
+				}
+				switch part["name"] {
+				case "config":
+					attachment, ok := part["valueAttachment"].(map[string]any)
+					if !ok {
+						http.Error(w, "config part must have a valueAttachment", http.StatusBadRequest)
+						return
+					}
+					data, err := base64.StdEncoding.DecodeString(attachment["data"].(string))
+					if err != nil {
+						http.Error(w, "config attachment is not base64", http.StatusBadRequest)
+						return
+					}
+					recorder.mu.Lock()
+					recorder.configPayload = append(recorder.configPayload, data)
+					recorder.mu.Unlock()
+				case "resource":
+					resource, _ = part["resource"].(map[string]any)
+				}
+			}
+
+			if resource == nil {
+				http.Error(w, "Parameters must have a resource part", http.StatusBadRequest)
+				return
+			}
 		}
 
 		pseudonymizeResource(resource)
@@ -108,16 +114,24 @@ func createMockV3DIMPServer(t *testing.T) (*httptest.Server, *mockV3DIMPServer) 
 	return server, recorder
 }
 
-func (m *mockV3DIMPServer) paths() []string {
+func (m *mockDeIdentifyServer) paths() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]string(nil), m.requestPaths...)
 }
 
-func (m *mockV3DIMPServer) configs() [][]byte {
+func (m *mockDeIdentifyServer) configs() [][]byte {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([][]byte(nil), m.configPayload...)
+}
+
+// parametersBodies gives the number of requests that sent a Parameters
+// resource. Every other request sent the resource alone.
+func (m *mockDeIdentifyServer) parametersBodies() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.parametersRequests
 }
 
 // readMaybeCompressedNDJSON reads an NDJSON file. It decompresses the file if
@@ -139,12 +153,12 @@ func readMaybeCompressedNDJSON(t *testing.T, path string) []map[string]any {
 	return resources
 }
 
-// TestPipelineExperimentalV3_EndToEnd runs a full local_import + dimp pipeline
-// from a configuration file that has the experimental v3 option on. It shows
-// that aether sends the anonymization YAML to the v3alpha1 endpoint and writes
-// the pseudonymized output.
-func TestPipelineExperimentalV3_EndToEnd(t *testing.T) {
-	server, recorder := createMockV3DIMPServer(t)
+// TestPipelineAnonymizationConfig_EndToEnd runs a full local_import + dimp
+// pipeline from a configuration file that gives an anonymization config path.
+// It shows that aether sends the anonymization YAML to the stable $de-identify
+// operation and writes the pseudonymized output.
+func TestPipelineAnonymizationConfig_EndToEnd(t *testing.T) {
+	server, recorder := createMockDeIdentifyServer(t)
 
 	tmpDir := t.TempDir()
 	jobsDir := filepath.Join(tmpDir, "jobs")
@@ -165,8 +179,7 @@ func TestPipelineExperimentalV3_EndToEnd(t *testing.T) {
 services:
   dimp:
     url: "` + server.URL + `"
-    experimental_v3:
-      anonymization_config: "` + anonymizationPath + `"
+    anonymization_config: "` + anonymizationPath + `"
 
 pipeline:
   enabled_steps:
@@ -183,8 +196,8 @@ jobs_dir: "` + jobsDir + `"
 	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
 
 	config, err := services.LoadConfig(configPath)
-	require.NoError(t, err, "config with experimental_v3 should load")
-	require.Equal(t, anonymizationPath, config.Services.DIMP.ExperimentalV3.AnonymizationConfig)
+	require.NoError(t, err, "config with anonymization_config should load")
+	require.Equal(t, anonymizationPath, config.Services.DIMP.AnonymizationConfig)
 
 	logger := lib.NewLogger(lib.LogLevelError)
 
@@ -223,8 +236,10 @@ jobs_dir: "` + jobsDir + `"
 	paths := recorder.paths()
 	require.Len(t, paths, 2, "each resource goes to the DIMP service once")
 	for _, path := range paths {
-		assert.Equal(t, "/v3alpha1/fhir/$de-identify", path, "requests must go to the v3alpha1 endpoint")
+		assert.Equal(t, "/fhir/$de-identify", path, "requests must go to the stable operation")
 	}
+
+	assert.Equal(t, 2, recorder.parametersBodies(), "each request must send a Parameters resource")
 
 	configs := recorder.configs()
 	require.Len(t, configs, 2, "each request must include the anonymization config")
@@ -234,11 +249,11 @@ jobs_dir: "` + jobsDir + `"
 	}
 }
 
-// TestPipelineExperimentalV3_NoAnonymizationConfigUsesDefaultEndpoint shows that
-// an experimental_v3 block without an anonymization_config keeps the default
-// endpoint. The mock server accepts only "/fhir/$de-identify".
-func TestPipelineExperimentalV3_NoAnonymizationConfigUsesDefaultEndpoint(t *testing.T) {
-	server := createMockDIMPServer(t)
+// TestPipelineAnonymizationConfig_WithoutPathSendsBareResource shows that a
+// configuration without an anonymization_config sends the resource alone. The
+// service then uses its own anonymization file.
+func TestPipelineAnonymizationConfig_WithoutPathSendsBareResource(t *testing.T) {
+	server, recorder := createMockDeIdentifyServer(t)
 
 	tmpDir := t.TempDir()
 	jobsDir := filepath.Join(tmpDir, "jobs")
@@ -255,7 +270,6 @@ func TestPipelineExperimentalV3_NoAnonymizationConfigUsesDefaultEndpoint(t *test
 services:
   dimp:
     url: "` + server.URL + `"
-    experimental_v3:
 
 pipeline:
   enabled_steps:
@@ -272,8 +286,8 @@ jobs_dir: "` + jobsDir + `"
 	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
 
 	config, err := services.LoadConfig(configPath)
-	require.NoError(t, err, "an empty experimental_v3 block must load")
-	require.Empty(t, config.Services.DIMP.ExperimentalV3.AnonymizationConfig)
+	require.NoError(t, err)
+	require.Empty(t, config.Services.DIMP.AnonymizationConfig)
 
 	logger := lib.NewLogger(lib.LogLevelError)
 
@@ -292,8 +306,7 @@ jobs_dir: "` + jobsDir + `"
 	require.NoError(t, err)
 
 	jobDir := services.GetJobDir(jobsDir, job.JobID)
-	require.NoError(t, runPipelineStep(models.StepDIMP, advancedJob, jobDir, logger),
-		"requests must go to the default endpoint")
+	require.NoError(t, runPipelineStep(models.StepDIMP, advancedJob, jobDir, logger))
 
 	entries, err := os.ReadDir(filepath.Join(jobDir, "dimp"))
 	require.NoError(t, err)
@@ -302,12 +315,16 @@ jobs_dir: "` + jobsDir + `"
 	resources := readMaybeCompressedNDJSON(t, filepath.Join(jobDir, "dimp", entries[0].Name()))
 	require.Len(t, resources, 1)
 	assert.Equal(t, "pseudo-patient1", resources[0]["id"])
+
+	require.Len(t, recorder.paths(), 1)
+	assert.Zero(t, recorder.parametersBodies(), "the request must send the resource alone")
+	assert.Empty(t, recorder.configs(), "no anonymization config must go to the service")
 }
 
-// TestPipelineExperimentalV3_UnreadableAnonymizationConfigFailsTheStep shows
-// that the DIMP step fails early if it cannot read the anonymization YAML.
-func TestPipelineExperimentalV3_UnreadableAnonymizationConfigFailsTheStep(t *testing.T) {
-	server, recorder := createMockV3DIMPServer(t)
+// TestPipelineAnonymizationConfig_UnreadableFileFailsTheStep shows that the
+// DIMP step fails early if it cannot read the anonymization YAML.
+func TestPipelineAnonymizationConfig_UnreadableFileFailsTheStep(t *testing.T) {
+	server, recorder := createMockDeIdentifyServer(t)
 
 	tmpDir := t.TempDir()
 	jobDir := filepath.Join(tmpDir, "jobs", "job-missing-anonymization")
@@ -325,9 +342,7 @@ func TestPipelineExperimentalV3_UnreadableAnonymizationConfigFailsTheStep(t *tes
 				DIMP: models.DIMPConfig{
 					URL:                    server.URL,
 					BundleSplitThresholdMB: 10,
-					ExperimentalV3: models.DIMPExperimentalV3Config{
-						AnonymizationConfig: filepath.Join(tmpDir, "does-not-exist.yaml"),
-					},
+					AnonymizationConfig:    filepath.Join(tmpDir, "does-not-exist.yaml"),
 				},
 			},
 			Pipeline: models.PipelineConfig{

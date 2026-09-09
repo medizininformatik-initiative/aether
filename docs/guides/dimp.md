@@ -200,5 +200,6 @@ services:
   dimp:
     url: "http://your-dimp-server:32861"
     bundle_split_threshold_mb: 10   # Split bundles larger than 10MB
+    timeout: 30s                    # Timeout of one pseudonymization request
 ```
 

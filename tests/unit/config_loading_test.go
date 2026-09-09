@@ -165,6 +165,40 @@ jobs_dir: "` + jobsDir + `"
 	assert.Contains(t, err.Error(), "services.dimp.anonymization_config")
 }
 
+// TestConfigLoading_DIMPTimeout verifies the DIMP request timeout is loaded
+// from YAML.
+func TestConfigLoading_DIMPTimeout(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  dimp:
+    url: "http://dimp.example.com:8080"
+    timeout: 5m
+
+pipeline:
+  enabled_steps:
+    - local_import
+    - dimp
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err)
+
+	assert.Equal(t, 5*time.Minute, config.Services.DIMP.Timeout)
+
+	defaults := models.DefaultConfig()
+	assert.Equal(t, 30*time.Second, defaults.Services.DIMP.Timeout,
+		"an omitted dimp timeout must stay at 30s")
+}
+
 // TestConfigLoading_RetrySettings verifies retry configuration is loaded
 func TestConfigLoading_RetrySettings(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -411,6 +445,48 @@ jobs_dir: "` + jobsDir + `"
 	assert.Error(t, err, "Invalid DIMP URL should fail during config loading")
 	assert.Nil(t, config)
 	assert.Contains(t, err.Error(), "invalid dimp url")
+}
+
+// TestDIMPConfig_RequestTimeout verifies the resolved request timeout. A job
+// saved before services.dimp.timeout existed has no timeout in its state file,
+// thus the resolved value must fall back to the default bound.
+func TestDIMPConfig_RequestTimeout(t *testing.T) {
+	configured := models.DIMPConfig{Timeout: 5 * time.Minute}
+	assert.Equal(t, 5*time.Minute, configured.RequestTimeout())
+
+	unset := models.DIMPConfig{}
+	assert.Equal(t, 30*time.Second, unset.RequestTimeout(),
+		"an unset timeout must resolve to the default, not to an unbounded request")
+}
+
+// TestConfigValidation_InvalidDIMPTimeout verifies a negative dimp timeout is
+// rejected. Such a value makes every request fail at once.
+func TestConfigValidation_InvalidDIMPTimeout(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	_ = os.MkdirAll(jobsDir, 0755)
+
+	configContent := `
+services:
+  dimp:
+    url: "http://dimp.example.com:8080"
+    timeout: -5s
+
+pipeline:
+  enabled_steps:
+    - local_import
+    - dimp
+
+jobs_dir: "` + jobsDir + `"
+`
+	err := os.WriteFile(configFile, []byte(configContent), 0644)
+	require.NoError(t, err)
+
+	config, err := services.LoadConfig(configFile)
+	assert.Error(t, err)
+	assert.Nil(t, config)
+	assert.Contains(t, err.Error(), "dimp timeout must not be negative")
 }
 
 // TestConfigValidation_DIMPExperimentalV3EmptyBlockRefused verifies an empty

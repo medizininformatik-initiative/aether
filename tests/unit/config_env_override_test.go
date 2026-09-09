@@ -68,6 +68,29 @@ retry:
 	assert.Equal(t, "http://dimp.env.example:8080/fhir", config.Services.DIMP.URL)
 }
 
+// TestEnvOverride_DIMPTimeout verifies the dimp request timeout is settable
+// from the environment, so an operator can raise it without a file change.
+func TestEnvOverride_DIMPTimeout(t *testing.T) {
+	t.Setenv("AETHER_SERVICES_DIMP_TIMEOUT", "2m")
+
+	configFile := writeEnvTestConfig(t, `
+services:
+  dimp:
+    url: "http://dimp.example.com:8080"
+pipeline:
+  enabled_steps:
+    - local_import
+    - dimp
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000`)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err)
+	assert.Equal(t, 2*time.Minute, config.Services.DIMP.Timeout)
+}
+
 // TestEnvOverride_DIMPAuthAPIKey verifies the dimp auth block is bindable from
 // the environment, so credentials stay out of the config file.
 func TestEnvOverride_DIMPAuthAPIKey(t *testing.T) {

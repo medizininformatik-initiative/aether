@@ -202,6 +202,37 @@ func TestExecuteDIMPStep_ProcessSimpleResources(t *testing.T) {
 	assert.Equal(t, "pseudo-p2", resources[1]["id"])
 }
 
+// The step must give the configured timeout to the DIMP client, so a slow DIMP
+// service stops the request after services.dimp.timeout.
+func TestExecuteDIMPStep_UsesConfiguredTimeout(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"resourceType":"Patient","id":"p1"}`))
+	}))
+	defer server.Close()
+	defer close(release)
+
+	tmpDir := t.TempDir()
+	job := createDIMPTestJob(server.URL)
+	job.Config.Services.DIMP.Timeout = 50 * time.Millisecond
+	job.Config.Retry.MaxAttempts = 1
+	logger := createDIMPTestLogger()
+
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+	writeDIMPNDJSON(t, filepath.Join(importDir, "patients.ndjson"), []map[string]any{
+		{"resourceType": "Patient", "id": "p1"},
+	})
+
+	start := time.Now()
+	err := runPipelineStep(models.StepDIMP, job, tmpDir, logger)
+	assert.Error(t, err)
+	assert.Less(t, time.Since(start), 5*time.Second,
+		"the step must stop at the configured timeout, not at the hard-coded 30s")
+}
+
 // The step must give the configured auth to the DIMP client, so credentials in
 // services.dimp.auth reach the service.
 func TestExecuteDIMPStep_SendsConfiguredAuth(t *testing.T) {

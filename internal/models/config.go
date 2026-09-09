@@ -77,6 +77,9 @@ type DIMPConfig struct {
 	// need a restart for configuration changes. An empty path makes the service
 	// use its own anonymization file.
 	AnonymizationConfig string `yaml:"anonymization_config" json:"anonymization_config" mapstructure:"anonymization_config"`
+	// Timeout bounds one pseudonymization request. Increase it when DIMP needs
+	// more time for a large bundle.
+	Timeout time.Duration `yaml:"timeout" json:"timeout" mapstructure:"timeout"`
 	// Auth holds authentication settings for the DIMP service
 	Auth AuthConfig `yaml:"auth" json:"auth" mapstructure:"auth"`
 }
@@ -89,7 +92,25 @@ func (c *DIMPConfig) Validate() error {
 			return fmt.Errorf("invalid dimp url: %w", err)
 		}
 	}
+	// An unset timeout is valid: RequestTimeout resolves it to the default.
+	if c.Timeout < 0 {
+		return fmt.Errorf("dimp timeout must not be negative, got %s", c.Timeout)
+	}
 	return c.Auth.Validate("dimp")
+}
+
+// defaultDIMPTimeout bounds one pseudonymization request when DIMPConfig.Timeout
+// is unset.
+const defaultDIMPTimeout = 30 * time.Second
+
+// RequestTimeout returns the timeout for one pseudonymization request. A job
+// state file written before the timeout option existed holds no value, thus an
+// unset timeout resolves to the default instead of an unbounded request.
+func (c *DIMPConfig) RequestTimeout() time.Duration {
+	if c.Timeout <= 0 {
+		return defaultDIMPTimeout
+	}
+	return c.Timeout
 }
 
 // TORCHConfig contains TORCH server connection and extraction behavior settings
@@ -481,6 +502,7 @@ func DefaultConfig() ProjectConfig {
 			DIMP: DIMPConfig{
 				URL:                    "",
 				BundleSplitThresholdMB: 10, // 10MB default threshold for Bundle splitting
+				Timeout:                defaultDIMPTimeout,
 			},
 			TORCH: TORCHConfig{
 				BaseURL:              "",

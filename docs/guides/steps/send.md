@@ -127,6 +127,42 @@ services:
 
 The S3 client classifies AWS responses such as `SlowDown`, `ServiceUnavailable`, `InternalError`, `RequestTimeout`, `TooManyRequests`, and connection-level failures (`connection reset`, `connection refused`, generic timeouts) as transient. These are retried according to the top-level `retry` settings; all other errors fail the step immediately.
 
+## Failed Requests
+
+When the server refuses a request, the error message shows the server answer, but not the data
+that caused it. Set `dump_failed_requests: true` to keep that data:
+
+```yaml
+services:
+  send:
+    dump_failed_requests: true
+```
+
+The step then writes two files to `jobs/<job-id>/send/failed/` for the request that failed:
+
+| File | Content |
+|------|---------|
+| `<name>.request.json` | The body sent to the server, unchanged. Send it again after you correct it. |
+| `<name>.response.txt` | The HTTP status and the body of the answer, usually an `OperationOutcome`. |
+
+The name identifies the request:
+
+- `direct_resource_load` — `<file>-batch-<n>`, the transaction Bundle for batch `n` of that file.
+- `transfer_load` — `binary-<id>` or `documentreference-<id>`.
+
+A `Binary` is written without its `data` element. That element only holds a copy of the input
+file, which stays in the input directory of the step.
+
+The step stops at the first request that fails, so one run writes one pair of files.
+
+`s3_upload` mode writes no dump. That mode sends no FHIR resources, and the file that the
+upload refused stays in the input directory of the step.
+
+::: warning
+The files hold pseudonymized patient data. Delete them when the analysis is complete, and
+include them in the retention rules for the job directory.
+:::
+
 ## Configuration Options
 
 ### Common
@@ -136,6 +172,7 @@ The S3 client classifies AWS responses such as `SlowDown`, `ServiceUnavailable`,
 | `send_as` | string | — | `direct_resource_load`, `transfer_load`, or `s3_upload` (required) |
 | `url` | string | — | FHIR server root URL. Required for `direct_resource_load` and `transfer_load`. Do not include `/fhir` — the client appends it. Ignored for `s3_upload`. |
 | `batch_size` | int | 100 | Resources per transaction (`direct_resource_load` only, 0-1000) |
+| `dump_failed_requests` | bool | false | Write the body of a rejected request to disk (`direct_resource_load` and `transfer_load` only, see [Failed Requests](#failed-requests)) |
 | `auth` | object | — | Authentication (see below) |
 
 ### `transfer` (transfer_load only)

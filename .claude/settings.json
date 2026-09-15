@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash(git commit*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '🔍 Running golangci-lint (make lint) before commit...'; cache=\"${TMPDIR:-/tmp}/aether-lint-cache\"; mkdir -p \"$cache/go-build\" \"$cache/gomodcache\" \"$cache/golangci-lint\"; out=$(TMPDIR=\"$cache\" GOCACHE=\"$cache/go-build\" GOMODCACHE=\"$cache/gomodcache\" GOLANGCI_LINT_CACHE=\"$cache/golangci-lint\" make lint 2>&1); rc=$?; echo \"$out\"; if [ $rc -ne 0 ] || echo \"$out\" | grep -q 'typechecking error'; then exit 2; fi",
+            "timeout": 300
+          }
+        ]
+      }
+    ]
+  }
+}

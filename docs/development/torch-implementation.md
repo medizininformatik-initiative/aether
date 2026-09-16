@@ -228,6 +228,11 @@ The fetch is best effort. On any error, non-`200`, or missing extension it
 returns `nil`, and the loop falls back to the `OperationOutcome` diagnostics —
 the behavior for TORCH versions before v1.0.2.
 
+To see the progress display without a real TORCH, run the mock server:
+`make demo-torch-progress` starts `cmd/mocktorch` (package
+`internal/testsupport/mocktorch`) on `:8086`; point `services.torch.base_url` at
+`http://localhost:8086` and start a pipeline.
+
 ### 5. Result parsing
 
 `parseExtractionResult` accepts two shapes and extracts absolute file URLs:

@@ -14,6 +14,23 @@ Extracts patient data from a TORCH server. Supports two modes: CRTDL-based extra
 - Downloads FHIR NDJSON data when ready
 - Skips the extraction submission step
 
+## Progress display
+
+While the step polls, aether reads batch progress from the TORCH Task API
+(`GET /fhir/Task/{jobId}`, extension `torch-job-progress`) and shows it in
+two places:
+
+- A progress line in the terminal, with a bar, a percent value, and the
+  active batch stages:
+  `TORCH extraction [##########......] 66% — 1/3 batches (500/1200 patients), active: DIRECT_LOAD (2/5)`
+- A structured log line each time the progress changes.
+
+The percent value is an estimate: each active batch counts as
+`stage index / 5` of a batch, and the five stages get equal weight.
+
+The Task API extension needs TORCH v1.0.2 or later. Against an older TORCH,
+aether falls back to the `OperationOutcome` diagnostics text, as before.
+
 ## Configuration
 
 ```yaml

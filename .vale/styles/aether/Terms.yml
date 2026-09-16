@@ -3,7 +3,6 @@ message: "Use '%s' instead of '%s'."
 level: error
 ignorecase: false
 swap:
-  '\baether\b': Aether
   '\bTorch\b': TORCH
   '\bFhir\b': FHIR
   '\bNDJson\b': NDJSON

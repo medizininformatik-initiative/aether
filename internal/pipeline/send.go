@@ -109,22 +109,9 @@ func executeTransferLoadSend(job *models.PipelineJob, layout services.JobLayout,
 
 	fmt.Printf("Preparing %d file(s) for transfer...\n\n", len(files))
 
-	var binaryResources []binaryEntry
-	for _, filePath := range files {
-		fileName := filepath.Base(filePath)
-
-		entry, err := createBinaryFromFile(filePath)
-		if err != nil {
-			return StepResult{}, fmt.Errorf("failed to process %s: %w", fileName, err)
-		}
-
-		binaryResources = append(binaryResources, entry)
-		fmt.Printf("  ✓ %s (%s)\n", fileName, entry.contentType)
-
-		logger.Debug("Created Binary resource",
-			"file", fileName,
-			"content_type", entry.contentType,
-			"job_id", job.JobID)
+	binaryResources, err := buildBinaryResources(files, job.JobID, logger)
+	if err != nil {
+		return StepResult{}, err
 	}
 
 	sendConfig := job.Config.Services.Send
@@ -135,18 +122,19 @@ func executeTransferLoadSend(job *models.PipelineJob, layout services.JobLayout,
 		"job_id", job.JobID)
 
 	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
+	dump := newRequestDump(job, layout, logger)
 
 	// Upload each Binary resource
 	for i, binary := range binaryResources {
 		fmt.Printf("  Uploading Binary %d/%d...\n", i+1, len(binaryResources))
-		if err := uploadBinary(binary, sendConfig, httpClient, logger); err != nil {
+		if err := uploadBinary(binary, sendConfig, httpClient, logger, dump); err != nil {
 			return StepResult{}, fmt.Errorf("failed to upload Binary %s: %w", binary.id, err)
 		}
 	}
 
 	// Upload DocumentReference
 	fmt.Println("  Uploading DocumentReference...")
-	if err := uploadDocumentReference(docRef, sendConfig, httpClient, logger); err != nil {
+	if err := uploadDocumentReference(docRef, sendConfig, httpClient, logger, dump); err != nil {
 		return StepResult{}, fmt.Errorf("failed to upload DocumentReference: %w", err)
 	}
 
@@ -157,6 +145,30 @@ func executeTransferLoadSend(job *models.PipelineJob, layout services.JobLayout,
 		"job_id", job.JobID)
 
 	return StepResult{FilesProcessed: len(files)}, nil
+}
+
+// buildBinaryResources makes one FHIR Binary resource for each file.
+func buildBinaryResources(files []string, jobID string, logger *lib.Logger) ([]binaryEntry, error) {
+	var binaryResources []binaryEntry
+
+	for _, filePath := range files {
+		fileName := filepath.Base(filePath)
+
+		entry, err := createBinaryFromFile(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to process %s: %w", fileName, err)
+		}
+
+		binaryResources = append(binaryResources, entry)
+		fmt.Printf("  ✓ %s (%s)\n", fileName, entry.contentType)
+
+		logger.Debug("Created Binary resource",
+			"file", fileName,
+			"content_type", entry.contentType,
+			"job_id", jobID)
+	}
+
+	return binaryResources, nil
 }
 
 // executeDirectResourceLoadSend uploads NDJSON files to a FHIR server using transaction bundles.
@@ -191,6 +203,7 @@ func executeDirectResourceLoadSend(job *models.PipelineJob, layout services.JobL
 
 	// Create FHIR client
 	fhirClient := services.NewFHIRClient(job.Config.Services.Send, httpClient, logger)
+	fhirClient.DumpFailedRequestsTo(newRequestDump(job, layout, logger))
 
 	fhirURL := job.Config.Services.Send.URL
 	fmt.Printf("Uploading %d NDJSON file(s) to FHIR server: %s\n\n", len(orderedFiles), fhirURL)
@@ -199,36 +212,9 @@ func executeDirectResourceLoadSend(job *models.PipelineJob, layout services.JobL
 		fmt.Printf("Processing core files first (%d file(s)):\n", len(coreFiles))
 	}
 
-	filesProcessed := 0
-	totalResources := 0
-
-	for i, filePath := range orderedFiles {
-		// Print separator between core and other files
-		if i == len(coreFiles) && len(coreFiles) > 0 && len(otherFiles) > 0 {
-			fmt.Printf("\nProcessing other files (%d file(s)):\n", len(otherFiles))
-		}
-
-		// Open file (handles both compressed and uncompressed)
-		reader, err := lib.OpenFileForReading(filePath)
-		if err != nil {
-			return StepResult{}, fmt.Errorf("failed to open %s: %w", filepath.Base(filePath), err)
-		}
-
-		// Upload file
-		stats, err := fhirClient.UploadNDJSON(filePath, reader)
-		if closeErr := reader.Close(); closeErr != nil {
-			logger.Warn("Failed to close file reader", "error", closeErr)
-		}
-
-		if err != nil {
-			return StepResult{}, fmt.Errorf("failed to upload %s: %w", filepath.Base(filePath), err)
-		}
-
-		filesProcessed++
-		totalResources += stats.ResourcesUploaded
-
-		fmt.Printf("  ✓ %s (%d resources, %d batches)\n",
-			filepath.Base(filePath), stats.ResourcesUploaded, stats.BatchesSent)
+	filesProcessed, totalResources, err := uploadNDJSONFiles(fhirClient, orderedFiles, len(coreFiles), len(otherFiles), logger)
+	if err != nil {
+		return StepResult{}, err
 	}
 
 	logger.Debug("Direct resource load send step completed",
@@ -240,6 +226,48 @@ func executeDirectResourceLoadSend(job *models.PipelineJob, layout services.JobL
 	fmt.Printf("\n✓ Uploaded %d resources from %d files to FHIR server\n", totalResources, filesProcessed)
 
 	return StepResult{FilesProcessed: filesProcessed}, nil
+}
+
+// uploadNDJSONFiles uploads each file in order and returns the number of files
+// and of resources that went to the server.
+func uploadNDJSONFiles(fhirClient *services.FHIRClient, orderedFiles []string, coreCount, otherCount int, logger *lib.Logger) (filesProcessed, totalResources int, err error) {
+	for i, filePath := range orderedFiles {
+		if i == coreCount && coreCount > 0 && otherCount > 0 {
+			fmt.Printf("\nProcessing other files (%d file(s)):\n", otherCount)
+		}
+
+		stats, err := uploadNDJSONFile(fhirClient, filePath, logger)
+		if err != nil {
+			return filesProcessed, totalResources, err
+		}
+
+		filesProcessed++
+		totalResources += stats.ResourcesUploaded
+
+		fmt.Printf("  ✓ %s (%d resources, %d batches)\n",
+			filepath.Base(filePath), stats.ResourcesUploaded, stats.BatchesSent)
+	}
+
+	return filesProcessed, totalResources, nil
+}
+
+// uploadNDJSONFile opens one file, compressed or not, and uploads it.
+func uploadNDJSONFile(fhirClient *services.FHIRClient, filePath string, logger *lib.Logger) (*services.FHIRUploadStats, error) {
+	reader, err := lib.OpenFileForReading(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open %s: %w", filepath.Base(filePath), err)
+	}
+
+	stats, err := fhirClient.UploadNDJSON(filePath, reader)
+	if closeErr := reader.Close(); closeErr != nil {
+		logger.Warn("Failed to close file reader", "error", closeErr)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to upload %s: %w", filepath.Base(filePath), err)
+	}
+
+	return stats, nil
 }
 
 // findNDJSONFiles finds all NDJSON files in a directory (both .ndjson and .ndjson.zst)
@@ -284,6 +312,16 @@ type binaryEntry struct {
 	id          string
 	contentType string
 	resource    map[string]any
+	sourcePath  string
+}
+
+// newRequestDump returns a dump for the send step, or nil when the
+// configuration leaves it off.
+func newRequestDump(job *models.PipelineJob, layout services.JobLayout, logger *lib.Logger) *services.RequestDump {
+	if !job.Config.Services.Send.DumpFailedRequests {
+		return nil
+	}
+	return services.NewRequestDump(layout.FailedRequestsDir(), logger)
 }
 
 // createBinaryFromFile reads a file, zips it, base64-encodes the content,
@@ -312,7 +350,21 @@ func createBinaryFromFile(filePath string) (binaryEntry, error) {
 		id:          id,
 		contentType: contentType,
 		resource:    resource,
+		sourcePath:  filePath,
 	}, nil
+}
+
+// dumpResource returns a copy of the Binary without its base64 payload. The
+// payload only duplicates the input file, which stays on disk anyway.
+func (b binaryEntry) dumpResource() map[string]any {
+	stripped := make(map[string]any, len(b.resource))
+	for key, value := range b.resource {
+		if key == "data" {
+			continue
+		}
+		stripped[key] = value
+	}
+	return stripped
 }
 
 // zipSingleFile compresses a single file into an in-memory zip archive.
@@ -383,7 +435,7 @@ func buildDocumentReference(binaries []binaryEntry, config models.TransferConfig
 }
 
 // uploadBinary PUTs a single Binary resource to the FHIR server.
-func uploadBinary(binary binaryEntry, config models.SendConfig, httpClient *services.HTTPClient, logger *lib.Logger) error {
+func uploadBinary(binary binaryEntry, config models.SendConfig, httpClient *services.HTTPClient, logger *lib.Logger, dump *services.RequestDump) error {
 	targetURL := fmt.Sprintf("%s/fhir/Binary/%s", strings.TrimSuffix(config.URL, "/"), binary.id)
 	jsonData, err := json.Marshal(binary.resource)
 	if err != nil {
@@ -403,6 +455,11 @@ func uploadBinary(binary binaryEntry, config models.SendConfig, httpClient *serv
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
+		// The source file, not the base64 payload, is what an analyst needs.
+		if stripped, marshalErr := json.Marshal(binary.dumpResource()); marshalErr == nil {
+			dump.Write("binary-"+binary.id, stripped, resp.StatusCode,
+				append(body, []byte("\n\nsource file: "+binary.sourcePath)...))
+		}
 		return &SendError{
 			StatusCode: resp.StatusCode,
 			Message:    string(body),
@@ -415,7 +472,7 @@ func uploadBinary(binary binaryEntry, config models.SendConfig, httpClient *serv
 }
 
 // uploadDocumentReference PUTs the DocumentReference to the FHIR server.
-func uploadDocumentReference(docRef map[string]any, config models.SendConfig, httpClient *services.HTTPClient, logger *lib.Logger) error {
+func uploadDocumentReference(docRef map[string]any, config models.SendConfig, httpClient *services.HTTPClient, logger *lib.Logger, dump *services.RequestDump) error {
 	id, _ := docRef["id"].(string)
 	targetURL := fmt.Sprintf("%s/fhir/DocumentReference/%s", strings.TrimSuffix(config.URL, "/"), id)
 	jsonData, err := json.Marshal(docRef)
@@ -436,6 +493,7 @@ func uploadDocumentReference(docRef map[string]any, config models.SendConfig, ht
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
+		dump.Write("documentreference-"+id, jsonData, resp.StatusCode, body)
 		return &SendError{
 			StatusCode: resp.StatusCode,
 			Message:    string(body),

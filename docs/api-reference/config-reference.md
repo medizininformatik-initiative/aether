@@ -46,6 +46,7 @@ services:
     send_as: string                      # "direct_resource_load", "transfer_load", or "s3_upload"
     url: string                          # required for FHIR modes; ignored for s3_upload
     batch_size: integer                  # 0-1000, default: 100 (direct_resource_load only)
+    dump_failed_requests: boolean        # default: false
     auth:                                # FHIR auth, or proxy auth in s3_upload mode
       username: string
       password: string
@@ -274,6 +275,7 @@ services:
 | `send_as` | string | - | `direct_resource_load`, `transfer_load`, or `s3_upload` |
 | `url` | string | - | FHIR server root URL — required for FHIR modes, ignored for `s3_upload`. Do not include `/fhir`; the client appends it. |
 | `batch_size` | int | 100 | Resources per transaction (`direct_resource_load` only, 0-1000) |
+| `dump_failed_requests` | bool | false | Write the body of a rejected request to `jobs/<job-id>/send/failed/` (`direct_resource_load` and `transfer_load` only) |
 
 **Authentication (choose one for FHIR modes):**
 

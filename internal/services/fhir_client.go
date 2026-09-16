@@ -21,6 +21,13 @@ type FHIRClient struct {
 	auth       models.AuthConfig
 	httpClient *HTTPClient
 	logger     *lib.Logger
+	dump       *RequestDump
+}
+
+// DumpFailedRequestsTo makes the client write each rejected transaction bundle
+// to dump. Pass nil to disable.
+func (c *FHIRClient) DumpFailedRequestsTo(dump *RequestDump) {
+	c.dump = dump
 }
 
 // FHIRUploadStats contains statistics from uploading an NDJSON file
@@ -73,14 +80,36 @@ func NewFHIRClientWithParams(url string, batchSize int, auth models.AuthConfig, 
 // UploadNDJSON reads resources from an NDJSON reader and uploads them to the FHIR server
 // using transaction bundles. Returns upload statistics.
 func (c *FHIRClient) UploadNDJSON(filePath string, reader io.Reader) (*FHIRUploadStats, error) {
-	batchSize := c.batchSize
-	if batchSize <= 0 {
-		batchSize = 100 // default
+	stats := &FHIRUploadStats{}
+
+	rest, err := c.sendFullBatches(filePath, reader, stats)
+	if err != nil {
+		return stats, err
 	}
 
+	if len(rest) > 0 {
+		if err := c.flushBatch(filePath, rest, stats); err != nil {
+			return stats, fmt.Errorf("failed to send final batch from %s: %w", filepath.Base(filePath), err)
+		}
+	}
+
+	return stats, nil
+}
+
+// effectiveBatchSize gives the number of resources per transaction bundle.
+func (c *FHIRClient) effectiveBatchSize() int {
+	if c.batchSize <= 0 {
+		return 100
+	}
+	return c.batchSize
+}
+
+// sendFullBatches reads the NDJSON stream and sends every complete batch. It
+// returns the resources that remain after the last complete batch.
+func (c *FHIRClient) sendFullBatches(filePath string, reader io.Reader, stats *FHIRUploadStats) ([]json.RawMessage, error) {
+	batchSize := c.effectiveBatchSize()
 	dec := json.NewDecoder(reader)
 	var batch []json.RawMessage
-	stats := &FHIRUploadStats{}
 
 	for {
 		var raw json.RawMessage
@@ -88,35 +117,41 @@ func (c *FHIRClient) UploadNDJSON(filePath string, reader io.Reader) (*FHIRUploa
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return stats, fmt.Errorf("error reading %s: %w", filepath.Base(filePath), err)
+			return batch, fmt.Errorf("error reading %s: %w", filepath.Base(filePath), err)
 		}
 
 		batch = append(batch, raw)
 
 		if len(batch) >= batchSize {
-			if err := c.sendBatch(batch); err != nil {
-				return stats, fmt.Errorf("failed to send batch from %s: %w", filepath.Base(filePath), err)
+			if err := c.flushBatch(filePath, batch, stats); err != nil {
+				return nil, fmt.Errorf("failed to send batch from %s: %w", filepath.Base(filePath), err)
 			}
-			stats.ResourcesUploaded += len(batch)
-			stats.BatchesSent++
 			batch = nil
 		}
 	}
 
-	// Send remaining resources
-	if len(batch) > 0 {
-		if err := c.sendBatch(batch); err != nil {
-			return stats, fmt.Errorf("failed to send final batch from %s: %w", filepath.Base(filePath), err)
-		}
-		stats.ResourcesUploaded += len(batch)
-		stats.BatchesSent++
-	}
-
-	return stats, nil
+	return batch, nil
 }
 
-// sendBatch creates a transaction bundle and POSTs it to the FHIR server
-func (c *FHIRClient) sendBatch(resources []json.RawMessage) error {
+// flushBatch sends one batch and counts it in stats.
+func (c *FHIRClient) flushBatch(filePath string, batch []json.RawMessage, stats *FHIRUploadStats) error {
+	if err := c.sendBatch(batch, batchLabel(filePath, stats.BatchesSent+1)); err != nil {
+		return err
+	}
+	stats.ResourcesUploaded += len(batch)
+	stats.BatchesSent++
+	return nil
+}
+
+// batchLabel names one batch of a file for a dump of a failed request.
+func batchLabel(filePath string, batchNumber int) string {
+	base := lib.GetUncompressedFilename(filepath.Base(filePath))
+	return fmt.Sprintf("%s-batch-%d", strings.TrimSuffix(base, filepath.Ext(base)), batchNumber)
+}
+
+// sendBatch creates a transaction bundle and POSTs it to the FHIR server.
+// label identifies the batch in a dump of a failed request.
+func (c *FHIRClient) sendBatch(resources []json.RawMessage, label string) error {
 	bundle := c.createTransactionBundle(resources)
 
 	// Skip sending if no entries (e.g., empty bundles were unwrapped)
@@ -124,28 +159,13 @@ func (c *FHIRClient) sendBatch(resources []json.RawMessage) error {
 		return nil
 	}
 
-	jsonData, err := json.Marshal(bundle)
+	req, jsonData, err := c.newBundleRequest(bundle)
 	if err != nil {
-		return fmt.Errorf("failed to marshal bundle: %w", err)
-	}
-
-	url := strings.TrimSuffix(c.url, "/") + "/fhir"
-
-	req, err := http.NewRequest("POST", url, bytes.NewReader(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/fhir+json")
-	req.Header.Set("Accept", "application/fhir+json")
-
-	// Add authentication header
-	if err := c.addAuthHeader(req); err != nil {
-		return fmt.Errorf("failed to add auth header: %w", err)
+		return err
 	}
 
 	c.logger.Debug("Sending FHIR transaction bundle",
-		"url", url,
+		"url", req.URL.String(),
 		"resource_count", len(resources),
 		"bundle_size_bytes", len(jsonData))
 
@@ -156,12 +176,7 @@ func (c *FHIRClient) sendBatch(resources []json.RawMessage) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return &FHIRError{
-			StatusCode: resp.StatusCode,
-			Message:    string(body),
-			ErrorType:  lib.ClassifyHTTPError(resp.StatusCode),
-		}
+		return c.rejectedBundleError(resp, jsonData, label)
 	}
 
 	c.logger.Debug("FHIR transaction bundle sent successfully",
@@ -169,6 +184,43 @@ func (c *FHIRClient) sendBatch(resources []json.RawMessage) error {
 		"resource_count", len(resources))
 
 	return nil
+}
+
+// newBundleRequest marshals the bundle and builds the authenticated POST
+// request for it. It also returns the marshaled bundle for a dump.
+func (c *FHIRClient) newBundleRequest(bundle map[string]any) (*http.Request, []byte, error) {
+	jsonData, err := json.Marshal(bundle)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal bundle: %w", err)
+	}
+
+	url := strings.TrimSuffix(c.url, "/") + "/fhir"
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(jsonData))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/fhir+json")
+	req.Header.Set("Accept", "application/fhir+json")
+
+	if err := c.addAuthHeader(req); err != nil {
+		return nil, nil, fmt.Errorf("failed to add auth header: %w", err)
+	}
+
+	return req, jsonData, nil
+}
+
+// rejectedBundleError dumps the rejected bundle, if a dump is set, and gives
+// the error for the server answer.
+func (c *FHIRClient) rejectedBundleError(resp *http.Response, jsonData []byte, label string) error {
+	body, _ := io.ReadAll(resp.Body)
+	c.dump.Write(label, jsonData, resp.StatusCode, body)
+	return &FHIRError{
+		StatusCode: resp.StatusCode,
+		Message:    string(body),
+		ErrorType:  lib.ClassifyHTTPError(resp.StatusCode),
+	}
 }
 
 // addAuthHeader adds the appropriate Authorization header based on auth config,

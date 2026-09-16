@@ -61,6 +61,12 @@ func (l JobLayout) OutputDir(step models.StepName) string {
 	return l.JobDir()
 }
 
+// FailedRequestsDir returns the directory the send step writes rejected request
+// bodies to.
+func (l JobLayout) FailedRequestsDir() string {
+	return filepath.Join(l.OutputDir(models.StepSend), "failed")
+}
+
 // ViewDefinitionsDir returns the directory the flattening step writes its
 // generated SQL-on-FHIR ViewDefinitions to.
 func (l JobLayout) ViewDefinitionsDir() string {

@@ -2702,3 +2702,42 @@ jobs_dir: "` + jobsDir + `"
 	assert.Nil(t, config)
 	assert.Contains(t, err.Error(), "failed to decode configuration")
 }
+
+func TestConfigLoading_SendDumpFailedRequests(t *testing.T) {
+	loadSendConfig := func(t *testing.T, extraSendKeys string) *models.ProjectConfig {
+		t.Helper()
+		tmpDir := t.TempDir()
+		configFile := filepath.Join(tmpDir, "config.yaml")
+		jobsDir := filepath.Join(tmpDir, "jobs")
+		require.NoError(t, os.MkdirAll(jobsDir, 0755))
+
+		configContent := `
+services:
+  send:
+    url: "http://localhost:8080"
+    send_as: "transfer_load"
+` + extraSendKeys + `
+
+pipeline:
+  enabled_steps:
+    - local_import
+
+jobs_dir: "` + jobsDir + `"
+`
+		require.NoError(t, os.WriteFile(configFile, []byte(configContent), 0644))
+
+		config, err := services.LoadConfig(configFile)
+		require.NoError(t, err)
+		return config
+	}
+
+	t.Run("defaults to false", func(t *testing.T) {
+		config := loadSendConfig(t, "")
+		assert.False(t, config.Services.Send.DumpFailedRequests)
+	})
+
+	t.Run("loads dump_failed_requests from config", func(t *testing.T) {
+		config := loadSendConfig(t, "    dump_failed_requests: true")
+		assert.True(t, config.Services.Send.DumpFailedRequests)
+	})
+}

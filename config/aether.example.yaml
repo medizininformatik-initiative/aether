@@ -174,6 +174,13 @@ services:
     # Default: 100, Max: 1000
     batch_size: 100
 
+    # Write the body of a rejected request to jobs/<job-id>/send/failed/, together
+    # with the server answer. Use it to find out why the server refused the data.
+    # Applies to direct_resource_load and transfer_load only.
+    # The files contain pseudonymized patient data. Delete them after analysis.
+    # Default: false
+    dump_failed_requests: false
+
     # Authentication (optional) - choose ONE method or leave all empty
     auth:
       # Option 1: Basic Auth

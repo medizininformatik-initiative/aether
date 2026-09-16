@@ -252,6 +252,11 @@ type SendConfig struct {
 	Transfer TransferConfig `yaml:"transfer" json:"transfer" mapstructure:"transfer"`
 	// S3 holds settings for s3_upload mode
 	S3 S3Config `yaml:"s3" json:"s3" mapstructure:"s3"`
+	// DumpFailedRequests writes each rejected request body to
+	// jobs/<job-id>/send/failed/ (default: false). It applies to
+	// direct_resource_load and transfer_load only. The files hold pseudonymized
+	// patient data. Delete them after analysis.
+	DumpFailedRequests bool `yaml:"dump_failed_requests" json:"dump_failed_requests" mapstructure:"dump_failed_requests"`
 }
 
 // Validate checks if SendConfig has all required fields
@@ -521,7 +526,8 @@ func DefaultConfig() ProjectConfig {
 				FailOnError:           &failOnError,
 			},
 			Send: SendConfig{
-				BatchSize: 100,
+				BatchSize:          100,
+				DumpFailedRequests: false,
 				S3: S3Config{
 					Timeout: 30 * time.Minute,
 				},

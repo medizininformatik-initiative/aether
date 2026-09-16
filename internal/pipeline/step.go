@@ -158,3 +158,28 @@ func transitionStep(step *models.PipelineStep, to models.StepStatus) error {
 	}
 	return nil
 }
+
+// findStep returns a pointer to the named step in job.Steps, or nil when the
+// job has no such step. The pointer aliases the slice, so the caller must not
+// replace job.Steps while it holds the pointer.
+func findStep(job *models.PipelineJob, stepName models.StepName) *models.PipelineStep {
+	for i := range job.Steps {
+		if job.Steps[i].Name == stepName {
+			return &job.Steps[i]
+		}
+	}
+	return nil
+}
+
+func getOrCreateStep(job *models.PipelineJob, stepName models.StepName) *models.PipelineStep {
+	if step := findStep(job, stepName); step != nil {
+		return step
+	}
+
+	step := models.PipelineStep{
+		Name:   stepName,
+		Status: models.StepStatusPending,
+	}
+	job.Steps = append(job.Steps, step)
+	return &job.Steps[len(job.Steps)-1]
+}

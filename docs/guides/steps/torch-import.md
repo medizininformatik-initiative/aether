@@ -18,12 +18,14 @@ Extracts patient data from a TORCH server. Supports two modes: CRTDL-based extra
 
 While the step polls, aether reads batch progress from the TORCH Task API
 (`GET /fhir/Task/{jobId}`, extension `torch-job-progress`) and shows it in
-two places:
+three places:
 
 - A progress line in the terminal, with a bar, a percent value, and the
   active batch stages:
   `TORCH extraction [##########......] 66% — 1/3 batches (500/1200 patients), active: DIRECT_LOAD (2/5)`
 - A structured log line each time the progress changes.
+- The `pipeline status` command, which reads the last persisted progress from
+  the job file — also from a second terminal while the pipeline runs.
 
 The percent value is an estimate: each active batch counts as
 `stage index / 5` of a batch, and the five stages get equal weight.

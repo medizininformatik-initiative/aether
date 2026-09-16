@@ -8,6 +8,8 @@ BINARY_NAME := aether
 VERSION := $(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "dev")
 BUILD_DIR := bin
 MAIN_PATH := cmd/aether/main.go
+DEMO_DIR := examples/torch-progress-demo
+DEMO_TORCH_PORT := 8086
 
 # Go parameters
 GOCMD := go
@@ -49,10 +51,24 @@ build:
 	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PATH)
 	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
 
-## demo-torch-progress: Start a mock TORCH server that reports batch progress
-demo-torch-progress:
-	@echo "Starting mock TORCH on :8086 — point services.torch.base_url at http://localhost:8086"
-	$(GOCMD) run ./cmd/mocktorch
+## demo-torch-progress: Run the TORCH progress demo (mock server, pipeline, cleanup)
+demo-torch-progress: build
+	@$(GOBUILD) -o $(BUILD_DIR)/mocktorch ./cmd/mocktorch
+	@set -e; \
+	if curl -sf -o /dev/null http://localhost:$(DEMO_TORCH_PORT)/; then \
+		echo "Error: port $(DEMO_TORCH_PORT) is in use. Stop the other server and try again."; \
+		exit 1; \
+	fi; \
+	jobs_dir=$$(mktemp -d); \
+	$(BUILD_DIR)/mocktorch -addr :$(DEMO_TORCH_PORT) & \
+	mock_pid=$$!; \
+	trap 'kill $$mock_pid 2>/dev/null || true; rm -rf $$jobs_dir' EXIT INT TERM; \
+	for _ in 1 2 3 4 5 6 7 8 9 10; do \
+		curl -sf -o /dev/null http://localhost:$(DEMO_TORCH_PORT)/ && break; \
+		sleep 0.5; \
+	done; \
+	echo "Job data goes to $$jobs_dir and is deleted when the demo stops."; \
+	AETHER_JOBS_DIR=$$jobs_dir $(BUILD_DIR)/$(BINARY_NAME) pipeline start $(DEMO_DIR)/config.yaml $(DEMO_DIR)/query.json
 
 ## build-linux: Build binary for Linux (amd64)
 build-linux:

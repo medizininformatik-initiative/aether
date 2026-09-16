@@ -217,8 +217,12 @@ When the progress changes, the loop:
 - writes a structured log line,
 - updates the terminal line (`TORCHProgress.TerminalLine()`: bar + percent +
   `Summary()`),
-- calls the optional progress handler (`SetProgressHandler`), which lets a
-  caller receive each progress change.
+- calls the optional progress handler (`SetProgressHandler`). The pipeline
+  registers a handler (`attachTORCHProgressPersistence` in
+  `internal/pipeline/import.go`) that persists a `models.StepProgress` on the
+  torch step, so `pipeline status` shows progress from another process. The
+  handler writes the job file only when the batch counts change, because each
+  write marshals the full job.
 
 The percent value is an estimate: an active batch counts as
 `stage index / 5` of a batch (stage order `CONSENT_FETCH`, `DIRECT_LOAD`,
@@ -228,10 +232,10 @@ The fetch is best effort. On any error, non-`200`, or missing extension it
 returns `nil`, and the loop falls back to the `OperationOutcome` diagnostics —
 the behavior for TORCH versions before v1.0.2.
 
-To see the progress display without a real TORCH, run the mock server:
-`make demo-torch-progress` starts `cmd/mocktorch` (package
-`internal/testsupport/mocktorch`) on `:8086`; point `services.torch.base_url` at
-`http://localhost:8086` and start a pipeline.
+To see the progress display without a real TORCH, run `make demo-torch-progress`.
+The target starts `cmd/mocktorch` (package `internal/testsupport/mocktorch`) on
+`:8086`, runs the pipeline in `examples/torch-progress-demo`, and then stops the
+mock and deletes the job data.
 
 ### 5. Result parsing
 

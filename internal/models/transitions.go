@@ -123,6 +123,7 @@ func ResetStep(step PipelineStep) PipelineStep {
 	step.FilesProcessed = 0
 	step.BytesProcessed = 0
 	step.LastError = nil
+	step.Progress = nil
 	return step
 }
 

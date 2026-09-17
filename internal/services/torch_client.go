@@ -31,6 +31,15 @@ type TORCHClient struct {
 	downloadClient *http.Client
 	stallTimeout   time.Duration
 	logger         *lib.Logger
+	// Optional. Not on the Extractor interface, so a caller reaches it
+	// through the ProgressReporter type assertion.
+	progressHandler func(TORCHProgress)
+}
+
+// SetProgressHandler registers a function that receives extraction progress
+// each time the reported progress changes during polling.
+func (c *TORCHClient) SetProgressHandler(fn func(TORCHProgress)) {
+	c.progressHandler = fn
 }
 
 // defaultDownloadStallTimeout applies when TORCHConfig.DownloadStallTimeout is
@@ -388,6 +397,11 @@ func (c *TORCHClient) PollExtractionStatus(extractionURL string, showProgress bo
 	}
 
 	var lastDiagnostics string
+	var lastProgressKey string
+	// An empty jobID means the Task API is out of reach, either because the
+	// status URL carries no id or because the server answered that it has no
+	// usable Task. Either way, stop asking.
+	jobID := JobIDFromStatusURL(extractionURL)
 
 	for {
 		// Check timeout
@@ -440,8 +454,34 @@ func (c *TORCHClient) PollExtractionStatus(extractionURL string, showProgress bo
 			return outcome.fileURLs, nil
 		}
 
-		// Log progress diagnostics from OperationOutcome (only when changed)
-		if outcome.diagnostics != "" && outcome.diagnostics != lastDiagnostics {
+		// Prefer batch progress from the Task API; fall back to the
+		// OperationOutcome diagnostics for servers without the progress
+		// extension. Report only when the value changed.
+		var progress *TORCHProgress
+		if jobID != "" {
+			supported := false
+			if progress, supported = c.fetchJobProgressChecked(jobID); !supported {
+				jobID = ""
+			}
+		}
+		switch {
+		case progress != nil:
+			if key := progress.Summary(); key != lastProgressKey {
+				c.logger.Info("TORCH extraction progress",
+					"batches_completed", progress.BatchesCompleted,
+					"batches_total", progress.BatchesTotal,
+					"cohort_size", progress.CohortSize,
+					"patients_done", progress.PatientsDone(),
+					"active_batches", len(progress.ActiveBatches))
+				if spinner != nil {
+					spinner.UpdateMessage(progress.TerminalLine())
+				}
+				if c.progressHandler != nil {
+					c.progressHandler(*progress)
+				}
+				lastProgressKey = key
+			}
+		case outcome.diagnostics != "" && outcome.diagnostics != lastDiagnostics:
 			c.logger.Info("TORCH extraction progress", "diagnostics", outcome.diagnostics)
 			if spinner != nil {
 				spinner.UpdateMessage(outcome.diagnostics)

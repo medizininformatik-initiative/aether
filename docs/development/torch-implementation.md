@@ -11,7 +11,8 @@ and the [TORCH Import step](../guides/steps/torch-import.md).
 
 ## TORCH's two APIs
 
-TORCH exposes **two** REST APIs, and Aether uses only the first:
+TORCH exposes **two** REST APIs. Aether drives extraction through the first and
+reads one endpoint of the second:
 
 - **[FHIR controller](https://medizininformatik-initiative.github.io/torch/api/api.html#fhir-controller)**
   — the extraction API, built on the
@@ -20,8 +21,10 @@ TORCH exposes **two** REST APIs, and Aether uses only the first:
   status/manifest endpoint. 
 - **[Task API](https://medizininformatik-initiative.github.io/torch/api/api.html#task-controller)**
   (task-controller) — controls extraction jobs *in execution* (inspect, pause,
-  resume, cancel), exposing each job as a FHIR `Task`. Aether does **not** use it
-  today; job control and `Task` reads are out of scope
+  resume, cancel), exposing each job as a FHIR `Task`. Aether reads exactly one
+  endpoint of it: `GET /fhir/Task/{jobId}`, for the batch progress extension
+  during polling (see *Batch progress* below). Job control (`$cancel`, `$pause`,
+  `$resume`) and `Task` search stay out of scope
   (see [PR #474](https://github.com/medizininformatik-initiative/aether/pull/474)).
 
 ### The asynchronous bulk extraction flow
@@ -61,7 +64,7 @@ Each extraction job moves through a status lifecycle (coding system
 This status appears in **two** places — an artifact of the async-bulk design that
 carries job state alongside the Task model: the Task API exposes it as a `Task`
 business status, and the completion manifest from `__status` embeds the same job
-state in a `torch-job` extension. Aether reads neither representation. It branches
+state in a `torch-job` extension. Aether reads neither status representation. It branches
 purely on the async-bulk **HTTP** status the `__status` endpoint returns (see the
 *Polling* stage below): `TEMP_FAILED` surfaces as `202`/`503`, terminal failure as
 `500`, and completion as `200`.
@@ -74,6 +77,7 @@ purely on the async-bulk **HTTP** status the `__status` endpoint returns (see th
 | `internal/pipeline/crtdl_prep.go` | `PrepareCRTDL` — copies/enriches the CRTDL into the job directory before submission |
 | `internal/services/torch_client.go` | `TORCHClient`: submit, download, result parsing, file-availability checks, URL resolution, request/response types |
 | `internal/services/torch_poller.go` | `PollConfig` and `handlePollResponse`: status interpretation, liveness window, exponential backoff |
+| `internal/services/torch_progress.go` | `TORCHProgress`: reads the `torch-job-progress` extension from the Task API, computes the completed fraction and the terminal line |
 | `internal/models/config.go` | `TORCHConfig` — the tunable knobs |
 | `internal/models/job.go` | `CRTDLPath`, `TORCHExtractionURL`, `TORCHJobID` — the persisted resume handle |
 | `internal/models/step.go` | `StepTorchImport` step constant |
@@ -202,6 +206,27 @@ doubles after each in-progress poll (`CalculateNextPollInterval` /
 Transient network failures on the GET itself (timeouts, connection resets) are
 swallowed and retried — the extraction may still be running server-side, and the
 liveness window is the safety net.
+
+**Batch progress.** After each in-progress poll, the loop calls
+`fetchJobProgressChecked(jobID)` (`internal/services/torch_progress.go`), which reads
+`GET {base_url}/fhir/Task/{jobID}` and parses the `torch-job-progress`
+extension (`cohortSize`, `batchSize`, `batchesTotal`, `batchesCompleted`, and
+one `activeBatch` sub-extension per running batch with `batchId` and `stage`).
+When the progress changes, the loop:
+
+- writes a structured log line,
+- updates the terminal line (`TORCHProgress.TerminalLine()`: bar + percent +
+  `Summary()`),
+- calls the optional progress handler (`SetProgressHandler`), which lets a
+  caller receive each progress change.
+
+The percent value is an estimate: an active batch counts as
+`stage index / 5` of a batch (stage order `CONSENT_FETCH`, `DIRECT_LOAD`,
+`REFERENCE_RESOLVE`, `CASCADING_DELETE`, `COPY_REDACT`).
+
+The fetch is best effort. On any error, non-`200`, or missing extension it
+returns `nil`, and the loop falls back to the `OperationOutcome` diagnostics —
+the behavior for TORCH versions before v1.0.2.
 
 ### 5. Result parsing
 

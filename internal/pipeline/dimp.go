@@ -292,19 +292,3 @@ func isStepEnabled(config models.ProjectConfig, stepName models.StepName) bool {
 	}
 	return false
 }
-
-func getOrCreateStep(job *models.PipelineJob, stepName models.StepName) *models.PipelineStep {
-	for i := range job.Steps {
-		if job.Steps[i].Name == stepName {
-			return &job.Steps[i]
-		}
-	}
-
-	// Create new step
-	step := models.PipelineStep{
-		Name:   stepName,
-		Status: models.StepStatusPending,
-	}
-	job.Steps = append(job.Steps, step)
-	return &job.Steps[len(job.Steps)-1]
-}

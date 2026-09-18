@@ -64,6 +64,7 @@ func TestResetStep(t *testing.T) {
 		FilesProcessed: 5,
 		BytesProcessed: 1024,
 		LastError:      &models.StepError{Message: "boom"},
+		Progress:       &models.StepProgress{Message: "extraction", Completed: 3, Total: 12, UpdatedAt: now},
 	}
 
 	reset := models.ResetStep(step)
@@ -72,6 +73,7 @@ func TestResetStep(t *testing.T) {
 	assert.Nil(t, reset.StartedAt)
 	assert.Nil(t, reset.CompletedAt)
 	assert.Nil(t, reset.LastError)
+	assert.Nil(t, reset.Progress)
 	assert.Zero(t, reset.FilesProcessed)
 	assert.Zero(t, reset.BytesProcessed)
 	assert.Equal(t, models.StepDIMP, reset.Name, "step name must be preserved")

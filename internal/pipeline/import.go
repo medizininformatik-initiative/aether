@@ -141,6 +141,7 @@ func (s importStep) Run(ctx *StepContext) (StepResult, error) {
 // shared by every downstream pipeline step.
 func executeTORCHExtraction(job *models.PipelineJob, importDir string, httpClient *services.HTTPClient, logger *lib.Logger, showProgress bool, compress bool, compressionLevel string) ([]models.FHIRDataFile, error) {
 	torchClient := extractorFactory(job.Config.Services.TORCH, httpClient, logger)
+	attachTORCHProgressPersistence(job, torchClient, logger)
 
 	if job.TORCHJobID != "" {
 		logger.Info("Re-attaching to in-flight TORCH extraction", "job_id", job.TORCHJobID, "url", job.TORCHExtractionURL)
@@ -174,6 +175,44 @@ func executeTORCHExtraction(job *models.PipelineJob, importDir string, httpClien
 	return files, nil
 }
 
+// attachTORCHProgressPersistence registers a progress handler on the TORCH
+// client (when it supports one) that writes batch progress to the torch step in
+// the job file, so `pipeline status` shows it from another process.
+// Persistence is best effort; a failed write never interrupts the extraction.
+func attachTORCHProgressPersistence(job *models.PipelineJob, torchClient services.Extractor, logger *lib.Logger) {
+	reporter, ok := torchClient.(services.ProgressReporter)
+	if !ok {
+		return
+	}
+	// Mutate the step in place: runStep holds a pointer into job.Steps, so the
+	// slice must not be replaced while the step runs.
+	step := findStep(job, models.StepTorchImport)
+	if step == nil {
+		return
+	}
+	reporter.SetProgressHandler(func(progress services.TORCHProgress) {
+		// The batch stage changes on almost every poll, but a job-file write
+		// costs a full marshal of the job. Write only when the batch counts
+		// change; the in-memory value stays current for this process.
+		persist := step.Progress == nil ||
+			step.Progress.Completed != progress.BatchesCompleted ||
+			step.Progress.Total != progress.BatchesTotal
+
+		step.Progress = &models.StepProgress{
+			Message:   progress.Summary(),
+			Completed: progress.BatchesCompleted,
+			Total:     progress.BatchesTotal,
+			UpdatedAt: time.Now(),
+		}
+		if !persist {
+			return
+		}
+		if err := UpdateJob(job.Config.JobsDir, job); err != nil {
+			logger.Debug("failed to persist TORCH progress", "error", err)
+		}
+	})
+}
+
 // submitAndPersistTORCHHandle submits the CRTDL for extraction, then persists
 // the resulting job handle (TORCHJobID + URL) to disk before any long poll, so
 // a crash mid-extraction leaves a recoverable handle to re-attach to.
@@ -198,6 +237,7 @@ func submitAndPersistTORCHHandle(job *models.PipelineJob, torchClient services.E
 func executeTORCHDownload(job *models.PipelineJob, importDir string, httpClient *services.HTTPClient, logger *lib.Logger, showProgress bool, compress bool, compressionLevel string) ([]models.FHIRDataFile, error) {
 	// Create TORCH client
 	torchClient := extractorFactory(job.Config.Services.TORCH, httpClient, logger)
+	attachTORCHProgressPersistence(job, torchClient, logger)
 
 	// Poll the URL directly (it should return 200 immediately if extraction is complete)
 	fileURLs, err := torchClient.PollExtractionStatus(job.InputSource, showProgress)

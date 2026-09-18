@@ -1,7 +1,6 @@
 package pipeline
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -79,11 +78,9 @@ func (validationStep) Run(ctx *StepContext) (StepResult, error) {
 
 	fmt.Printf("Validating %d FHIR file(s)...\n\n", len(files))
 
-	// Clean up stale partial files from previous runs
-	partFiles, _ := filepath.Glob(filepath.Join(outputDir, "*.part"))
-	for _, partFile := range partFiles {
-		logger.Debug("Removing stale partial file from previous run", "file", filepath.Base(partFile))
-		_ = os.Remove(partFile)
+	// Clean up temporary files that a killed run left behind
+	if err := lib.RemoveStaleTempFiles(outputDir); err != nil {
+		logger.Debug("Failed to remove stale temporary files", "error", err)
 	}
 
 	maxConcurrent := job.Config.Services.Validation.MaxConcurrentRequests
@@ -194,7 +191,7 @@ func validateFile(inputFile, reportFile string, client services.ResourceValidato
 
 	if len(resources) == 0 {
 		// Create empty report for resumption
-		if err := os.WriteFile(reportFile, []byte{}, 0644); err != nil {
+		if err := lib.AtomicWriteFile(reportFile, []byte{}, 0644); err != nil {
 			return 0, 0, fmt.Errorf("failed to create empty report: %w", err)
 		}
 		return 0, 0, nil
@@ -264,56 +261,35 @@ func validateFile(inputFile, reportFile string, client services.ResourceValidato
 	}
 
 	// Write all OperationOutcomes to the report file
-	partFile := reportFile + ".part"
-	outFile, err := os.Create(partFile)
-	if err != nil {
-		return len(resources), 0, fmt.Errorf("failed to create report file: %w", err)
-	}
-	finalized := false
-	defer func() {
-		if !finalized {
-			_ = outFile.Close()
-			_ = os.Remove(partFile)
-		}
-	}()
-	outWriter := bufio.NewWriter(outFile)
-
 	chunksWithErrors := 0
-	for _, result := range results {
-		if result.outcome == nil {
-			continue
-		}
+	err = lib.AtomicWriteStream(reportFile, 0644, func(out io.Writer) error {
+		for _, result := range results {
+			if result.outcome == nil {
+				continue
+			}
 
-		if result.hasError {
-			chunksWithErrors++
-		}
+			if result.hasError {
+				chunksWithErrors++
+			}
 
-		outcomeJSON, err := json.Marshal(result.outcome)
-		if err != nil {
-			return len(resources), chunksWithErrors, fmt.Errorf("failed to marshal OperationOutcome for chunk %d: %w", result.chunkIndex, err)
-		}
+			outcomeJSON, err := json.Marshal(result.outcome)
+			if err != nil {
+				return fmt.Errorf("failed to marshal OperationOutcome for chunk %d: %w", result.chunkIndex, err)
+			}
 
-		if _, err := outWriter.Write(outcomeJSON); err != nil {
-			return len(resources), chunksWithErrors, fmt.Errorf("failed to write report: %w", err)
+			if _, err := out.Write(outcomeJSON); err != nil {
+				return fmt.Errorf("failed to write report: %w", err)
+			}
+			if _, err := out.Write([]byte("\n")); err != nil {
+				return fmt.Errorf("failed to write newline: %w", err)
+			}
 		}
-		if _, err := outWriter.WriteString("\n"); err != nil {
-			return len(resources), chunksWithErrors, fmt.Errorf("failed to write newline: %w", err)
-		}
+		return nil
+	})
+	if err != nil {
+		return len(resources), chunksWithErrors, err
 	}
 
-	if err := outWriter.Flush(); err != nil {
-		return len(resources), chunksWithErrors, fmt.Errorf("failed to flush report: %w", err)
-	}
-
-	if err := outFile.Close(); err != nil {
-		return len(resources), chunksWithErrors, fmt.Errorf("failed to close report: %w", err)
-	}
-
-	if err := os.Rename(partFile, reportFile); err != nil {
-		return len(resources), chunksWithErrors, fmt.Errorf("failed to finalize report: %w", err)
-	}
-
-	finalized = true
 	return len(resources), chunksWithErrors, nil
 }
 

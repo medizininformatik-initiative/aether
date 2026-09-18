@@ -73,8 +73,8 @@ func TestTORCHClient_SubmitExtraction_Success(t *testing.T) {
 		BaseURL:            server.URL,
 		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  30 * time.Minute,
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 5 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 50 * time.Millisecond,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
@@ -111,8 +111,8 @@ func TestTORCHClient_SubmitExtraction_UsesAuthBlock(t *testing.T) {
 		BaseURL:            server.URL,
 		Auth:               models.AuthConfig{Username: "block-user", Password: "block-pass"},
 		ExtractionTimeout:  30 * time.Minute,
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 5 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 50 * time.Millisecond,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
@@ -206,8 +206,8 @@ func TestTORCHClient_PollExtractionStatus_ImmediateSuccess(t *testing.T) {
 		BaseURL:            server.URL,
 		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  1 * time.Minute,
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 5 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 50 * time.Millisecond,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
@@ -262,8 +262,8 @@ func TestTORCHClient_PollExtractionStatus_HTTP102Processing(t *testing.T) {
 		BaseURL:            server.URL,
 		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  1 * time.Minute,
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 5 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 50 * time.Millisecond,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
@@ -325,8 +325,8 @@ func TestTORCHClient_PollExtractionStatus_WithOperationOutcomeDiagnostics(t *tes
 		BaseURL:            server.URL,
 		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  1 * time.Minute,
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 5 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 50 * time.Millisecond,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
@@ -393,8 +393,8 @@ func TestTORCHClient_PollExtractionStatus_DiagnosticsNotRepeated(t *testing.T) {
 		BaseURL:            server.URL,
 		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  1 * time.Minute,
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 5 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 50 * time.Millisecond,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
@@ -565,8 +565,8 @@ func TestTORCHClient_PollExtractionStatus_EmptyOutput(t *testing.T) {
 		BaseURL:            server.URL,
 		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  1 * time.Minute,
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 5 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 50 * time.Millisecond,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
@@ -592,8 +592,8 @@ func TestTORCHClient_PollExtractionStatus_Timeout(t *testing.T) {
 		BaseURL:            server.URL,
 		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  0 * time.Minute, // Immediate timeout (converted to milliseconds)
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 5 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 50 * time.Millisecond,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
@@ -627,8 +627,8 @@ func TestTORCHClient_PollExtractionStatus_ServerError(t *testing.T) {
 		BaseURL:            server.URL,
 		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  5 * time.Minute,
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 30 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 300 * time.Millisecond,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
@@ -832,8 +832,8 @@ func TestTORCHClient_PollExtractionStatus_ExponentialBackoff(t *testing.T) {
 		BaseURL:            server.URL,
 		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  1 * time.Minute,
-		PollingInterval:    1 * time.Second,  // Start at 1 second
-		MaxPollingInterval: 10 * time.Second, // Cap at 10 seconds
+		PollingInterval:    50 * time.Millisecond,  // Start at 50 ms
+		MaxPollingInterval: 500 * time.Millisecond, // Cap at 500 ms
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
@@ -844,7 +844,7 @@ func TestTORCHClient_PollExtractionStatus_ExponentialBackoff(t *testing.T) {
 	assert.Equal(t, maxPolls, pollCount)
 
 	// Verify exponential backoff (intervals should grow)
-	// First interval: ~1s, Second: ~2s, Third: ~4s
+	// First interval: ~50 ms, Second: ~100 ms, Third: ~200 ms
 	if len(pollTimes) >= 3 {
 		interval1 := pollTimes[1].Sub(pollTimes[0])
 		interval2 := pollTimes[2].Sub(pollTimes[1])
@@ -1019,8 +1019,8 @@ func pollSimpleOutput(t *testing.T, baseURLFor, urlFor func(serverURL string) st
 		BaseURL:            baseURLFor(server.URL),
 		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  1 * time.Minute,
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 5 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 50 * time.Millisecond,
 	}
 	client := services.NewTORCHClient(cfg, httpClient, logger)
 	urls, err := client.PollExtractionStatus(server.URL+"/fhir/extraction/job-123", false)
@@ -1057,8 +1057,8 @@ func TestTORCHClient_ParseExtractionResult_FHIRFormat(t *testing.T) {
 		BaseURL:            server.URL,
 		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  1 * time.Minute,
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 5 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 50 * time.Millisecond,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
@@ -1138,8 +1138,8 @@ func TestTORCHClient_ParseExtractionResult_InvalidJSON(t *testing.T) {
 		BaseURL:            server.URL,
 		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  1 * time.Minute,
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 5 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 50 * time.Millisecond,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
@@ -1246,7 +1246,7 @@ func TestTORCHClient_WaitForFileAvailability_ImmediateSuccess(t *testing.T) {
 		BaseURL:           server.URL,
 		Auth:              models.AuthConfig{Username: "testuser", Password: "testpass"},
 		FileReadyRetries:  1,
-		FileReadyInterval: 1 * time.Second,
+		FileReadyInterval: 10 * time.Millisecond,
 	}
 
 	tempDir := t.TempDir()
@@ -1295,7 +1295,7 @@ func TestTORCHClient_WaitForFileAvailability_RetryThenSuccess(t *testing.T) {
 		BaseURL:           server.URL,
 		Auth:              models.AuthConfig{Username: "testuser", Password: "testpass"},
 		FileReadyRetries:  5,
-		FileReadyInterval: 1 * time.Second,
+		FileReadyInterval: 10 * time.Millisecond,
 	}
 
 	tempDir := t.TempDir()
@@ -1326,7 +1326,7 @@ func TestTORCHClient_WaitForFileAvailability_Timeout(t *testing.T) {
 		BaseURL:           server.URL,
 		Auth:              models.AuthConfig{Username: "testuser", Password: "testpass"},
 		FileReadyRetries:  2,
-		FileReadyInterval: 1 * time.Second,
+		FileReadyInterval: 10 * time.Millisecond,
 	}
 
 	tempDir := t.TempDir()
@@ -1367,7 +1367,7 @@ func TestTORCHClient_WaitForFileAvailability_RangeFallback(t *testing.T) {
 		BaseURL:           server.URL,
 		Auth:              models.AuthConfig{Username: "testuser", Password: "testpass"},
 		FileReadyRetries:  1,
-		FileReadyInterval: 1 * time.Second,
+		FileReadyInterval: 10 * time.Millisecond,
 	}
 
 	tempDir := t.TempDir()
@@ -1608,8 +1608,8 @@ func TestTORCHClient_PollExtractionStatus_HttpDoError(t *testing.T) {
 		BaseURL:            server.URL,
 		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  0, // Immediate timeout so the test completes quickly
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 1 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 10 * time.Millisecond,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
@@ -1647,8 +1647,8 @@ func TestTORCHClient_PollExtractionStatus_HttpDoErrorThenRecovers(t *testing.T) 
 		BaseURL:            server.URL,
 		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  1 * time.Minute,
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 5 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 50 * time.Millisecond,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)
@@ -2415,7 +2415,7 @@ func TestTORCHClient_DownloadExtractionFiles_RetriesTransientThenSucceeds(t *tes
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(
 		5*time.Second,
-		models.RetryConfig{MaxAttempts: 5, InitialBackoffMs: 1, MaxBackoffMs: 5},
+		FastRetryConfig(),
 		models.TLSConfig{},
 		logger,
 	)

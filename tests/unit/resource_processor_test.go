@@ -16,7 +16,7 @@ import (
 
 func createTestResourceProcessor(server *httptest.Server) *pipeline.ResourceProcessor {
 	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.DefaultHTTPClient()
+	httpClient := FastHTTPClient(logger)
 	dimpClient := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, nil, httpClient, logger)
 	return pipeline.NewResourceProcessor(dimpClient, logger, 10*1024*1024, "test.ndjson")
 }

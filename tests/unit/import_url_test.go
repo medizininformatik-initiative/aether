@@ -103,7 +103,7 @@ func TestDownloadFromURL_HTTP500(t *testing.T) {
 	tempDir := t.TempDir()
 	destDir := filepath.Join(tempDir, "download")
 	logger := lib.NewLogger(lib.LogLevelInfo)
-	httpClient := services.DefaultHTTPClient()
+	httpClient := FastHTTPClient(logger)
 
 	// Execute download
 	downloadedFiles, err := services.DownloadFromURL(server.URL+"/error.ndjson", destDir, httpClient, logger, false, false, "")

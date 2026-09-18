@@ -136,12 +136,13 @@ func TestFR029d_UpdateFrequency(t *testing.T) {
 	lastUpdateTime := time.Now()
 	updates := 0
 
-	// Simulate 10 updates over 2 seconds
+	// Simulate 10 updates. The pause between them only separates the
+	// timestamps; the assertion holds for any pause below the 2 s limit.
 	for i := 0; i < 10; i++ {
 		err := bar.Add(10)
 		require.NoError(t, err)
 
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(2 * time.Millisecond)
 
 		now := time.Now()
 		timeSinceLastUpdate := now.Sub(lastUpdateTime)

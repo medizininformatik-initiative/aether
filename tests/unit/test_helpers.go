@@ -5,7 +5,29 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/medizininformatik-initiative/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/services"
 )
+
+// FastRetryConfig keeps the attempt count of the production default but makes
+// the backoff between the attempts negligible. A test that exercises an error
+// path retries the same number of times as production, without the 15 s wait
+// that the 1 s initial backoff gives.
+func FastRetryConfig() models.RetryConfig {
+	return models.RetryConfig{
+		MaxAttempts:      5,
+		InitialBackoffMs: 1,
+		MaxBackoffMs:     5,
+	}
+}
+
+// FastHTTPClient gives an HTTP client with FastRetryConfig and a short request
+// timeout, for tests that talk to a local test server or to a closed port.
+func FastHTTPClient(logger *lib.Logger) *services.HTTPClient {
+	return services.NewHTTPClient(2*time.Second, FastRetryConfig(), models.TLSConfig{}, logger)
+}
 
 // CreateTestBundle generates a synthetic FHIR Bundle for testing with configurable size
 // entryCount: number of entries in the Bundle

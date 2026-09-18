@@ -208,8 +208,8 @@ func TestCreatePollRequest_SuccessByVerifyingPollExecution(t *testing.T) {
 		BaseURL:            server.URL,
 		Auth:               models.AuthConfig{Username: "testuser", Password: "testpass"},
 		ExtractionTimeout:  1 * time.Minute,
-		PollingInterval:    1 * time.Second,
-		MaxPollingInterval: 5 * time.Second,
+		PollingInterval:    10 * time.Millisecond,
+		MaxPollingInterval: 50 * time.Millisecond,
 	}
 
 	client := services.NewTORCHClient(torchConfig, httpClient, logger)

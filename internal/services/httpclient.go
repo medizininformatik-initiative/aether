@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"time"
 
@@ -45,7 +44,7 @@ func NewHTTPClient(timeout time.Duration, retryConfig models.RetryConfig, tlsCon
 // newDownloadClient returns an *http.Client tuned for streaming large response
 // bodies. It drops the whole-request deadline (Timeout: 0) so a big but
 // steadily-progressing download is never cut off mid-body, reuses this client's
-// TLS settings by cloning its transport, and bounds the header phase with
+// transport settings by cloning it, and bounds the header phase with
 // ResponseHeaderTimeout. Body-phase stall detection is the caller's job, since
 // no transport setting bounds an in-flight body read.
 func (c *HTTPClient) newDownloadClient(stallTimeout time.Duration) *http.Client {
@@ -58,17 +57,6 @@ func (c *HTTPClient) newDownloadClient(stallTimeout time.Duration) *http.Client 
 		transport = &http.Transport{}
 	}
 	transport.ResponseHeaderTimeout = stallTimeout
-
-	// With Timeout: 0 and the body stall watchdog armed only after headers
-	// arrive, nothing else bounds the connect and TLS-handshake phases. A custom
-	// TLS transport (BuildTLSTransport) ships without a dialer, so a black-holed
-	// connect would hang forever; bound both phases when unset.
-	if transport.DialContext == nil {
-		transport.DialContext = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
-	}
-	if transport.TLSHandshakeTimeout == 0 {
-		transport.TLSHandshakeTimeout = 10 * time.Second
-	}
 
 	return &http.Client{Timeout: 0, Transport: transport}
 }

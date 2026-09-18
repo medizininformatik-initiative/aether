@@ -8,6 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -149,6 +150,40 @@ func TestBuildTLSTransport_InvalidPEMContent(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, transport)
 	assert.Contains(t, err.Error(), "failed to parse any certificates")
+}
+
+// A custom TLS transport replaces http.DefaultTransport at its call sites, thus
+// it must keep the settings of the default transport. Without the dial and
+// handshake bounds, http.Client.Timeout is the only limit on a hung connect.
+func TestBuildTLSTransport_KeepsDefaultTransportSettings(t *testing.T) {
+	logger := lib.NewLogger(lib.LogLevelInfo)
+
+	certPEM := generateTestCACert(t)
+	certFile := filepath.Join(t.TempDir(), "ca.pem")
+	require.NoError(t, os.WriteFile(certFile, certPEM, 0644))
+
+	cases := map[string]models.TLSConfig{
+		"insecure skip verify": {InsecureSkipVerify: true},
+		"custom CA":            {CACertPath: certFile},
+	}
+
+	defaults, ok := http.DefaultTransport.(*http.Transport)
+	require.True(t, ok)
+
+	for name, tlsConfig := range cases {
+		t.Run(name, func(t *testing.T) {
+			transport, err := services.BuildTLSTransport(tlsConfig, logger)
+
+			require.NoError(t, err)
+			require.NotNil(t, transport)
+			assert.NotNil(t, transport.DialContext, "connect phase must be bounded")
+			assert.Equal(t, defaults.TLSHandshakeTimeout, transport.TLSHandshakeTimeout)
+			assert.NotNil(t, transport.Proxy, "HTTP_PROXY and HTTPS_PROXY must apply")
+			assert.Equal(t, defaults.ForceAttemptHTTP2, transport.ForceAttemptHTTP2)
+			assert.Equal(t, defaults.MaxIdleConns, transport.MaxIdleConns)
+			assert.Equal(t, defaults.IdleConnTimeout, transport.IdleConnTimeout)
+		})
+	}
 }
 
 func TestBuildTLSTransport_BothCACertAndInsecureSkip(t *testing.T) {

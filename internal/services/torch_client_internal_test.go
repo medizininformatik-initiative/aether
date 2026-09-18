@@ -17,9 +17,9 @@ import (
 
 // The streaming download client drops the whole-request deadline, so the
 // connect and TLS-handshake phases (not covered by ResponseHeaderTimeout or the
-// body stall watchdog) must still be bounded — otherwise a black-holed TCP
-// connect on a custom-TLS transport would hang forever. Custom-TLS transports
-// (BuildTLSTransport) ship without a dialer, so this guards that path.
+// body stall watchdog) must still be bounded. Otherwise a black-holed TCP
+// connect would hang forever. Both the default and the custom-TLS transport
+// must supply those bounds.
 func TestNewDownloadClient_BoundsConnectAndHandshake(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 

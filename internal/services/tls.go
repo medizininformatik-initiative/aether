@@ -18,6 +18,31 @@ func BuildTLSTransport(tlsConfig models.TLSConfig, logger *lib.Logger) (*http.Tr
 		return nil, nil
 	}
 
+	tlsCfg, err := buildTLSClientConfig(tlsConfig, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	transport := cloneDefaultTransport()
+	transport.TLSClientConfig = tlsCfg
+
+	return transport, nil
+}
+
+// cloneDefaultTransport copies http.DefaultTransport so the caller keeps its
+// dial timeout, TLS handshake timeout, proxy support, HTTP/2 and
+// connection-pool settings. A bare *http.Transport has none of them.
+func cloneDefaultTransport() *http.Transport {
+	if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+		return defaultTransport.Clone()
+	}
+
+	return &http.Transport{}
+}
+
+// buildTLSClientConfig makes the TLS configuration from the CA certificate file
+// and the verification setting.
+func buildTLSClientConfig(tlsConfig models.TLSConfig, logger *lib.Logger) (*tls.Config, error) {
 	tlsCfg := &tls.Config{}
 
 	if tlsConfig.InsecureSkipVerify {
@@ -44,5 +69,5 @@ func BuildTLSTransport(tlsConfig models.TLSConfig, logger *lib.Logger) (*http.Tr
 		tlsCfg.RootCAs = pool
 	}
 
-	return &http.Transport{TLSClientConfig: tlsCfg}, nil
+	return tlsCfg, nil
 }

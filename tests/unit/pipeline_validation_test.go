@@ -551,8 +551,9 @@ func TestExecuteValidationStep_DefaultConcurrency(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestExecuteValidationStep_StalePartFileCleanup verifies .part files from previous runs are removed
-func TestExecuteValidationStep_StalePartFileCleanup(t *testing.T) {
+// TestExecuteValidationStep_StaleTempFileCleanup verifies that the step removes
+// the temporary files that a killed run left behind
+func TestExecuteValidationStep_StaleTempFileCleanup(t *testing.T) {
 	server := createMockBundleValidationServer(true)
 	defer server.Close()
 
@@ -566,18 +567,16 @@ func TestExecuteValidationStep_StalePartFileCleanup(t *testing.T) {
 		{"resourceType": "Patient", "id": "p1"},
 	})
 
-	// Pre-create the output dir with a stale .part file
+	// Pre-create the output dir with a stale temporary file
 	validationDir := filepath.Join(tmpDir, "validation")
 	require.NoError(t, os.MkdirAll(validationDir, 0755))
-	stalePartFile := filepath.Join(validationDir, "OldFile.validation.ndjson.part")
-	require.NoError(t, os.WriteFile(stalePartFile, []byte("stale"), 0644))
+	staleTempFile := filepath.Join(validationDir, ".OldFile.validation.ndjson.tmp.3f2a1b8c-5d4e-4a7b-9c1d-2e3f4a5b6c7d")
+	require.NoError(t, os.WriteFile(staleTempFile, []byte("stale"), 0644))
 
 	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.NoError(t, err)
 
-	// Stale .part file should be removed
-	_, statErr := os.Stat(stalePartFile)
-	assert.True(t, os.IsNotExist(statErr), "stale .part file should be cleaned up")
+	assert.NoFileExists(t, staleTempFile, "the stale temporary file should be cleaned up")
 }
 
 // TestExecuteValidationStep_ErrorOutcomesHaveExpression verifies that error OperationOutcomes
@@ -1036,4 +1035,34 @@ func TestExecuteValidationStep_InnerBundlePreservesExistingFullURL(t *testing.T)
 
 	assert.Equal(t, "http://example.com/fhir/Patient/123", entry["fullUrl"],
 		"existing fullUrl should be preserved, not overwritten")
+}
+
+// A leftover temporary entry that cannot be removed does not stop the step:
+// the cleanup failure is logged and validation continues.
+func TestExecuteValidationStep_UnremovableStaleTempEntryDoesNotFailStep(t *testing.T) {
+	server := createMockBundleValidationServer(true)
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	job := createValidationTestJob(server.URL)
+	logger := createValidationTestLogger()
+
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+	writeValidationNDJSON(t, filepath.Join(importDir, "Patient.ndjson"), []map[string]any{
+		{"resourceType": "Patient", "id": "p1"},
+	})
+
+	// A non-empty directory whose name matches the temporary file pattern
+	// cannot be removed.
+	validationDir := filepath.Join(tmpDir, "validation")
+	stale := filepath.Join(validationDir, ".OldFile.validation.ndjson.tmp.3f2a1b8c-5d4e-4a7b-9c1d-2e3f4a5b6c7d")
+	require.NoError(t, os.MkdirAll(stale, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(stale, "child"), []byte("x"), 0644))
+
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
+	assert.NoError(t, err)
+
+	assert.FileExists(t, filepath.Join(validationDir, "Patient.validation.ndjson"))
+	assert.DirExists(t, stale, "the entry that cannot be removed stays")
 }

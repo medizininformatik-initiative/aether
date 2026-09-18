@@ -12,6 +12,12 @@ import (
 
 // PartialSuffix marks CSV files that are still being written or were left
 // behind by a failed run. A file without the suffix is complete.
+//
+// This module keeps its own rename discipline instead of lib.AtomicWriteStream,
+// because one CSV file is written across many AppendCSVData calls and is
+// finalized much later. A failed run keeps its partial files on purpose:
+// the flattening step names them in its error message, and RemovePartials
+// clears them when the run starts again.
 const PartialSuffix = ".partial"
 
 // CSVWriter handles writing flattened data to CSV files

@@ -6,8 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/google/uuid"
-
+	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 )
 
@@ -18,25 +17,10 @@ const (
 )
 
 // StateFileOps interface for file operations in state management, allowing mocking in tests
-type StateFileOps interface {
-	WriteFile(name string, data []byte, perm os.FileMode) error
-	Rename(oldpath, newpath string) error
-	Remove(name string) error
-}
-
-// defaultStateFileOps implements StateFileOps using the standard library
-type defaultStateFileOps struct{}
-
-func (d defaultStateFileOps) WriteFile(name string, data []byte, perm os.FileMode) error {
-	return os.WriteFile(name, data, perm)
-}
-func (d defaultStateFileOps) Rename(oldpath, newpath string) error {
-	return os.Rename(oldpath, newpath)
-}
-func (d defaultStateFileOps) Remove(name string) error { return os.Remove(name) }
+type StateFileOps = lib.FileOps
 
 // StateFileOpsProvider allows tests to inject mock file operations
-var StateFileOpsProvider StateFileOps = defaultStateFileOps{}
+var StateFileOpsProvider StateFileOps = lib.OSFileOps{}
 
 // MarshalFunc is the function used to marshal job state to JSON (mockable for tests)
 var MarshalFunc = func(v any, prefix, indent string) ([]byte, error) {
@@ -107,14 +91,8 @@ func SaveJobState(jobsBaseDir string, job *models.PipelineJob) error {
 		return fmt.Errorf("failed to marshal job state: %w", err)
 	}
 
-	tempFile := filepath.Join(jobDir, fmt.Sprintf(".state.tmp.%s", uuid.New().String()))
-	if err := StateFileOpsProvider.WriteFile(tempFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp state file: %w", err)
-	}
-
 	statePath := GetStateFilePath(jobsBaseDir, job.JobID)
-	if err := StateFileOpsProvider.Rename(tempFile, statePath); err != nil {
-		_ = StateFileOpsProvider.Remove(tempFile)
+	if err := lib.AtomicWriteFileWith(StateFileOpsProvider, statePath, data, 0644); err != nil {
 		return fmt.Errorf("failed to save job state: %w", err)
 	}
 

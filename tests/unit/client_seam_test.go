@@ -286,3 +286,63 @@ func TestMockFlattener_WithoutFlattenFuncReturnsNoRows(t *testing.T) {
 	assert.Nil(t, rows)
 	assert.Equal(t, 1, mock.Calls)
 }
+
+// A validation service that answers with a JSON null body yields a result with
+// no OperationOutcome. Such a chunk contributes no line to the report.
+func TestValidationStep_ChunkWithoutOutcomeIsSkippedInReport(t *testing.T) {
+	mock := &servicestest.MockResourceValidator{
+		ValidateFunc: func(map[string]any) (*services.ValidationResult, error) {
+			return &services.ValidationResult{OperationOutcome: nil}, nil
+		},
+	}
+	pipeline.SetResourceValidatorFactoryForTesting(func(_ string, _ *services.HTTPClient, _ *lib.Logger) services.ResourceValidator {
+		return mock
+	})
+	defer pipeline.ResetResourceValidatorFactory()
+
+	tmpDir := t.TempDir()
+	job := createValidationTestJob("http://unused-by-fake")
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+	writeValidationNDJSON(t, filepath.Join(importDir, "Patient.ndjson"), []map[string]any{
+		{"resourceType": "Patient", "id": "p1"},
+	})
+
+	require.NoError(t, runPipelineStep(models.StepValidation, job, tmpDir, createValidationTestLogger()))
+
+	reportFile := filepath.Join(tmpDir, "validation", "Patient.validation.ndjson")
+	content, err := os.ReadFile(reportFile)
+	require.NoError(t, err)
+	assert.Empty(t, content, "a chunk without an OperationOutcome writes no report line")
+}
+
+// An OperationOutcome that JSON cannot encode fails the step, and the report
+// file stays absent: the atomic write publishes nothing.
+func TestValidationStep_UnencodableOutcomeFailsStepAndWritesNoReport(t *testing.T) {
+	mock := &servicestest.MockResourceValidator{
+		ValidateFunc: func(map[string]any) (*services.ValidationResult, error) {
+			return &services.ValidationResult{OperationOutcome: map[string]any{
+				"resourceType": "OperationOutcome",
+				"issue":        make(chan int),
+			}}, nil
+		},
+	}
+	pipeline.SetResourceValidatorFactoryForTesting(func(_ string, _ *services.HTTPClient, _ *lib.Logger) services.ResourceValidator {
+		return mock
+	})
+	defer pipeline.ResetResourceValidatorFactory()
+
+	tmpDir := t.TempDir()
+	job := createValidationTestJob("http://unused-by-fake")
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+	writeValidationNDJSON(t, filepath.Join(importDir, "Patient.ndjson"), []map[string]any{
+		{"resourceType": "Patient", "id": "p1"},
+	})
+
+	err := runPipelineStep(models.StepValidation, job, tmpDir, createValidationTestLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to marshal OperationOutcome")
+
+	assert.NoFileExists(t, filepath.Join(tmpDir, "validation", "Patient.validation.ndjson"))
+}

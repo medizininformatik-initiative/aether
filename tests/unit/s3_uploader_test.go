@@ -366,6 +366,10 @@ func writeS3TestPayload(t *testing.T) string {
 }
 
 func TestAWSS3Uploader_SelfSignedCert_UnknownAuthorityRejected(t *testing.T) {
+	// The AWS SDK retries the rejected handshake with a backoff. One attempt
+	// shows the same error without the wait.
+	t.Setenv("AWS_MAX_ATTEMPTS", "1")
+
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("ETag", `"should-not-reach"`)
 		w.WriteHeader(http.StatusOK)

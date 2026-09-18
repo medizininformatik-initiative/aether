@@ -176,7 +176,7 @@ func TestDIMPClient_Error_504GatewayTimeout(t *testing.T) {
 func TestDIMPClient_Error_NetworkFailure(t *testing.T) {
 	// Test network connectivity error
 	logger := lib.NewLogger(lib.LogLevelError)
-	httpClient := services.NewHTTPClient(1*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 10, MaxBackoffMs: 100}, models.TLSConfig{}, logger)
+	httpClient := services.NewHTTPClient(20*time.Millisecond, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 1, MaxBackoffMs: 5}, models.TLSConfig{}, logger)
 	client := services.NewDIMPClient(models.DIMPConfig{URL: "http://192.0.2.1:9999"}, nil, httpClient, logger) // Non-routable IP
 
 	resource := map[string]any{

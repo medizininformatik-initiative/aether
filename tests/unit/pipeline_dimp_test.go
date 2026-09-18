@@ -39,11 +39,7 @@ func createDIMPTestJob(dimpURL string) *models.PipelineJob {
 					BundleSplitThresholdMB: 10,
 				},
 			},
-			Retry: models.RetryConfig{
-				MaxAttempts:      5,
-				InitialBackoffMs: 1000,
-				MaxBackoffMs:     30000,
-			},
+			Retry: FastRetryConfig(),
 		},
 	}
 	// Include import step before DIMP (required for GetStepInputDir to work correctly)

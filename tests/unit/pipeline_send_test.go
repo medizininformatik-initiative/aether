@@ -833,11 +833,7 @@ func createSendTestJob(serverURL, jobID, jobsDir string) *models.PipelineJob {
 					},
 				},
 			},
-			Retry: models.RetryConfig{
-				MaxAttempts:      5,
-				InitialBackoffMs: 1000,
-				MaxBackoffMs:     30000,
-			},
+			Retry:   FastRetryConfig(),
 			JobsDir: jobsDir,
 		},
 		Steps: []models.PipelineStep{
@@ -872,11 +868,7 @@ func createSendTestJobWithAuth(serverURL, jobID, jobsDir string, auth models.Aut
 					},
 				},
 			},
-			Retry: models.RetryConfig{
-				MaxAttempts:      5,
-				InitialBackoffMs: 1000,
-				MaxBackoffMs:     30000,
-			},
+			Retry:   FastRetryConfig(),
 			JobsDir: jobsDir,
 		},
 		Steps: []models.PipelineStep{
@@ -1942,11 +1934,7 @@ func createFHIRSendTestJob(serverURL, jobID, jobsDir string) *models.PipelineJob
 					BatchSize: 100,
 				},
 			},
-			Retry: models.RetryConfig{
-				MaxAttempts:      5,
-				InitialBackoffMs: 1000,
-				MaxBackoffMs:     30000,
-			},
+			Retry:   FastRetryConfig(),
 			JobsDir: jobsDir,
 		},
 		Steps: []models.PipelineStep{
@@ -1981,11 +1969,7 @@ func createFHIRSendTestJobWithAuth(serverURL, jobID, jobsDir, username, password
 					},
 				},
 			},
-			Retry: models.RetryConfig{
-				MaxAttempts:      5,
-				InitialBackoffMs: 1000,
-				MaxBackoffMs:     30000,
-			},
+			Retry:   FastRetryConfig(),
 			JobsDir: jobsDir,
 		},
 		Steps: []models.PipelineStep{

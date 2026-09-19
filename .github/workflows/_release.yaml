@@ -8,7 +8,7 @@ permissions: {}
 jobs:
   build:
     name: Build Release
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - name: Harden Runner
@@ -39,7 +39,7 @@ jobs:
 
   sign:
     name: Sign Release Artifacts
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: [build]
     timeout-minutes: 10
     permissions:
@@ -102,7 +102,7 @@ jobs:
 
   sbom:
     name: Generate SBOM
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: [build]
     timeout-minutes: 10
     steps:
@@ -131,7 +131,7 @@ jobs:
 
   publish:
     name: Publish Release
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: [build, attestation, sbom, sign]
     timeout-minutes: 30
     permissions:
@@ -175,7 +175,7 @@ jobs:
 
   attestation:
     name: Generate Attestations
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: [build]
     timeout-minutes: 30
     permissions:

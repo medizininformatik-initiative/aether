@@ -13,7 +13,7 @@ permissions: {}
 jobs:
   detect-changes:
     name: Detect Changes
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       code: ${{ inputs.check_changes && steps.filter.outputs.code || 'true' }}
@@ -41,7 +41,7 @@ jobs:
 
   test:
     name: Unit Tests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code == 'true'
     timeout-minutes: 10
@@ -71,7 +71,7 @@ jobs:
 
   lookup-compat:
     name: Flattening Lookup Compatibility
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code == 'true'
     timeout-minutes: 10
@@ -104,7 +104,7 @@ jobs:
 
   e2e-test:
     name: E2E Tests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: [detect-changes, test]
     if: needs.detect-changes.outputs.code == 'true'
     timeout-minutes: 30
@@ -219,7 +219,7 @@ jobs:
 
   e2e-test-direct-load:
     name: E2E Direct Resource Load Tests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: [detect-changes, test]
     if: needs.detect-changes.outputs.code == 'true'
     timeout-minutes: 20
@@ -324,7 +324,7 @@ jobs:
 
   e2e-test-flattening:
     name: E2E Flattening Tests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: [detect-changes, test]
     if: needs.detect-changes.outputs.code == 'true'
     timeout-minutes: 15
@@ -397,7 +397,7 @@ jobs:
 
   e2e-test-validation:
     name: E2E Validation Tests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: [detect-changes, test]
     if: needs.detect-changes.outputs.code == 'true'
     timeout-minutes: 15
@@ -470,7 +470,7 @@ jobs:
 
   e2e-test-dimp-anonymization-config:
     name: E2E DIMP Anonymization Config Tests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: [detect-changes, test]
     if: needs.detect-changes.outputs.code == 'true'
     timeout-minutes: 15
@@ -543,7 +543,7 @@ jobs:
 
   test-status:
     name: Test Status
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: [detect-changes, lookup-compat, e2e-test, e2e-test-direct-load, e2e-test-flattening, e2e-test-validation, e2e-test-dimp-anonymization-config]
     if: always()
     timeout-minutes: 5

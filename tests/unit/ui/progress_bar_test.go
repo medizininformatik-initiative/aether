@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/medizininformatik-initiative/aether/internal/ui"
 )
@@ -37,6 +38,17 @@ func TestProgressBar_Add(t *testing.T) {
 	// Finish
 	err = bar.Finish()
 	assert.NoError(t, err)
+}
+
+func TestProgressBar_ThrottleSuppressesRapidRenders(t *testing.T) {
+	var buf bytes.Buffer
+	bar := ui.NewProgressBarWithWriter(10, "Test", &buf)
+
+	require.NoError(t, bar.Add(1))
+	require.NoError(t, bar.Add(1))
+
+	assert.Contains(t, buf.String(), "1/10", "the first step renders")
+	assert.NotContains(t, buf.String(), "2/10", "a step inside the throttle window does not render")
 }
 
 func TestProgressBar_Set(t *testing.T) {

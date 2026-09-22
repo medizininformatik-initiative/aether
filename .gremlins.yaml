@@ -1,0 +1,11 @@
+# Settings for gremlins mutation testing. Run it with scripts/mutation.sh,
+# or with "make mutation" and "make mutation-diff".
+unleash:
+  # The tests are in tests/, outside the package under test. Without integration
+  # mode, every mutant gets the status NOT COVERED.
+  integration: true
+  coverpkg: ./internal/...
+  # The default worker count and timeout give TIMED OUT results that change
+  # between runs.
+  workers: 2
+  timeout-coefficient: 6

@@ -39,20 +39,21 @@ func NewETACalculatorCustom(maxSamples int, maxTimeWindow time.Duration) *ETACal
 	}
 }
 
-// RecordProgress records a progress measurement
+// RecordProgress records a progress measurement taken now
 func (e *ETACalculator) RecordProgress(itemsProcessed int64) {
-	now := time.Now()
+	e.RecordProgressAt(itemsProcessed, time.Now())
+}
 
+// RecordProgressAt records a progress measurement taken at the given time
+func (e *ETACalculator) RecordProgressAt(itemsProcessed int64, now time.Time) {
 	// Add new sample
 	e.samples = append(e.samples, TimestampedProgress{
 		Timestamp: now,
 		Items:     itemsProcessed,
 	})
 
-	// Remove old samples (keep only maxSamples most recent)
-	if len(e.samples) > e.maxSamples {
-		e.samples = e.samples[len(e.samples)-e.maxSamples:]
-	}
+	// Keep only the maxSamples most recent samples
+	e.samples = e.samples[max(0, len(e.samples)-e.maxSamples):]
 
 	// Remove samples outside time window
 	e.pruneOldSamples(now)
@@ -62,19 +63,17 @@ func (e *ETACalculator) RecordProgress(itemsProcessed int64) {
 func (e *ETACalculator) pruneOldSamples(now time.Time) {
 	cutoff := now.Add(-e.maxTimeWindow)
 
-	// Find first sample within time window
-	firstValid := 0
+	// The samples are in time order, so the first sample inside the window
+	// starts the range to keep.
 	for i, sample := range e.samples {
 		if sample.Timestamp.After(cutoff) {
-			firstValid = i
-			break
+			e.samples = e.samples[i:]
+			return
 		}
 	}
 
-	// Keep only samples within time window
-	if firstValid > 0 && firstValid < len(e.samples) {
-		e.samples = e.samples[firstValid:]
-	}
+	// A window of zero or less accepts no sample
+	e.samples = e.samples[:0]
 }
 
 // CalculateETA computes estimated time to completion

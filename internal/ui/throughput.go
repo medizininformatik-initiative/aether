@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -95,43 +96,33 @@ func FormatItemsPerSecond(itemsPerSec float64) string {
 // FormatBytesPerSecond formats bytes/sec rate as human-readable string
 // Example: "5.2 MB/sec"
 func FormatBytesPerSecond(bytesPerSec float64) string {
-	const (
-		KB = 1024
-		MB = 1024 * KB
-		GB = 1024 * MB
-	)
-
-	if bytesPerSec >= GB {
-		return fmt.Sprintf("%.2f GB/sec", bytesPerSec/GB)
-	} else if bytesPerSec >= MB {
-		return fmt.Sprintf("%.2f MB/sec", bytesPerSec/MB)
-	} else if bytesPerSec >= KB {
-		return fmt.Sprintf("%.2f KB/sec", bytesPerSec/KB)
-	}
-	return fmt.Sprintf("%.0f B/sec", bytesPerSec)
+	return formatScaled(bytesPerSec, rateUnits, "/sec")
 }
 
 // FormatBytes formats bytes as human-readable size
 func FormatBytes(bytes int64) string {
-	const (
-		KB = 1024
-		MB = 1024 * KB
-		GB = 1024 * MB
-		TB = 1024 * GB
-	)
+	return formatScaled(float64(bytes), sizeUnits, "")
+}
 
-	fbytes := float64(bytes)
+var (
+	rateUnits = []string{"B", "KB", "MB", "GB"}
+	sizeUnits = []string{"B", "KB", "MB", "GB", "TB"}
+)
 
-	if bytes >= TB {
-		return fmt.Sprintf("%.2f TB", fbytes/TB)
-	} else if bytes >= GB {
-		return fmt.Sprintf("%.2f GB", fbytes/GB)
-	} else if bytes >= MB {
-		return fmt.Sprintf("%.2f MB", fbytes/MB)
-	} else if bytes >= KB {
-		return fmt.Sprintf("%.2f KB", fbytes/KB)
+// formatScaled scales value by 1024 until it fits the largest applicable unit.
+// It compares the value against the boundary with the same precision that the
+// output uses. A value that rounds up to 1024 thus moves to the next unit
+// instead of showing as "1024.00".
+func formatScaled(value float64, units []string, suffix string) string {
+	// Bytes print as whole numbers; the larger units print two decimals.
+	decimals, factor := 0, 1.0
+	i := 0
+	for i < len(units)-1 && math.Round(value*factor)/factor >= 1024 {
+		value /= 1024
+		i++
+		decimals, factor = 2, 100
 	}
-	return fmt.Sprintf("%d B", bytes)
+	return fmt.Sprintf("%.*f %s%s", decimals, value, units[i], suffix)
 }
 
 // Reset resets the throughput calculator

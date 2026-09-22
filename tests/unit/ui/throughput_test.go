@@ -42,6 +42,11 @@ func TestFormatBytesPerSecond(t *testing.T) {
 		{"kilobytes", 2 * kb, "2.00 KB/sec"},
 		{"megabytes", 5 * mb, "5.00 MB/sec"},
 		{"gigabytes", 3 * gb, "3.00 GB/sec"},
+		{"exactly a kilobyte", kb, "1.00 KB/sec"},
+		{"just below a kilobyte", kb - 1, "1023 B/sec"},
+		{"a rate that rounds up to a kilobyte", kb - 0.4, "1.00 KB/sec"},
+		{"just below a megabyte", mb - 1, "1.00 MB/sec"},
+		{"just below a gigabyte", gb - 1, "1.00 GB/sec"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -67,6 +72,11 @@ func TestFormatBytes(t *testing.T) {
 		{"megabytes", 3 * mb, "3.00 MB"},
 		{"gigabytes", 4 * gb, "4.00 GB"},
 		{"terabytes", 5 * tb, "5.00 TB"},
+		{"just below a gigabyte", gb - 1, "1.00 GB"},
+		{"exactly a kilobyte", kb, "1.00 KB"},
+		{"just below a kilobyte", kb - 1, "1023 B"},
+		{"just below a megabyte", mb - 1, "1.00 MB"},
+		{"just below a terabyte", tb - 1, "1.00 TB"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -34,7 +34,7 @@ concurrency:
 jobs:
   deploy:
     name: Build and Deploy Documentation
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       # Needed to push the built docs to the gh-pages branch.
       contents: write

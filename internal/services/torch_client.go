@@ -601,10 +601,7 @@ func (s *stallGuardReader) Read(p []byte) (int, error) {
 // client's config.
 func (c *TORCHClient) downloadFile(fileURL, destPath string, compress bool, compressionLevel string) (models.FHIRDataFile, error) {
 	retry := c.httpClient.retryConfig
-	attempts := retry.MaxAttempts
-	if attempts < 1 {
-		attempts = 1
-	}
+	attempts := max(1, retry.MaxAttempts)
 
 	var lastErr error
 	for attempt := 0; attempt < attempts; attempt++ {
@@ -615,12 +612,14 @@ func (c *TORCHClient) downloadFile(fileURL, destPath string, compress bool, comp
 		lastErr = err
 
 		var torchErr *TORCHError
-		if !errors.As(err, &torchErr) || !torchErr.IsRetryable() || attempt == attempts-1 {
+		if !errors.As(err, &torchErr) || !torchErr.IsRetryable() {
 			return models.FHIRDataFile{}, err
 		}
 
-		c.logger.Warn("TORCH download attempt failed, retrying", "url", fileURL, "attempt", attempt+1, "error", err)
-		time.Sleep(lib.CalculateBackoff(attempt, retry.InitialBackoffMs, retry.MaxBackoffMs))
+		if attempt < attempts-1 {
+			c.logger.Warn("TORCH download attempt failed, retrying", "url", fileURL, "attempt", attempt+1, "error", err)
+			time.Sleep(lib.CalculateBackoff(attempt, retry.InitialBackoffMs, retry.MaxBackoffMs))
+		}
 	}
 	return models.FHIRDataFile{}, lastErr
 }
@@ -689,13 +688,11 @@ func (c *TORCHClient) downloadFileOnce(fileURL, destPath string, compress bool, 
 
 	bytesWritten, err := io.Copy(writer, guardedBody)
 
-	if closeErr := writer.Close(); closeErr != nil && err == nil {
-		err = closeErr
-	}
+	// The compressed writer holds data in a buffer, so a write failure can
+	// surface at close time. Keep every close error, not just the first.
+	err = errors.Join(err, writer.Close())
 	if compress {
-		if closeErr := destFile.Close(); closeErr != nil && err == nil {
-			err = closeErr
-		}
+		err = errors.Join(err, destFile.Close())
 	}
 
 	if err != nil {

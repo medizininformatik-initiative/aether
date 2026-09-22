@@ -62,6 +62,9 @@ docs/.vitepress/cache/
 coverage.xml
 patch-coverage.html
 
+# Mutation testing
+mutation-report.json
+
 # Vale style packages (downloaded via `vale sync`; config and custom rules are committed)
 .vale/styles/*
 !.vale/styles/config/

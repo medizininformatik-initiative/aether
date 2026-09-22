@@ -27,7 +27,7 @@ LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 PLATFORMS := linux darwin
 ARCHITECTURES := amd64 arm64
 
-.PHONY: all build build-all build-linux build-mac build-mac-arm build-windows build-windows-arm clean test test-unit test-integration test-contract test-fuzz coverage fmt vet vuln lint lint-docs install help release demo-torch-progress
+.PHONY: all build build-all build-linux build-mac build-mac-arm build-windows build-windows-arm clean test test-unit test-integration test-contract test-fuzz coverage mutation mutation-diff fmt vet vuln lint lint-docs install help release demo-torch-progress
 
 # Default target
 all: clean fmt vet test build
@@ -116,6 +116,7 @@ clean:
 	rm -rf $(BUILD_DIR)
 	rm -rf jobs/*
 	rm -f coverage.out
+	rm -f mutation-report.json
 	@echo "Clean complete"
 
 ## test: Run all tests
@@ -173,6 +174,18 @@ coverage-merge:
 	@tail -n +2 coverage-unit.out >> coverage.out 2>/dev/null || true
 	@tail -n +2 coverage-integration.out >> coverage.out 2>/dev/null || true
 	@echo "Coverage files merged into coverage.out"
+
+## mutation: Run mutation testing (PKG=./internal/ui selects one package)
+mutation:
+	@echo "Running mutation testing on $(or $(PKG),./internal/...)..."
+	@PKG="$(PKG)" MUTATION_OUTPUT="$(MUTATION_OUTPUT)" MUTATION_TMPDIR="$(MUTATION_TMPDIR)" \
+		./scripts/mutation.sh
+
+## mutation-diff: Run mutation testing on the changed lines only (MUTATION_REF=origin/main)
+mutation-diff:
+	@echo "Running mutation testing against $(or $(MUTATION_REF),origin/main)..."
+	@PKG="$(PKG)" MUTATION_REF="$(MUTATION_REF)" MUTATION_OUTPUT="$(MUTATION_OUTPUT)" \
+		MUTATION_TMPDIR="$(MUTATION_TMPDIR)" ./scripts/mutation.sh diff
 
 ## fmt: Format Go source code
 fmt:

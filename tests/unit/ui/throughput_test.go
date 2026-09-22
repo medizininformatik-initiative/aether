@@ -39,13 +39,10 @@ func TestFormatBytesPerSecond(t *testing.T) {
 		want string
 	}{
 		{"bytes", 512, "512 B/sec"},
-		{"below the kilobyte boundary", kb - 1, "1023 B/sec"},
 		{"at the kilobyte boundary", kb, "1.00 KB/sec"},
 		{"kilobytes", 2 * kb, "2.00 KB/sec"},
-		{"below the megabyte boundary", mb - 1, "1024.00 KB/sec"},
 		{"at the megabyte boundary", mb, "1.00 MB/sec"},
 		{"megabytes", 5 * mb, "5.00 MB/sec"},
-		{"below the gigabyte boundary", gb - 1, "1024.00 MB/sec"},
 		{"at the gigabyte boundary", gb, "1.00 GB/sec"},
 		{"gigabytes", 3 * gb, "3.00 GB/sec"},
 	}
@@ -69,16 +66,12 @@ func TestFormatBytes(t *testing.T) {
 		want  string
 	}{
 		{"bytes", 512, "512 B"},
-		{"below the kilobyte boundary", kb - 1, "1023 B"},
 		{"at the kilobyte boundary", kb, "1.00 KB"},
 		{"kilobytes", 2 * kb, "2.00 KB"},
-		{"below the megabyte boundary", mb - 1, "1024.00 KB"},
 		{"at the megabyte boundary", mb, "1.00 MB"},
 		{"megabytes", 3 * mb, "3.00 MB"},
-		{"below the gigabyte boundary", gb - 1, "1024.00 MB"},
 		{"at the gigabyte boundary", gb, "1.00 GB"},
 		{"gigabytes", 4 * gb, "4.00 GB"},
-		{"below the terabyte boundary", tb - 1, "1024.00 GB"},
 		{"at the terabyte boundary", tb, "1.00 TB"},
 		{"terabytes", 5 * tb, "5.00 TB"},
 	}

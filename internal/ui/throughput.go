@@ -18,9 +18,13 @@ type ThroughputCalculator struct {
 	instantBytesRate float64
 }
 
-// NewThroughputCalculator creates a new throughput calculator
+// NewThroughputCalculator creates a new throughput calculator that starts now
 func NewThroughputCalculator() *ThroughputCalculator {
-	now := time.Now()
+	return NewThroughputCalculatorAt(time.Now())
+}
+
+// NewThroughputCalculatorAt creates a throughput calculator that starts at the given time
+func NewThroughputCalculatorAt(now time.Time) *ThroughputCalculator {
 	return &ThroughputCalculator{
 		startTime:        now,
 		totalItems:       0,
@@ -33,10 +37,13 @@ func NewThroughputCalculator() *ThroughputCalculator {
 	}
 }
 
-// Update records progress and recalculates throughput rates
+// Update records progress now and recalculates throughput rates
 func (t *ThroughputCalculator) Update(items int64, bytes int64) {
-	now := time.Now()
+	t.UpdateAt(items, bytes, time.Now())
+}
 
+// UpdateAt records progress at the given time and recalculates throughput rates
+func (t *ThroughputCalculator) UpdateAt(items int64, bytes int64, now time.Time) {
 	// Calculate instantaneous rates (since last update)
 	timeSinceLastUpdate := now.Sub(t.lastUpdateTime).Seconds()
 	if timeSinceLastUpdate > 0 {
@@ -55,18 +62,28 @@ func (t *ThroughputCalculator) Update(items int64, bytes int64) {
 	t.lastUpdateBytes = bytes
 }
 
-// GetAverageItemsPerSecond returns overall average items per second
+// GetAverageItemsPerSecond returns overall average items per second up to now
 func (t *ThroughputCalculator) GetAverageItemsPerSecond() float64 {
-	elapsed := time.Since(t.startTime).Seconds()
+	return t.GetAverageItemsPerSecondAt(time.Now())
+}
+
+// GetAverageItemsPerSecondAt returns overall average items per second up to the given time
+func (t *ThroughputCalculator) GetAverageItemsPerSecondAt(now time.Time) float64 {
+	elapsed := now.Sub(t.startTime).Seconds()
 	if elapsed <= 0 {
 		return 0
 	}
 	return float64(t.totalItems) / elapsed
 }
 
-// GetAverageBytesPerSecond returns overall average bytes per second
+// GetAverageBytesPerSecond returns overall average bytes per second up to now
 func (t *ThroughputCalculator) GetAverageBytesPerSecond() float64 {
-	elapsed := time.Since(t.startTime).Seconds()
+	return t.GetAverageBytesPerSecondAt(time.Now())
+}
+
+// GetAverageBytesPerSecondAt returns overall average bytes per second up to the given time
+func (t *ThroughputCalculator) GetAverageBytesPerSecondAt(now time.Time) float64 {
+	elapsed := now.Sub(t.startTime).Seconds()
 	if elapsed <= 0 {
 		return 0
 	}

@@ -24,43 +24,30 @@ type ProgressBar struct {
 // Progress bars provide visual feedback with completion percentage and throughput
 // Updates every 500ms to provide timely feedback to users
 func NewProgressBar(total int64, description string) *ProgressBar {
-	bar := progressbar.NewOptions64(
-		total,
-		progressbar.OptionSetDescription(description),
-		progressbar.OptionShowCount(),
-		progressbar.OptionSetWidth(40),
-		progressbar.OptionThrottle(500*time.Millisecond), // Update every 500ms
-		progressbar.OptionShowIts(),                      // Show items per second (throughput)
-		progressbar.OptionSetWriter(os.Stderr),           // Write to stderr (unbuffered)
-		progressbar.OptionSetRenderBlankState(true),
-		progressbar.OptionEnableColorCodes(false), // Disable colors for better compatibility
-	)
-
-	return &ProgressBar{
-		bar:         bar,
-		description: description,
-		total:       total,
-		current:     0,
-		startTime:   time.Now(),
-	}
+	// stderr is unbuffered, and the blank state shows the bar before the first step
+	return newProgressBar(total, description, os.Stderr, progressbar.OptionSetRenderBlankState(true))
 }
 
 // NewProgressBarWithWriter creates a progress bar that writes to a specific writer
 // Useful for testing with mock writers
 func NewProgressBarWithWriter(total int64, description string, writer io.Writer) *ProgressBar {
-	bar := progressbar.NewOptions64(
-		total,
+	return newProgressBar(total, description, writer)
+}
+
+// newProgressBar builds a progress bar with the display options that all progress bars share
+func newProgressBar(total int64, description string, writer io.Writer, extra ...progressbar.Option) *ProgressBar {
+	options := []progressbar.Option{
 		progressbar.OptionSetDescription(description),
 		progressbar.OptionShowCount(),
 		progressbar.OptionSetWidth(40),
-		progressbar.OptionThrottle(500*time.Millisecond),
-		progressbar.OptionShowIts(),
+		progressbar.OptionThrottle(500 * time.Millisecond), // Update every 500ms
+		progressbar.OptionShowIts(),                        // Show items per second (throughput)
 		progressbar.OptionSetWriter(writer),
-		progressbar.OptionEnableColorCodes(false),
-	)
+		progressbar.OptionEnableColorCodes(false), // Disable colors for better compatibility
+	}
 
 	return &ProgressBar{
-		bar:         bar,
+		bar:         progressbar.NewOptions64(total, append(options, extra...)...),
 		description: description,
 		total:       total,
 		current:     0,

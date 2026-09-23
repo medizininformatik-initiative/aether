@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -52,24 +53,19 @@ func DownloadFromURL(url string, destinationDir string, httpClient *HTTPClient, 
 		spinner.Start()
 	}
 
-	var bytesDownloaded int64
-	if showProgress {
-		bytesDownloaded, err = httpClient.Download(url, writer)
-		spinner.Stop(err == nil)
+	bytesDownloaded, err := httpClient.Download(url, writer)
 
+	// The compressed writer holds data in a buffer, so a write failure can
+	// surface at close time. Keep every close error, not just the first.
+	err = errors.Join(err, writer.Close())
+	if compress {
+		err = errors.Join(err, destFile.Close())
+	}
+
+	if showProgress {
+		spinner.Stop(err == nil)
 		if err == nil && bytesDownloaded > 0 {
 			logger.Info("Download completed", "bytes", bytesDownloaded, "file", outputFileName)
-		}
-	} else {
-		bytesDownloaded, err = httpClient.Download(url, writer)
-	}
-
-	if closeErr := writer.Close(); closeErr != nil && err == nil {
-		err = closeErr
-	}
-	if compress {
-		if closeErr := destFile.Close(); closeErr != nil && err == nil {
-			err = closeErr
 		}
 	}
 
@@ -150,16 +146,14 @@ func DownloadFromURLWithProgress(url string, destinationDir string, httpClient *
 	}
 
 	bytesDownloaded, err := httpClient.DownloadWithProgress(url, writer, progressCallback)
-	spinner.Stop(err == nil)
 
-	if closeErr := writer.Close(); closeErr != nil && err == nil {
-		err = closeErr
-	}
+	// The compressed writer holds data in a buffer, so a write failure can
+	// surface at close time. Keep every close error, not just the first.
+	err = errors.Join(err, writer.Close())
 	if compress {
-		if closeErr := destFile.Close(); closeErr != nil && err == nil {
-			err = closeErr
-		}
+		err = errors.Join(err, destFile.Close())
 	}
+	spinner.Stop(err == nil)
 
 	if err != nil {
 		_ = os.Remove(destPath)

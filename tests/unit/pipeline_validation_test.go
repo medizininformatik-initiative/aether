@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -193,8 +194,11 @@ func TestExecuteValidationStep_AllValid(t *testing.T) {
 	}
 	writeValidationNDJSON(t, filepath.Join(importDir, "Patient.ndjson"), patients)
 
+	stopCapture := captureStdoutForTest(t)
 	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
+	stdout := stopCapture()
 	assert.NoError(t, err)
+	assert.Contains(t, stdout, "✓ Patient.ndjson (2 resources, all valid)")
 
 	// Report file should contain informational OperationOutcome (1 chunk)
 	reportFile := filepath.Join(tmpDir, "validation", "Patient.validation.ndjson")
@@ -223,8 +227,11 @@ func TestExecuteValidationStep_SomeInvalid(t *testing.T) {
 	}
 	writeValidationNDJSON(t, filepath.Join(importDir, "Condition.ndjson"), resources)
 
+	stopCapture := captureStdoutForTest(t)
 	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
+	stdout := stopCapture()
 	assert.NoError(t, err, "validation findings should not fail the pipeline")
+	assert.Contains(t, stdout, "⚠ Condition.ndjson (1 resources in 1 chunk(s) with errors)")
 
 	// Step should be completed, not failed
 	var validationStep *models.PipelineStep
@@ -272,8 +279,7 @@ func TestExecuteValidationStep_BundleChunking(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	job := createValidationTestJob(server.URL)
-	// Use a tiny chunk size (1KB) to force multiple chunks
-	job.Config.Services.Validation.BundleChunkSizeMB = 0 // will default, but we override threshold via config
+	job.Config.Services.Validation.BundleChunkSizeMB = 0
 	logger := createValidationTestLogger()
 
 	importDir := filepath.Join(tmpDir, "import")
@@ -294,7 +300,7 @@ func TestExecuteValidationStep_BundleChunking(t *testing.T) {
 	assert.NoError(t, err)
 
 	// With default 10MB chunk size all 20 tiny resources fit in 1 chunk
-	assert.GreaterOrEqual(t, bundleCount.Load(), int32(1), "should have sent at least 1 bundle")
+	assert.Equal(t, int32(1), bundleCount.Load(), "a chunk size of 0 should fall back to 10MB")
 }
 
 // TestExecuteValidationStep_ResumesProcessing skips files that already have reports
@@ -506,6 +512,7 @@ not-valid-json{{{
 	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to validate")
+	assert.Contains(t, err.Error(), "failed to parse resource 2", "the error should name the malformed line")
 }
 
 // TestExecuteValidationStep_EmptyFile verifies handling of an NDJSON file with no resources
@@ -785,17 +792,19 @@ func TestExecuteValidationStep_BundleEntriesHaveFullURL(t *testing.T) {
 	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
 	require.NoError(t, err)
 
-	// Verify the Bundle sent to the validator has fullUrl on all entries
 	entries, ok := receivedBundle["entry"].([]any)
 	require.True(t, ok, "Bundle should have entries")
 
-	for i, entryAny := range entries {
+	var fullURLs []any
+	for _, entryAny := range entries {
 		entry, ok := entryAny.(map[string]any)
 		require.True(t, ok, "entry should be a map")
-		fullURL, ok := entry["fullUrl"].(string)
-		assert.True(t, ok, "entry[%d] should have fullUrl", i)
-		assert.NotEmpty(t, fullURL, "entry[%d] fullUrl should not be empty", i)
+		fullURLs = append(fullURLs, entry["fullUrl"])
 	}
+	assert.Equal(t, []any{
+		"http://aether.local/fhir/Patient/p1",
+		"http://aether.local/fhir/Condition/c1",
+	}, fullURLs, "fullUrl should be built from the resource type and id")
 }
 
 // TestExecuteValidationStep_FailOnError_StopsPipeline verifies that when FailOnError is true
@@ -986,6 +995,52 @@ func TestExecuteValidationStep_InnerBundleEntriesGetFullURL(t *testing.T) {
 		"Condition entry fullUrl should end with request.url path, got: %s", fullURL1)
 }
 
+// An inner entry with an empty request.url gets its fullUrl from the resource type and id.
+func TestExecuteValidationStep_InnerBundleEntryWithEmptyRequestURLUsesResourceReference(t *testing.T) {
+	var receivedBundle map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&receivedBundle)
+
+		outcome := map[string]any{
+			"resourceType": "OperationOutcome",
+			"issue": []map[string]any{
+				{"severity": "information", "code": "informational", "diagnostics": "All OK"},
+			},
+		}
+		w.Header().Set("Content-Type", "application/fhir+json")
+		_ = json.NewEncoder(w).Encode(outcome)
+	}))
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	job := createValidationTestJob(server.URL)
+	logger := createValidationTestLogger()
+
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+
+	bundle := map[string]any{
+		"resourceType": "Bundle",
+		"type":         "transaction",
+		"entry": []map[string]any{
+			{
+				"resource": map[string]any{"resourceType": "Patient", "id": "p1"},
+				"request":  map[string]any{"method": "PUT", "url": ""},
+			},
+		},
+	}
+	writeValidationNDJSON(t, filepath.Join(importDir, "Bundles.ndjson"), []map[string]any{bundle})
+
+	err := runPipelineStep(models.StepValidation, job, tmpDir, logger)
+	require.NoError(t, err)
+
+	outerEntry := receivedBundle["entry"].([]any)[0].(map[string]any)
+	innerBundle := outerEntry["resource"].(map[string]any)
+	entry := innerBundle["entry"].([]any)[0].(map[string]any)
+
+	assert.Equal(t, "http://aether.local/fhir/Patient/p1", entry["fullUrl"])
+}
+
 // TestExecuteValidationStep_InnerBundlePreservesExistingFullURL verifies that entries
 // which already have a fullUrl are not overwritten.
 func TestExecuteValidationStep_InnerBundlePreservesExistingFullURL(t *testing.T) {
@@ -1045,7 +1100,8 @@ func TestExecuteValidationStep_UnremovableStaleTempEntryDoesNotFailStep(t *testi
 
 	tmpDir := t.TempDir()
 	job := createValidationTestJob(server.URL)
-	logger := createValidationTestLogger()
+	var logs bytes.Buffer
+	logger := lib.NewLoggerWithWriter(lib.LogLevelDebug, &logs)
 
 	importDir := filepath.Join(tmpDir, "import")
 	require.NoError(t, os.MkdirAll(importDir, 0755))
@@ -1065,4 +1121,5 @@ func TestExecuteValidationStep_UnremovableStaleTempEntryDoesNotFailStep(t *testi
 
 	assert.FileExists(t, filepath.Join(validationDir, "Patient.validation.ndjson"))
 	assert.DirExists(t, stale, "the entry that cannot be removed stays")
+	assert.Contains(t, logs.String(), "Failed to remove stale temporary files")
 }

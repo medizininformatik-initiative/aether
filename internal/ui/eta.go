@@ -153,6 +153,8 @@ func FormatETA(eta time.Duration) string {
 		return "< 1s"
 	}
 
+	// Equivalent mutant: at eta == time.Minute both branches return "1m0s",
+	// thus no test can find a change of < to <=.
 	if eta < time.Minute {
 		return eta.Round(time.Second).String()
 	}
@@ -170,6 +172,8 @@ func FormatETA(eta time.Duration) string {
 
 // FormatDuration formats a duration as a human-readable string
 func FormatDuration(d time.Duration) string {
+	// Equivalent mutant: at d == time.Second both roundings return "1s",
+	// thus no test can find a change of < to <=.
 	if d < time.Second {
 		return d.Round(time.Millisecond).String()
 	}

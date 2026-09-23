@@ -103,6 +103,11 @@ type ViewDefSnippet struct {
 	Select        []SelectClause     `json:"select,omitempty"`        // Select clauses for this element
 }
 
+// HasForEach tells if the snippet iterates with forEach or forEachOrNull.
+func (s ViewDefSnippet) HasForEach() bool {
+	return s.ForEach != "" || s.ForEachOrNull != ""
+}
+
 // ViewDefinition represents a complete SQL-on-FHIR ViewDefinition
 // See: https://sql-on-fhir.org/ig/StructureDefinition/ViewDefinition
 type ViewDefinition struct {
@@ -119,6 +124,11 @@ type SelectClause struct {
 	Select        []SelectClause     `json:"select,omitempty"`        // Nested select clauses
 	ForEach       string             `json:"forEach,omitempty"`       // ForEach expression
 	ForEachOrNull string             `json:"forEachOrNull,omitempty"` // ForEachOrNull expression
+}
+
+// HasForEach tells if the select clause iterates with forEach or forEachOrNull.
+func (s SelectClause) HasForEach() bool {
+	return s.ForEach != "" || s.ForEachOrNull != ""
 }
 
 // ColumnDefinition represents a column in a ViewDefinition select clause

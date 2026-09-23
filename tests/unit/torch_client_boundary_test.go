@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -281,6 +282,67 @@ func TestTORCHClient_DownloadFile_ReportsWriteErrorFromClose(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no space left on device")
 	assert.Empty(t, files)
+}
+
+// A misconfigured attempt count must not cause a silent success. If a count of
+// zero skips the loop, the download returns an empty file and no error, and the
+// pipeline then continues with data that it never downloaded.
+func TestTORCHClient_DownloadFile_ZeroMaxAttemptsIsNotASilentSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.Header().Set("Content-Length", "36")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_, _ = w.Write([]byte(`{"resourceType":"Patient","id":"1"}`))
+	}))
+	defer server.Close()
+
+	client := newBoundaryTestClientWithLog(server.URL, 1, time.Millisecond,
+		models.RetryConfig{MaxAttempts: 0, InitialBackoffMs: 10, MaxBackoffMs: 100}, io.Discard)
+
+	files, err := client.DownloadExtractionFiles(
+		[]string{server.URL + "/output/a.ndjson"}, t.TempDir(), false, false, "")
+
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	assert.Equal(t, 1, files[0].LineCount)
+	assert.Positive(t, files[0].FileSize)
+}
+
+// The download keeps the error from Close, also when the copy already failed.
+// A body larger than the 64 KiB block of the zstd writer makes the copy write,
+// and that write fails. The writer stores the error and Close returns it again,
+// so the error text contains the failure twice only if both errors are kept.
+func TestTORCHClient_DownloadFile_KeepsCloseErrorAfterCopyError(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("/dev/full is a Linux device")
+	}
+
+	payload := bytes.Repeat([]byte(`{"resourceType":"Patient","id":"1"}`+"\n"), 30000)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.Header().Set("Content-Length", "36")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+
+	destDir := t.TempDir()
+	destPath := filepath.Join(destDir, "a.ndjson"+lib.CompressedFileExtension)
+	require.NoError(t, os.Symlink("/dev/full", destPath))
+
+	client := newBoundaryTestClient(server.URL, 1, time.Millisecond)
+
+	_, err := client.DownloadExtractionFiles(
+		[]string{server.URL + "/output/a.ndjson"}, destDir, false, true, "fastest")
+
+	require.Error(t, err)
+	assert.GreaterOrEqual(t, strings.Count(err.Error(), "no space left on device"), 2,
+		"the copy error and the close error must both appear")
 }
 
 // The download log counts the files from one, so that an operator who watches a

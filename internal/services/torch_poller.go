@@ -146,11 +146,7 @@ func extractProgressDiagnostics(body []byte) string {
 
 // CalculateNextPollInterval calculates exponential backoff for next polling attempt
 func CalculateNextPollInterval(current, max time.Duration) time.Duration {
-	next := current * 2
-	if next > max {
-		return max
-	}
-	return next
+	return min(current*2, max)
 }
 
 // CheckTimeout reports whether the liveness window has elapsed since the last

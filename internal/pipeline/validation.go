@@ -168,25 +168,9 @@ type chunkValidationResult struct {
 // FHIR Bundles and validating concurrently. All OperationOutcomes are written to the report.
 // Returns the total resource count, the number of chunks with errors, and any processing error.
 func validateFile(inputFile, reportFile string, client services.ResourceValidator, logger *lib.Logger, maxConcurrent int, thresholdBytes int) (int, int, error) {
-	inFile, err := lib.OpenFileForReading(inputFile)
+	resources, err := readNDJSONResources(inputFile)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to open input file: %w", err)
-	}
-	defer func() { _ = inFile.Close() }()
-
-	// Parse all resources from NDJSON
-	dec := json.NewDecoder(inFile)
-	var resources []map[string]any
-
-	for {
-		var resource map[string]any
-		if err := dec.Decode(&resource); err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return len(resources), 0, fmt.Errorf("failed to parse resource %d: %w", len(resources)+1, err)
-		}
-		resources = append(resources, resource)
+		return len(resources), 0, err
 	}
 
 	if len(resources) == 0 {
@@ -197,7 +181,6 @@ func validateFile(inputFile, reportFile string, client services.ResourceValidato
 		return 0, 0, nil
 	}
 
-	// Chunk resources into Bundle-sized partitions
 	chunks, err := chunkResources(resources, thresholdBytes, logger)
 	if err != nil {
 		return len(resources), 0, fmt.Errorf("failed to chunk resources: %w", err)
@@ -208,10 +191,45 @@ func validateFile(inputFile, reportFile string, client services.ResourceValidato
 		"resources", len(resources),
 		"chunks", len(chunks))
 
-	// Initialize progress bar
-	progressBar := ui.NewProgressBar(int64(len(chunks)), fmt.Sprintf("Validating %s", filepath.Base(inputFile)))
+	results, err := validateChunks(chunks, client, maxConcurrent, filepath.Base(inputFile))
+	if err != nil {
+		return 0, 0, err
+	}
 
-	// Validate chunks concurrently
+	chunksWithErrors, err := writeValidationReport(reportFile, results)
+	return len(resources), chunksWithErrors, err
+}
+
+// readNDJSONResources parses all resources of an NDJSON file. On a parse error it
+// returns the resources before the malformed line.
+func readNDJSONResources(inputFile string) ([]map[string]any, error) {
+	inFile, err := lib.OpenFileForReading(inputFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open input file: %w", err)
+	}
+	defer func() { _ = inFile.Close() }()
+
+	dec := json.NewDecoder(inFile)
+	var resources []map[string]any
+
+	for {
+		var resource map[string]any
+		if err := dec.Decode(&resource); err != nil {
+			if errors.Is(err, io.EOF) {
+				return resources, nil
+			}
+			return resources, fmt.Errorf("failed to parse resource %d: %w", len(resources)+1, err)
+		}
+		resources = append(resources, resource)
+	}
+}
+
+// validateChunks validates each chunk as a collection Bundle, with at most
+// maxConcurrent requests in flight. It stops to start new requests after the
+// first request error and returns that error.
+func validateChunks(chunks [][]map[string]any, client services.ResourceValidator, maxConcurrent int, fileName string) ([]chunkValidationResult, error) {
+	progressBar := ui.NewProgressBar(int64(len(chunks)), fmt.Sprintf("Validating %s", fileName))
+
 	results := make([]chunkValidationResult, len(chunks))
 	sem := make(chan struct{}, maxConcurrent)
 	var wg sync.WaitGroup
@@ -243,26 +261,25 @@ func validateFile(inputFile, reportFile string, client services.ResourceValidato
 				hasError:   result.HasErrors(),
 			}
 
-			if progressBar != nil {
-				_ = progressBar.Add(1)
-			}
+			_ = progressBar.Add(1)
 		}(i, chunk)
 	}
 
 	wg.Wait()
 
-	if progressBar != nil {
-		_ = progressBar.Finish()
-	}
+	_ = progressBar.Finish()
 
-	// Check for HTTP/network errors
 	if v := firstErr.Load(); v != nil {
-		return 0, 0, v.(error)
+		return nil, v.(error)
 	}
+	return results, nil
+}
 
-	// Write all OperationOutcomes to the report file
+// writeValidationReport writes one OperationOutcome per line to the report file.
+// It returns the number of chunks whose outcome has errors.
+func writeValidationReport(reportFile string, results []chunkValidationResult) (int, error) {
 	chunksWithErrors := 0
-	err = lib.AtomicWriteStream(reportFile, 0644, func(out io.Writer) error {
+	err := lib.AtomicWriteStream(reportFile, 0644, func(out io.Writer) error {
 		for _, result := range results {
 			if result.outcome == nil {
 				continue
@@ -272,25 +289,26 @@ func validateFile(inputFile, reportFile string, client services.ResourceValidato
 				chunksWithErrors++
 			}
 
-			outcomeJSON, err := json.Marshal(result.outcome)
-			if err != nil {
-				return fmt.Errorf("failed to marshal OperationOutcome for chunk %d: %w", result.chunkIndex, err)
-			}
-
-			if _, err := out.Write(outcomeJSON); err != nil {
-				return fmt.Errorf("failed to write report: %w", err)
-			}
-			if _, err := out.Write([]byte("\n")); err != nil {
-				return fmt.Errorf("failed to write newline: %w", err)
+			if err := writeOutcomeLine(out, result); err != nil {
+				return err
 			}
 		}
 		return nil
 	})
+	return chunksWithErrors, err
+}
+
+// writeOutcomeLine writes the OperationOutcome of one chunk as a single NDJSON line.
+func writeOutcomeLine(out io.Writer, result chunkValidationResult) error {
+	outcomeJSON, err := json.Marshal(result.outcome)
 	if err != nil {
-		return len(resources), chunksWithErrors, err
+		return fmt.Errorf("failed to marshal OperationOutcome for chunk %d: %w", result.chunkIndex, err)
 	}
 
-	return len(resources), chunksWithErrors, nil
+	if _, err := out.Write(append(outcomeJSON, '\n')); err != nil {
+		return fmt.Errorf("failed to write report: %w", err)
+	}
+	return nil
 }
 
 // buildCollectionBundle wraps pre-formatted Bundle entries into a FHIR collection Bundle.

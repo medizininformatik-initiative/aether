@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -127,6 +128,27 @@ func TestValidationStep_UsesFakeValidator(t *testing.T) {
 
 	require.NoError(t, runPipelineStep(models.StepValidation, job, tmpDir, createValidationTestLogger()))
 	assert.NotEmpty(t, mock.Calls, "step must call the injected fake validator")
+}
+
+func TestValidationStep_GivesValidatorHTTPClientWith30SecondTimeout(t *testing.T) {
+	var gotClient *services.HTTPClient
+	pipeline.SetResourceValidatorFactoryForTesting(func(_ string, httpClient *services.HTTPClient, _ *lib.Logger) services.ResourceValidator {
+		gotClient = httpClient
+		return &servicestest.MockResourceValidator{}
+	})
+	defer pipeline.ResetResourceValidatorFactory()
+
+	tmpDir := t.TempDir()
+	job := createValidationTestJob("http://unused-by-fake")
+	importDir := filepath.Join(tmpDir, "import")
+	require.NoError(t, os.MkdirAll(importDir, 0755))
+	writeValidationNDJSON(t, filepath.Join(importDir, "Patient.ndjson"), []map[string]any{
+		{"resourceType": "Patient", "id": "p1"},
+	})
+
+	require.NoError(t, runPipelineStep(models.StepValidation, job, tmpDir, createValidationTestLogger()))
+	require.NotNil(t, gotClient)
+	assert.Equal(t, 30*time.Second, gotClient.Timeout())
 }
 
 // TestImportStep_TorchExtraction_UsesFakeExtractor drives the TORCH import path

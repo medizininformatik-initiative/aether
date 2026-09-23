@@ -41,6 +41,11 @@ func NewHTTPClient(timeout time.Duration, retryConfig models.RetryConfig, tlsCon
 	}
 }
 
+// Timeout returns the time limit for one complete request. Zero means no limit.
+func (c *HTTPClient) Timeout() time.Duration {
+	return c.client.Timeout
+}
+
 // newDownloadClient returns an *http.Client tuned for streaming large response
 // bodies. It drops the whole-request deadline (Timeout: 0) so a big but
 // steadily-progressing download is never cut off mid-body, reuses this client's

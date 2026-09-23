@@ -1,12 +1,15 @@
 package unit
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
@@ -19,6 +22,33 @@ func createTestResourceProcessor(server *httptest.Server) *pipeline.ResourceProc
 	httpClient := FastHTTPClient(logger)
 	dimpClient := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, nil, httpClient, logger)
 	return pipeline.NewResourceProcessor(dimpClient, logger, 10*1024*1024, "test.ndjson")
+}
+
+func createLoggingResourceProcessor(server *httptest.Server, thresholdBytes int) (*pipeline.ResourceProcessor, *bytes.Buffer) {
+	logs := &bytes.Buffer{}
+	logger := lib.NewLoggerWithWriter(lib.LogLevelDebug, logs)
+	dimpClient := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, nil, FastHTTPClient(logger), logger)
+	return pipeline.NewResourceProcessor(dimpClient, logger, thresholdBytes, "test.ndjson"), logs
+}
+
+// logLine returns the one log line that contains message.
+func logLine(t *testing.T, logs *bytes.Buffer, message string) string {
+	t.Helper()
+	var found []string
+	for _, line := range strings.Split(logs.String(), "\n") {
+		if strings.Contains(line, message) {
+			found = append(found, line)
+		}
+	}
+	require.Len(t, found, 1, "log lines with %q", message)
+	return found[0]
+}
+
+func newDIMPErrorServer() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("Bad Request"))
+	}))
 }
 
 func TestNewResourceProcessor(t *testing.T) {
@@ -141,6 +171,37 @@ func TestResourceProcessor_ProcessNonBundle_OversizedResource(t *testing.T) {
 	assert.Nil(t, pseudonymized)
 }
 
+func TestResourceProcessor_ProcessNonBundle_DIMPErrorNamesCurrentLine(t *testing.T) {
+	errorServer := newDIMPErrorServer()
+	defer errorServer.Close()
+
+	processor, logs := createLoggingResourceProcessor(errorServer, 10*1024*1024)
+	processor.IncrementResourceCount()
+	processor.IncrementResourceCount()
+
+	_, err := processor.ProcessNonBundle(map[string]any{"resourceType": "Patient", "id": "patient-1"}, "Patient", "patient-1")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at line 3:")
+	assert.Contains(t, logLine(t, logs, "Failed to pseudonymize FHIR resource"), "line_number 3 ")
+}
+
+func TestResourceProcessor_ProcessNonBundle_OversizedResourceNamesCurrentLine(t *testing.T) {
+	server := createMockDIMPServer()
+	defer server.Close()
+
+	processor, logs := createLoggingResourceProcessor(server, 100)
+	processor.IncrementResourceCount()
+	processor.IncrementResourceCount()
+	resource := map[string]any{"resourceType": "Patient", "id": "patient-1", "text": strings.Repeat("x", 200)}
+
+	_, err := processor.ProcessNonBundle(resource, "Patient", "patient-1")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at line 3:")
+	assert.Contains(t, logLine(t, logs, "Oversized resource detected"), "line_number 3 ")
+}
+
 func TestResourceProcessor_ProcessBundle_SmallBundle(t *testing.T) {
 	server := createMockDIMPServer()
 	defer server.Close()
@@ -168,10 +229,7 @@ func TestResourceProcessor_ProcessBundle_SmallBundle(t *testing.T) {
 }
 
 func TestResourceProcessor_ProcessBundle_DIMPError(t *testing.T) {
-	errorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte("Bad Request"))
-	}))
+	errorServer := newDIMPErrorServer()
 	defer errorServer.Close()
 
 	processor := createTestResourceProcessor(errorServer)
@@ -185,6 +243,22 @@ func TestResourceProcessor_ProcessBundle_DIMPError(t *testing.T) {
 	pseudonymized, err := processor.ProcessBundle(bundle, "bundle-1")
 	assert.Error(t, err)
 	assert.Nil(t, pseudonymized)
+}
+
+func TestResourceProcessor_ProcessBundle_DIMPErrorNamesCurrentLine(t *testing.T) {
+	errorServer := newDIMPErrorServer()
+	defer errorServer.Close()
+
+	processor, logs := createLoggingResourceProcessor(errorServer, 10*1024*1024)
+	processor.IncrementResourceCount()
+	processor.IncrementResourceCount()
+	bundle := map[string]any{"resourceType": "Bundle", "id": "bundle-1", "type": "transaction"}
+
+	_, err := processor.ProcessBundle(bundle, "bundle-1")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at line 3:")
+	assert.Contains(t, logLine(t, logs, "Failed to pseudonymize Bundle"), "line_number 3 ")
 }
 
 func TestResourceProcessor_GetResourceCount(t *testing.T) {
@@ -314,6 +388,51 @@ func TestResourceProcessor_ProcessBundleChunks_DIMPError(t *testing.T) {
 	result, err := processor.ProcessBundleChunks(splitResult, "bundle-1")
 	assert.Error(t, err)
 	assert.Nil(t, result)
+}
+
+func TestResourceProcessor_ProcessBundleChunks_DIMPErrorNamesChunkAndLine(t *testing.T) {
+	errorServer := newDIMPErrorServer()
+	defer errorServer.Close()
+
+	processor, logs := createLoggingResourceProcessor(errorServer, 10*1024*1024)
+	processor.IncrementResourceCount()
+	processor.IncrementResourceCount()
+	splitResult := models.SplitResult{
+		TotalChunks: 3,
+		Chunks: []models.BundleChunk{{
+			ChunkID:     "chunk-2",
+			Index:       1,
+			TotalChunks: 3,
+			Entries:     []map[string]any{{"resource": map[string]any{"resourceType": "Patient", "id": "p1"}}},
+		}},
+		Metadata: models.BundleMetadata{ID: "bundle-1", Type: "transaction"},
+	}
+
+	_, err := processor.ProcessBundleChunks(splitResult, "bundle-1")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "chunk 2/3 at line 3:")
+	assert.Contains(t, logLine(t, logs, "Processing Bundle chunk"), "chunk 2/3 ")
+	failure := logLine(t, logs, "Failed to pseudonymize Bundle chunk")
+	assert.Contains(t, failure, "line_number 3 ")
+	assert.Contains(t, failure, "chunk 2/3 ")
+}
+
+func TestResourceProcessor_ProcessBundle_SplitLogsSizesInMiB(t *testing.T) {
+	server := createMockDIMPServer()
+	defer server.Close()
+
+	processor, logs := createLoggingResourceProcessor(server, 2*1024*1024)
+	bundle := CreateTestBundle(3, 1024)
+	bundleSize, err := models.CalculateJSONSize(bundle)
+	require.NoError(t, err)
+
+	_, err = processor.ProcessBundle(bundle, "bundle-1")
+
+	require.NoError(t, err)
+	split := logLine(t, logs, "Bundle size exceeds threshold, splitting")
+	assert.Contains(t, split, fmt.Sprintf("size_mb %v ", float64(bundleSize)/(1024*1024)))
+	assert.Contains(t, split, "threshold_mb 2]")
 }
 
 // Additional tests for error paths and edge cases

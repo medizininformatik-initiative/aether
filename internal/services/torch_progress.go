@@ -73,21 +73,13 @@ func (p TORCHProgress) Fraction() float64 {
 	for _, batch := range p.ActiveBatches {
 		done += float64(batch.StageIndex()) / float64(len(TORCHBatchStages))
 	}
-	fraction := done / float64(p.BatchesTotal)
-	if fraction > 1 {
-		return 1
-	}
-	return fraction
+	return min(done/float64(p.BatchesTotal), 1)
 }
 
 // PatientsDone returns the number of patients in completed batches, capped at
 // the cohort size because the last batch can be smaller than BatchSize.
 func (p TORCHProgress) PatientsDone() int {
-	patients := p.BatchesCompleted * p.BatchSize
-	if patients > p.CohortSize {
-		return p.CohortSize
-	}
-	return patients
+	return min(p.BatchesCompleted*p.BatchSize, p.CohortSize)
 }
 
 // Summary returns a one-line text of the progress, for logs and the status

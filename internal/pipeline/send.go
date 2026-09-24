@@ -121,7 +121,7 @@ func executeTransferLoadSend(job *models.PipelineJob, layout services.JobLayout,
 		"binary_count", len(binaryResources),
 		"job_id", job.JobID)
 
-	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
+	httpClient := newSendHTTPClient(job, logger)
 	dump := newRequestDump(job, layout, logger)
 
 	// Upload each Binary resource
@@ -145,6 +145,12 @@ func executeTransferLoadSend(job *models.PipelineJob, layout services.JobLayout,
 		"job_id", job.JobID)
 
 	return StepResult{FilesProcessed: len(files)}, nil
+}
+
+// newSendHTTPClient returns the client for the uploads of the transfer and the
+// FHIR send modes.
+func newSendHTTPClient(job *models.PipelineJob, logger *lib.Logger) *services.HTTPClient {
+	return services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
 }
 
 // buildBinaryResources makes one FHIR Binary resource for each file.
@@ -198,11 +204,7 @@ func executeDirectResourceLoadSend(job *models.PipelineJob, layout services.JobL
 		"other_files", len(otherFiles),
 		"total_files", len(orderedFiles))
 
-	// Create HTTP client
-	httpClient := services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
-
-	// Create FHIR client
-	fhirClient := services.NewFHIRClient(job.Config.Services.Send, httpClient, logger)
+	fhirClient := services.NewFHIRClient(job.Config.Services.Send, newSendHTTPClient(job, logger), logger)
 	fhirClient.DumpFailedRequestsTo(newRequestDump(job, layout, logger))
 
 	fhirURL := job.Config.Services.Send.URL
@@ -212,7 +214,7 @@ func executeDirectResourceLoadSend(job *models.PipelineJob, layout services.JobL
 		fmt.Printf("Processing core files first (%d file(s)):\n", len(coreFiles))
 	}
 
-	filesProcessed, totalResources, err := uploadNDJSONFiles(fhirClient, orderedFiles, len(coreFiles), len(otherFiles), logger)
+	filesProcessed, totalResources, err := uploadNDJSONFiles(fhirClient, orderedFiles, len(coreFiles), logger)
 	if err != nil {
 		return StepResult{}, err
 	}
@@ -230,10 +232,10 @@ func executeDirectResourceLoadSend(job *models.PipelineJob, layout services.JobL
 
 // uploadNDJSONFiles uploads each file in order and returns the number of files
 // and of resources that went to the server.
-func uploadNDJSONFiles(fhirClient *services.FHIRClient, orderedFiles []string, coreCount, otherCount int, logger *lib.Logger) (filesProcessed, totalResources int, err error) {
+func uploadNDJSONFiles(fhirClient *services.FHIRClient, orderedFiles []string, coreCount int, logger *lib.Logger) (filesProcessed, totalResources int, err error) {
 	for i, filePath := range orderedFiles {
-		if i == coreCount && coreCount > 0 && otherCount > 0 {
-			fmt.Printf("\nProcessing other files (%d file(s)):\n", otherCount)
+		if i == coreCount && coreCount > 0 {
+			fmt.Printf("\nProcessing other files (%d file(s)):\n", len(orderedFiles)-coreCount)
 		}
 
 		stats, err := uploadNDJSONFile(fhirClient, filePath, logger)

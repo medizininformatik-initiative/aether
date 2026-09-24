@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -187,6 +188,22 @@ func TestNewFlatteningRequest(t *testing.T) {
 	// Remaining parameters should be resources
 	assert.Equal(t, "resources", request.Parameter[1].Name)
 	assert.Equal(t, "resources", request.Parameter[2].Name)
+}
+
+func TestNewFlatteningRequest_NoResources(t *testing.T) {
+	request := models.NewFlatteningRequest(models.ViewDefinition{Name: "TestView"}, nil)
+
+	require.Len(t, request.Parameter, 1)
+	assert.Equal(t, "viewDefinition", request.Parameter[0].Name)
+}
+
+func TestCRTDLDocument_MarshalJSON_OmitsEmptyCohortDefinition(t *testing.T) {
+	data, err := json.Marshal(models.CRTDLDocument{})
+	require.NoError(t, err)
+
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(data, &fields))
+	assert.NotContains(t, fields, "cohortDefinition")
 }
 
 func TestNewBaseViewDefinition(t *testing.T) {

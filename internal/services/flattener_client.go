@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
@@ -23,15 +22,11 @@ type FlattenerClient struct {
 
 // NewFlattenerClient creates a new flattener client. It wraps the shared
 // HTTPClient so retry, TLS, and error classification follow the single shared
-// path. If transport is non-nil it is applied for custom TLS; timeout defaults
-// to 30 minutes when unset (flattening large datasets can be slow).
+// path. If transport is non-nil it is applied for custom TLS. The request
+// timeout is config.Timeout, which FlatteningConfig.Validate requires to be
+// positive.
 func NewFlattenerClient(config models.FlatteningConfig, retryConfig models.RetryConfig, transport *http.Transport, logger *lib.Logger) *FlattenerClient {
-	timeout := config.Timeout
-	if timeout == 0 {
-		timeout = 30 * time.Minute
-	}
-
-	client := &http.Client{Timeout: timeout}
+	client := &http.Client{Timeout: config.Timeout}
 	if transport != nil {
 		client.Transport = transport
 	}

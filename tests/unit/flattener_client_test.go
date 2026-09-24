@@ -172,6 +172,22 @@ func TestFlattenerClient_Flatten(t *testing.T) {
 		assert.Contains(t, err.Error(), "failed to parse NDJSON from flattener")
 	})
 
+	t.Run("parse error names the malformed row", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"1"}` + "\n" + "42\n"))
+		}))
+		defer server.Close()
+
+		client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), noRetryConfig(), nil, lib.DefaultLogger)
+		viewDef := newTestViewDefinitionWithColumns("TestView", "Patient", "id")
+
+		_, err := client.Flatten(viewDef, newTestResources("1", "2"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "(row 2)")
+	})
+
 	t.Run("empty body yields no rows", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/x-ndjson")
@@ -247,21 +263,22 @@ func TestFlattenerClient_WithCustomTransport(t *testing.T) {
 	assert.Equal(t, [][]string{{"1", "Test"}}, rows)
 }
 
-func TestFlattenerClient_DefaultTimeout(t *testing.T) {
+func TestFlattenerClient_ConfiguredTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(2 * time.Second):
+		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("{}\n"))
 	}))
 	defer server.Close()
 
-	config := models.FlatteningConfig{
-		ServiceURL: server.URL,
-		Timeout:    0, // No timeout set - should use default
-	}
+	config := models.FlatteningConfig{ServiceURL: server.URL, Timeout: 50 * time.Millisecond}
 	client := services.NewFlattenerClient(config, noRetryConfig(), nil, lib.DefaultLogger)
 
 	_, err := client.Flatten(newTestViewDefinition("TestView", "Patient"), newTestResources("1"))
-	require.NoError(t, err)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "request failed")
 }
 
 func TestFlattenerClient_HealthCheck(t *testing.T) {
@@ -286,6 +303,18 @@ func TestFlattenerClient_HealthCheck(t *testing.T) {
 		err := client.HealthCheck()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "HTTP 503")
+	})
+
+	t.Run("HTTP 400 is an error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+		}))
+		defer server.Close()
+
+		client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), noRetryConfig(), nil, lib.DefaultLogger)
+		err := client.HealthCheck()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "HTTP 400")
 	})
 
 	t.Run("connection refused", func(t *testing.T) {

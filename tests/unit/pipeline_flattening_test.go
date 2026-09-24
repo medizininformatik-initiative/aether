@@ -639,11 +639,13 @@ func TestExecuteFlatteningStep_ViewDefinitionWriteError(t *testing.T) {
 	writeTestNDJSON(t, filepath.Join(inputDir, "test.ndjson"), []map[string]any{bundle})
 
 	job := createFlatteningTestJob(server.URL, lookupPath, crtdlPath)
-	logger := createFlatteningTestLogger()
+	var logs strings.Builder
+	logger := lib.NewLoggerWithWriter(lib.LogLevelWarn, &logs)
 
 	// Should complete successfully even though ViewDefinition write fails
 	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
+	assert.Contains(t, logs.String(), "Failed to save ViewDefinition")
 
 	// Verify CSV file was created despite ViewDefinition write failure
 	csvFiles, err := filepath.Glob(filepath.Join(csvDir, "*.csv"))

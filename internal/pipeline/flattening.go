@@ -227,11 +227,7 @@ func scanProvenanceIndex(files []string) (models.ProvenanceIndex, error) {
 // clamping to one byte so a tiny budget spread over many groups never yields a
 // zero threshold that would flush after every single resource.
 func perGroupBudget(batchSizeBytes, numGroups int) int {
-	perGroupBytes := batchSizeBytes / numGroups
-	if perGroupBytes < 1 {
-		return 1
-	}
-	return perGroupBytes
+	return max(batchSizeBytes/numGroups, 1)
 }
 
 // streamAndFlattenResources performs single-pass streaming over all input files,

@@ -47,7 +47,7 @@ services:
       retries: 10
 
   vfps:
-    image: ghcr.io/miracum/vfps:v1.19.4@sha256:899f3d74c5515a632dfa9c559524b969794b6a623e7eb16a04a17cde7ee67e85 # x-release-please-version
+    image: ghcr.io/miracum/vfps:v1.20.0@sha256:5c50ee1fbbf2780b5e7347e85d64c59093a217c1f72eaab67a419ca26f0539e8 # x-release-please-version
     networks: [ "dimp", "vfps" ]
     ports: [ ":8080", ":8081" ]
     environment:

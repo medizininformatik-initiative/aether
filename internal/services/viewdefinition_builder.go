@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/medizininformatik-initiative/aether/internal/models"
 )
@@ -33,16 +34,8 @@ func (b *ViewDefinitionBuilder) BuildViewDefinition(group models.AttributeGroup)
 	// Create base ViewDefinition
 	viewDef := models.NewBaseViewDefinition(group.Name, lookup.ResourceType)
 
-	// Build the select array from attributes
-	selectClauses := make([]models.SelectClause, 0)
-
-	// Add fixed columns first
-	fixedColumns := b.buildFixedColumns(lookup.ResourceType)
-	if len(fixedColumns) > 0 {
-		selectClauses = append(selectClauses, models.SelectClause{
-			Column: fixedColumns,
-		})
-	}
+	// Fixed columns come first
+	selectClauses := []models.SelectClause{{Column: b.buildFixedColumns(lookup.ResourceType)}}
 
 	// Build set of attribute refs for fast lookup (used to detect overlapping parent-child)
 	attrRefSet := make(map[string]bool)
@@ -117,102 +110,47 @@ func (b *ViewDefinitionBuilder) buildAttributeSelect(lookup *models.LookupTable,
 		return nil, fmt.Errorf("element not found: %s", attributeRef)
 	}
 
-	// If element has a parent, wrap in parent context (upward traversal)
-	if element.Parent != "" {
-		return b.resolveWithParent(lookup, element, attributeRef), nil
-	}
-
-	// Otherwise just resolve children (downward traversal)
-	return b.resolveWithChildren(lookup, element), nil
+	// The ancestors only give their forEach context. Their other children are not resolved,
+	// so sibling attributes that share an ancestor do not change the output of each other.
+	return b.wrapInAncestors(lookup, element.Parent, b.resolveWithChildren(lookup, element)), nil
 }
 
 // resolveWithChildren recursively resolves an element and its children
 // This matches the Python reference implementation (test.py lines 52-57)
 func (b *ViewDefinitionBuilder) resolveWithChildren(lookup *models.LookupTable, element *models.LookupElement) []models.SelectClause {
-	// Check if element has root-level forEach/forEachOrNull
-	hasRootForEach := element.ViewDefinition.ForEach != "" || element.ViewDefinition.ForEachOrNull != ""
-	// Check if element has Column at viewDefinition level (common for leaf elements)
-	hasRootColumn := len(element.ViewDefinition.Column) > 0
-
+	snippet := element.ViewDefinition
 	if len(element.Children) == 0 {
-		// No children - convert viewDefSnippet to SelectClause if it has root forEach or Column
-		if hasRootForEach || hasRootColumn {
-			return []models.SelectClause{viewDefSnippetToSelectClause(element.ViewDefinition)}
-		}
-		return element.ViewDefinition.Select
+		return leafSelects(snippet)
 	}
 
-	// Collect children, recursively resolving those with their own children
 	var childSelects []models.SelectClause
 	for _, childID := range element.Children {
-		childElement := GetElement(lookup, childID)
-		if childElement != nil {
-			childHasRootForEach := childElement.ViewDefinition.ForEach != "" || childElement.ViewDefinition.ForEachOrNull != ""
-
-			if childHasRootForEach {
-				// Child has root forEach - convert to SelectClause (preserving forEach)
-				// and recursively resolve child's children if any
-				childAsSelect := viewDefSnippetToSelectClause(childElement.ViewDefinition)
-				if len(childElement.Children) > 0 {
-					// Resolve grandchildren and add to child's select
-					grandchildSelects := b.resolveGrandchildren(lookup, childElement)
-					childAsSelect.Select = append(childAsSelect.Select, grandchildSelects...)
-				}
-				childSelects = append(childSelects, childAsSelect)
-			} else {
-				// Child has no root forEach - recursively resolve it
-				resolved := b.resolveWithChildren(lookup, childElement)
-				childSelects = append(childSelects, resolved...)
-			}
+		if childElement := GetElement(lookup, childID); childElement != nil {
+			childSelects = append(childSelects, b.resolveWithChildren(lookup, childElement)...)
 		}
 	}
 
 	// If element has root forEach, create wrapper SelectClause with children inside
-	if hasRootForEach {
-		wrapper := viewDefSnippetToSelectClause(element.ViewDefinition)
+	if snippet.HasForEach() {
+		wrapper := viewDefSnippetToSelectClause(snippet)
 		wrapper.Select = append(wrapper.Select, childSelects...)
 		return []models.SelectClause{wrapper}
 	}
 
 	// No root forEach - include element's own selects plus children
-	result := make([]models.SelectClause, 0, len(element.ViewDefinition.Select)+len(childSelects))
-	result = append(result, element.ViewDefinition.Select...)
+	result := make([]models.SelectClause, 0, len(snippet.Select)+len(childSelects))
+	result = append(result, snippet.Select...)
 	result = append(result, childSelects...)
 	return result
 }
 
-// resolveGrandchildren recursively resolves children of a child element
-func (b *ViewDefinitionBuilder) resolveGrandchildren(lookup *models.LookupTable, element *models.LookupElement) []models.SelectClause {
-	var result []models.SelectClause
-	for _, childID := range element.Children {
-		childElement := GetElement(lookup, childID)
-		if childElement != nil {
-			childHasRootForEach := childElement.ViewDefinition.ForEach != "" || childElement.ViewDefinition.ForEachOrNull != ""
-
-			if childHasRootForEach {
-				childAsSelect := viewDefSnippetToSelectClause(childElement.ViewDefinition)
-				if len(childElement.Children) > 0 {
-					grandchildSelects := b.resolveGrandchildren(lookup, childElement)
-					childAsSelect.Select = append(childAsSelect.Select, grandchildSelects...)
-				}
-				result = append(result, childAsSelect)
-			} else {
-				// No forEach - recursively resolve
-				resolved := b.resolveWithChildren(lookup, childElement)
-				result = append(result, resolved...)
-			}
-		}
+// leafSelects converts the snippet of an element without children to select clauses.
+// A root forEach or a root Column makes the snippet one select clause of its own.
+func leafSelects(snippet models.ViewDefSnippet) []models.SelectClause {
+	if snippet.HasForEach() || len(snippet.Column) > 0 {
+		return []models.SelectClause{viewDefSnippetToSelectClause(snippet)}
 	}
-	return result
-}
-
-// resolveWithParent wraps an element's resolved selects in its ancestor chain's
-// forEach contexts. Unlike a naive downward re-resolution from an ancestor,
-// this does not walk the parent's children, so sibling attributes sharing an
-// ancestor do not pollute each other's output (regression fix for #300).
-func (b *ViewDefinitionBuilder) resolveWithParent(lookup *models.LookupTable, element *models.LookupElement, _ string) []models.SelectClause {
-	elementSelects := b.resolveWithChildren(lookup, element)
-	return b.wrapInAncestors(lookup, element.Parent, elementSelects)
+	return snippet.Select
 }
 
 // wrapInAncestors walks up the parent chain starting at parentID and wraps
@@ -228,52 +166,29 @@ func (b *ViewDefinitionBuilder) wrapInAncestors(lookup *models.LookupTable, pare
 		return selects
 	}
 
-	wrapped := selects
-	parentHasRootForEach := parent.ViewDefinition.ForEach != "" || parent.ViewDefinition.ForEachOrNull != ""
-
-	if parentHasRootForEach {
-		wrapper := models.SelectClause{
-			ForEach:       parent.ViewDefinition.ForEach,
-			ForEachOrNull: parent.ViewDefinition.ForEachOrNull,
-			Select:        selects,
-		}
-		wrapped = []models.SelectClause{wrapper}
-	} else {
-		for _, ps := range parent.ViewDefinition.Select {
-			if ps.ForEach != "" || ps.ForEachOrNull != "" {
-				newSel := cloneSelectClause(ps)
-				newSel.Select = selects
-				wrapped = []models.SelectClause{newSel}
-				break
-			}
-		}
-	}
-
-	return b.wrapInAncestors(lookup, parent.Parent, wrapped)
+	return b.wrapInAncestors(lookup, parent.Parent, wrapInParentContext(parent, selects))
 }
 
-// cloneSelectClause creates a deep copy of a SelectClause
-func cloneSelectClause(sel models.SelectClause) models.SelectClause {
-	newSel := models.SelectClause{
-		ForEach:       sel.ForEach,
-		ForEachOrNull: sel.ForEachOrNull,
+// wrapInParentContext wraps selects in the forEach context of parent. A root forEach
+// comes first. Else the first select-level forEach of parent gives the context.
+// A parent without a forEach returns selects unchanged.
+func wrapInParentContext(parent *models.LookupElement, selects []models.SelectClause) []models.SelectClause {
+	snippet := parent.ViewDefinition
+	if snippet.HasForEach() {
+		return []models.SelectClause{{
+			ForEach:       snippet.ForEach,
+			ForEachOrNull: snippet.ForEachOrNull,
+			Select:        selects,
+		}}
 	}
-
-	// Clone columns
-	if len(sel.Column) > 0 {
-		newSel.Column = make([]models.ColumnDefinition, len(sel.Column))
-		copy(newSel.Column, sel.Column)
-	}
-
-	// Clone nested selects recursively
-	if len(sel.Select) > 0 {
-		newSel.Select = make([]models.SelectClause, len(sel.Select))
-		for i, nested := range sel.Select {
-			newSel.Select[i] = cloneSelectClause(nested)
+	for _, ps := range snippet.Select {
+		if ps.HasForEach() {
+			ps.Column = slices.Clone(ps.Column)
+			ps.Select = selects
+			return []models.SelectClause{ps}
 		}
 	}
-
-	return newSel
+	return selects
 }
 
 // viewDefSnippetToSelectClause converts a ViewDefSnippet into a SelectClause.

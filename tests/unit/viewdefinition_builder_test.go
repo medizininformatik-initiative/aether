@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -737,11 +738,10 @@ func TestBidirectionalTraversal(t *testing.T) {
 	})
 }
 
-// TestResolveGrandchildren tests the resolveGrandchildren function specifically
-func TestResolveGrandchildren(t *testing.T) {
+// TestNestedDescendants tests the resolution of elements below a child element
+func TestNestedDescendants(t *testing.T) {
 	t.Run("grandchild with forEach gets converted to select clause", func(t *testing.T) {
 		// Setup: parent -> child (with forEach) -> grandchild
-		// This specifically tests resolveGrandchildren logic
 		lookupTables := []models.LookupTable{
 			{
 				URL:          "https://example.com/Observation",
@@ -795,7 +795,7 @@ func TestResolveGrandchildren(t *testing.T) {
 	})
 
 	t.Run("grandchild without forEach resolved recursively", func(t *testing.T) {
-		// Test resolveGrandchildren path where child has no root forEach
+		// The child has no root forEach
 		lookupTables := []models.LookupTable{
 			{
 				URL:          "https://example.com/Patient",
@@ -1256,8 +1256,8 @@ func TestParentChildRefsFromChildrenListOnly(t *testing.T) {
 	})
 }
 
-// TestCloneSelectClause tests the cloneSelectClause function
-func TestCloneSelectClause(t *testing.T) {
+// TestParentSelectForEach tests the wrap of a child in the forEach select of its parent
+func TestParentSelectForEach(t *testing.T) {
 	t.Run("parent with forEach in select clause wraps child correctly", func(t *testing.T) {
 		// This test exercises the path where parent's select clauses have forEach
 		// (not at root viewDefinition level but inside SelectClause)
@@ -1308,8 +1308,8 @@ func TestCloneSelectClause(t *testing.T) {
 		assert.Contains(t, columnNames, "doseValue")
 	})
 
-	t.Run("deep cloning of nested select clauses", func(t *testing.T) {
-		// Test that cloneSelectClause properly deep clones nested structures
+	t.Run("forEach select with nested selects wraps the child", func(t *testing.T) {
+		// The forEach select of the parent has nested selects of its own
 		lookupTables := []models.LookupTable{
 			{
 				URL:          "https://example.com/Bundle",
@@ -1890,4 +1890,138 @@ func countOccurrences(names []string, target string) int {
 		}
 	}
 	return n
+}
+
+// assertAttributeSelectsJSON compares the selects after the fixed-column clause as JSON,
+// because JSON is the form that the flattener receives.
+func assertAttributeSelectsJSON(t *testing.T, lookup models.LookupTable, attributeRef, expected string) {
+	t.Helper()
+	viewDef := buildAndAssertViewDef(t, []models.LookupTable{lookup}, newAttributeGroup("G", lookup.URL, attributeRef))
+	require.NotEmpty(t, viewDef.Select)
+	actual, err := json.Marshal(viewDef.Select[1:])
+	require.NoError(t, err)
+	assert.JSONEq(t, expected, string(actual))
+}
+
+func TestViewDefinitionSelectStructure(t *testing.T) {
+	t.Run("leaf with only select clauses keeps them unwrapped", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Observation", "Observation", map[string]models.LookupElement{
+			"Observation.status": {ViewDefinition: newViewDefSnippet(newSelectClause("status", "status"))},
+		})
+
+		assertAttributeSelectsJSON(t, lookup, "Observation.status",
+			`[{"column":[{"name":"status","path":"status"}]}]`)
+	})
+
+	t.Run("child without forEach adds its selects next to the parent selects", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Observation", "Observation", map[string]models.LookupElement{
+			"Observation.code": {
+				Children:       []string{"Observation.code.text"},
+				ViewDefinition: newViewDefSnippet(newSelectClause("code", "code.coding.code")),
+			},
+			"Observation.code.text": {
+				Parent:         "Observation.code",
+				ViewDefinition: newViewDefSnippet(newSelectClause("text", "code.text")),
+			},
+		})
+
+		assertAttributeSelectsJSON(t, lookup, "Observation.code", `[
+			{"column":[{"name":"code","path":"code.coding.code"}]},
+			{"column":[{"name":"text","path":"code.text"}]}
+		]`)
+	})
+
+	t.Run("descendants of a forEach child nest inside its forEach context", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Observation", "Observation", map[string]models.LookupElement{
+			"Observation.component": {
+				Children: []string{"Observation.component.item"},
+			},
+			"Observation.component.item": {
+				Parent:         "Observation.component",
+				Children:       []string{"Observation.component.item.text", "Observation.component.item.coding"},
+				ViewDefinition: models.ViewDefSnippet{ForEach: "component"},
+			},
+			"Observation.component.item.text": {
+				Parent:         "Observation.component.item",
+				ViewDefinition: newViewDefSnippet(newSelectClause("text", "code.text")),
+			},
+			"Observation.component.item.coding": {
+				Parent:         "Observation.component.item",
+				Children:       []string{"Observation.component.item.coding.code"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "code.coding"},
+			},
+			"Observation.component.item.coding.code": {
+				Parent:         "Observation.component.item.coding",
+				ViewDefinition: newViewDefSnippet(newSelectClause("code", "code")),
+			},
+		})
+
+		assertAttributeSelectsJSON(t, lookup, "Observation.component", `[
+			{"forEach":"component","select":[
+				{"column":[{"name":"text","path":"code.text"}]},
+				{"forEachOrNull":"code.coding","select":[
+					{"column":[{"name":"code","path":"code"}]}
+				]}
+			]}
+		]`)
+	})
+
+	t.Run("child is wrapped in the forEach select of its parent", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/MedicationRequest", "MedicationRequest", map[string]models.LookupElement{
+			"MedicationRequest.dosageInstruction": {
+				Children: []string{"MedicationRequest.dosageInstruction.doseAndRate"},
+				ViewDefinition: newViewDefSnippet(
+					newSelectClause("hasDosage", "dosageInstruction.exists()"),
+					models.SelectClause{
+						ForEach: "dosageInstruction",
+						Column:  []models.ColumnDefinition{{Name: "dosageText", Path: "text"}},
+					},
+				),
+			},
+			"MedicationRequest.dosageInstruction.doseAndRate": {
+				Parent:         "MedicationRequest.dosageInstruction",
+				ViewDefinition: newViewDefSnippet(newSelectClause("dose", "doseAndRate.doseQuantity.value")),
+			},
+		})
+
+		assertAttributeSelectsJSON(t, lookup, "MedicationRequest.dosageInstruction.doseAndRate", `[
+			{"forEach":"dosageInstruction",
+			 "column":[{"name":"dosageText","path":"text"}],
+			 "select":[{"column":[{"name":"dose","path":"doseAndRate.doseQuantity.value"}]}]}
+		]`)
+	})
+
+	t.Run("placeholder parent passes the child up to a forEachOrNull grandparent", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Observation", "Observation", map[string]models.LookupElement{
+			"Observation.component": {
+				Children:       []string{"Observation.component.value"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "component"},
+			},
+			"Observation.component.value": {
+				Parent:   "Observation.component",
+				Children: []string{"Observation.component.value.unit"},
+			},
+			"Observation.component.value.unit": {
+				Parent:         "Observation.component.value",
+				ViewDefinition: newViewDefSnippet(newSelectClause("unit", "valueQuantity.unit")),
+			},
+		})
+
+		assertAttributeSelectsJSON(t, lookup, "Observation.component.value.unit", `[
+			{"forEachOrNull":"component","select":[
+				{"column":[{"name":"unit","path":"valueQuantity.unit"}]}
+			]}
+		]`)
+	})
+
+	t.Run("leaf with a root column becomes one select clause", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Observation", "Observation", map[string]models.LookupElement{
+			"Observation.status": {ViewDefinition: models.ViewDefSnippet{
+				Column: []models.ColumnDefinition{{Name: "status", Path: "status"}},
+			}},
+		})
+
+		assertAttributeSelectsJSON(t, lookup, "Observation.status",
+			`[{"column":[{"name":"status","path":"status"}]}]`)
+	})
 }

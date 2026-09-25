@@ -26,6 +26,7 @@ func TestAetherError_Error(t *testing.T) {
 	assert.Contains(t, result, "[NETWORK]")
 	assert.Contains(t, result, "Connection failed")
 	assert.Contains(t, result, "connection refused")
+	assert.NotContains(t, result, "HTTP")
 }
 
 func TestAetherError_ErrorWithHTTPStatus(t *testing.T) {
@@ -72,6 +73,7 @@ func TestAetherError_UserMessage_Retryable(t *testing.T) {
 
 	msg := err.UserMessage()
 	assert.Contains(t, msg, "🔄 This error is transient")
+	assert.NotContains(t, msg, "How to fix")
 }
 
 func TestErrNetworkUnreachable(t *testing.T) {
@@ -132,6 +134,12 @@ func TestErrInvalidFHIRFile(t *testing.T) {
 	guidance := strings.Join(err.Guidance, " ")
 	assert.Contains(t, guidance, "line 42")
 	assert.Contains(t, guidance, "NDJSON")
+}
+
+func TestErrInvalidFHIRFile_UnknownLineIsNotInGuidance(t *testing.T) {
+	err := lib.ErrInvalidFHIRFile("patient.ndjson", 0, errors.New("invalid JSON"))
+
+	assert.NotContains(t, strings.Join(err.Guidance, " "), "line 0")
 }
 
 func TestErrServiceUnavailable(t *testing.T) {

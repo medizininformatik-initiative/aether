@@ -11,17 +11,9 @@ import (
 // CalculateBackoff computes exponential backoff duration
 // Formula: min(initialBackoff * 2^attempt, maxBackoff)
 func CalculateBackoff(attempt int, initialBackoffMs int64, maxBackoffMs int64) time.Duration {
-	if attempt < 0 {
-		attempt = 0
-	}
-
-	// Exponential backoff: initialBackoff * 2^attempt
+	attempt = max(attempt, 0)
 	backoffMs := float64(initialBackoffMs) * math.Pow(2, float64(attempt))
-
-	// Cap at maxBackoff
-	if backoffMs > float64(maxBackoffMs) {
-		backoffMs = float64(maxBackoffMs)
-	}
+	backoffMs = min(backoffMs, float64(maxBackoffMs))
 
 	return time.Duration(backoffMs) * time.Millisecond
 }
@@ -52,16 +44,12 @@ type RetryConfig struct {
 	MaxBackoffMs     int64
 }
 
-// NewRetryConfigFrom models creates RetryConfig from models.RetryConfig.
+// NewRetryConfigFromModel creates RetryConfig from models.RetryConfig.
 // A non-positive MaxAttempts is normalized to a single attempt so the retry
 // loop always runs at least once instead of failing with a nil-wrapped error.
 func NewRetryConfigFromModel(config models.RetryConfig) RetryConfig {
-	maxAttempts := config.MaxAttempts
-	if maxAttempts < 1 {
-		maxAttempts = 1
-	}
 	return RetryConfig{
-		MaxAttempts:      maxAttempts,
+		MaxAttempts:      max(config.MaxAttempts, 1),
 		InitialBackoffMs: config.InitialBackoffMs,
 		MaxBackoffMs:     config.MaxBackoffMs,
 	}

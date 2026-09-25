@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -71,6 +72,17 @@ func TestGetFileSize(t *testing.T) {
 			assert.Equal(t, tt.want, lib.GetFileSize(tt.path))
 		})
 	}
+}
+
+func TestGetFileModTime(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "dated.txt")
+	require.NoError(t, os.WriteFile(file, []byte("x"), 0644))
+	modTime := time.Date(2024, 3, 1, 12, 0, 0, 0, time.UTC)
+	require.NoError(t, os.Chtimes(file, modTime, modTime))
+
+	assert.True(t, modTime.Equal(lib.GetFileModTime(file)))
+	assert.True(t, lib.GetFileModTime(filepath.Join(dir, "absent.txt")).IsZero())
 }
 
 func TestSanitizeFilename(t *testing.T) {

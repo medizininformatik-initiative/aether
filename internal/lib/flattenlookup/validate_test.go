@@ -359,6 +359,28 @@ func TestSlicedElementIDsFollowThePrefixConvention(t *testing.T) {
 	}
 }
 
+func TestSliceIsAChildOfItsBaseElement(t *testing.T) {
+	result := flattenlookup.Validate([]byte(`[
+	  {
+	    "url": "https://example.org/StructureDefinition/Diagnose",
+	    "resourceType": "Condition",
+	    "elements": {
+	      "Condition.code.coding": {
+	        "children": ["Condition.code.coding:sct"],
+	        "viewDefinition": {"forEachOrNull": "coding", "select": []}
+	      },
+	      "Condition.code.coding:sct": {
+	        "viewDefinition": {"select": []}
+	      }
+	    }
+	  }
+	]`))
+
+	if len(result.Findings) != 0 {
+		t.Fatalf("expected no findings for a slice of its parent, got: %v", result.Findings)
+	}
+}
+
 func TestValidFileHasNoFindings(t *testing.T) {
 	result := flattenlookup.Validate([]byte(validLookup))
 

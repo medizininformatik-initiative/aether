@@ -152,6 +152,43 @@ func TestAttachJobLogFile_OpenError(t *testing.T) {
 	assert.Contains(t, err.Error(), badPath)
 }
 
+func TestLogger_LineWithoutFieldsHasNoFieldSeparator(t *testing.T) {
+	var console bytes.Buffer
+	logger := lib.NewLoggerWithWriter(lib.LogLevelInfo, &console)
+
+	logger.Info("plain message")
+
+	assert.True(t, strings.HasSuffix(console.String(), "[INFO] plain message\n"), console.String())
+}
+
+func TestLogRetry_ShowsOneBasedAttempt(t *testing.T) {
+	var console bytes.Buffer
+	logger := lib.NewLoggerWithWriter(lib.LogLevelInfo, &console)
+
+	lib.LogRetry(logger, "upload", 0, 3, errors.New("boom"))
+
+	assert.Contains(t, console.String(), "[WARN] Retry attempt 1/3 for: upload")
+}
+
+func TestLogServiceResponse_ErrorStatusIsWarnOtherwiseDebug(t *testing.T) {
+	tests := []struct {
+		status int
+		label  string
+	}{
+		{399, "[DEBUG]"},
+		{400, "[WARN]"},
+		{503, "[WARN]"},
+	}
+	for _, tt := range tests {
+		var console bytes.Buffer
+		logger := lib.NewLoggerWithWriter(lib.LogLevelDebug, &console)
+
+		lib.LogServiceResponse(logger, "dimp", tt.status, 0)
+
+		assert.Contains(t, console.String(), tt.label+" Service response", "status %d", tt.status)
+	}
+}
+
 func TestGetJobLogFilePath(t *testing.T) {
 	got := services.GetJobLogFilePath("/data/jobs", "20260101_1200_abc")
 	assert.Equal(t, filepath.Join("/data/jobs", "20260101_1200_abc", "job.log"), got)

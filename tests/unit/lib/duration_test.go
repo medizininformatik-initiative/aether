@@ -1,6 +1,7 @@
 package lib_test
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -104,6 +105,7 @@ func TestParseDuration_MaxBoundary(t *testing.T) {
 		{"max representable minutes", "PT153722867M", 153722867 * time.Minute},
 		{"max representable seconds", "PT9223372036S", 9223372036 * time.Second},
 		{"large sum within range", "P106751DT23H", 106751*24*time.Hour + 23*time.Hour},
+		{"max representable duration", "PT2562047H47M16.854775807S", math.MaxInt64},
 	}
 
 	for _, tt := range tests {

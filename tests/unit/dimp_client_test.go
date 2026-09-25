@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
@@ -115,4 +117,39 @@ func TestDIMPClient_Pseudonymize_HandlesEmptyResource(t *testing.T) {
 
 	_, err := client.Pseudonymize(emptyResource)
 	assert.Error(t, err)
+}
+
+func TestDIMPClient_Pseudonymize_LogsOnlyChangedResourceID(t *testing.T) {
+	testCases := []struct {
+		name      string
+		returnID  string
+		expectLog bool
+	}{
+		{name: "changed ID", returnID: "pseudo-p1", expectLog: true},
+		{name: "unchanged ID", returnID: "p1", expectLog: false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"resourceType": "Patient", "id": tc.returnID})
+			}))
+			defer server.Close()
+
+			var logBuf bytes.Buffer
+			logger := lib.NewLoggerWithWriter(lib.LogLevelDebug, &logBuf)
+			httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
+			client := services.NewDIMPClient(models.DIMPConfig{URL: server.URL}, nil, httpClient, logger)
+
+			_, err := client.Pseudonymize(map[string]any{"resourceType": "Patient", "id": "p1"})
+			require.NoError(t, err)
+
+			if tc.expectLog {
+				assert.Contains(t, logBuf.String(), "Resource ID pseudonymized | [resourceType Patient original_id p1 new_id pseudo-p1]")
+			} else {
+				assert.NotContains(t, logBuf.String(), "Resource ID pseudonymized")
+			}
+		})
+	}
 }

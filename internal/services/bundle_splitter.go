@@ -157,10 +157,9 @@ func PartitionEntries(entries []map[string]any, thresholdBytes int, wrapperBytes
 		currentSize += entrySize
 	}
 
-	// Don't forget last partition
-	if len(currentPartition) > 0 {
-		partitions = append(partitions, currentPartition)
-	}
+	// The last partition is never empty: entries is not empty, and each
+	// iteration adds its entry after the flush
+	partitions = append(partitions, currentPartition)
 
 	return partitions, nil
 }
@@ -351,61 +350,4 @@ func ReassembleBundle(metadata models.BundleMetadata, pseudonymizedChunks []map[
 		OriginalID:     pseudonymizedID,              // Use pseudonymized ID from first chunk (not original metadata)
 		WasReassembled: len(pseudonymizedChunks) > 1, // Only true if actually split
 	}, nil
-}
-
-// CalculateChunkStats computes statistics about Bundle splitting operation
-// Pure function: Takes SplitResult and returns statistics for logging/monitoring
-//
-// Parameters:
-//
-//	result - SplitResult from SplitBundle operation
-//
-// Returns:
-//
-//	SplitStats containing metrics about the split operation
-//
-// WHY: Provides observability data for monitoring and debugging
-// WHY: Helps users understand splitting behavior and performance
-func CalculateChunkStats(result models.SplitResult) models.SplitStats {
-	stats := models.SplitStats{
-		BundleID:        result.Metadata.ID,
-		OriginalSize:    result.OriginalSize,
-		OriginalEntries: 0, // Calculate from chunks
-		ChunksCreated:   result.TotalChunks,
-	}
-
-	if len(result.Chunks) == 0 {
-		return stats
-	}
-
-	// Calculate statistics from chunks
-	totalEntries := 0
-	minSize := result.Chunks[0].EstimatedSize
-	maxSize := result.Chunks[0].EstimatedSize
-	totalSize := 0
-
-	for _, chunk := range result.Chunks {
-		entryCount := len(chunk.Entries)
-		totalEntries += entryCount
-
-		size := chunk.EstimatedSize
-		totalSize += size
-
-		if size < minSize {
-			minSize = size
-		}
-		if size > maxSize {
-			maxSize = size
-		}
-	}
-
-	stats.OriginalEntries = totalEntries
-	stats.SmallestChunkSize = minSize
-	stats.LargestChunkSize = maxSize
-
-	if result.TotalChunks > 0 {
-		stats.AverageChunkSize = totalSize / result.TotalChunks
-	}
-
-	return stats
 }

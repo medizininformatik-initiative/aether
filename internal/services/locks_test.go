@@ -1,11 +1,13 @@
 package services
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,6 +55,25 @@ func TestAcquireJobLockFailsWhenAlreadyHeld(t *testing.T) {
 	assert.Contains(t, err.Error(), "locked by another process")
 }
 
+func TestAcquireJobLockWaitsForShortlyHeldLock(t *testing.T) {
+	jobsDir := t.TempDir()
+	jobID := "job-short-hold"
+
+	holder, err := AcquireJobLock(jobsDir, jobID, testLockLogger())
+	require.NoError(t, err)
+
+	// The hold is much shorter than lockRetries*lockRetryInterval, but longer
+	// than one retry interval.
+	go func() {
+		time.Sleep(5 * lockRetryInterval)
+		_ = holder.Release()
+	}()
+
+	lock, err := AcquireJobLock(jobsDir, jobID, testLockLogger())
+	require.NoError(t, err)
+	require.NoError(t, lock.Release())
+}
+
 func TestWithJobLockPropagatesErrorAndReleases(t *testing.T) {
 	jobsDir := t.TempDir()
 	jobID := "job-with-lock"
@@ -70,6 +91,27 @@ func TestWithJobLockPropagatesErrorAndReleases(t *testing.T) {
 	lock, err := AcquireJobLock(jobsDir, jobID, testLockLogger())
 	require.NoError(t, err)
 	require.NoError(t, lock.Release())
+}
+
+func TestAcquireAndReleaseLogNoWarnings(t *testing.T) {
+	var logs bytes.Buffer
+	logger := lib.NewLoggerWithWriter(lib.LogLevelWarn, &logs)
+
+	lock, err := AcquireJobLock(t.TempDir(), "job-quiet", logger)
+	require.NoError(t, err)
+	require.NoError(t, lock.Release())
+
+	assert.Empty(t, logs.String())
+}
+
+func TestWithJobLockLogsNoErrorOnCleanRelease(t *testing.T) {
+	var logs bytes.Buffer
+	logger := lib.NewLoggerWithWriter(lib.LogLevelWarn, &logs)
+
+	err := WithJobLock(t.TempDir(), "job-quiet", logger, func() error { return nil })
+	require.NoError(t, err)
+
+	assert.Empty(t, logs.String())
 }
 
 func TestReleaseIsIdempotent(t *testing.T) {

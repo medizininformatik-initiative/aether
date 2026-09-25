@@ -611,6 +611,20 @@ func TestCreateCompressedFileWriter_CloseError(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// /dev/full accepts open and close but fails every write with ENOSPC, so only
+// the flush in the encoder close can report the lost data.
+func TestCreateCompressedFileWriter_CloseReportsFailedFlush(t *testing.T) {
+	if _, err := os.Stat("/dev/full"); err != nil {
+		t.Skip("/dev/full is not available")
+	}
+
+	writer, err := lib.CreateCompressedFileWriter("/dev/full", "default")
+	require.NoError(t, err)
+	_, _ = writer.Write([]byte("test data"))
+
+	assert.Error(t, writer.Close())
+}
+
 // TestCompressionEmptyFile verifies handling of empty compressed files
 func TestCompressionEmptyFile(t *testing.T) {
 	tmpDir := t.TempDir()

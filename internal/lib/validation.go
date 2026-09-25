@@ -157,7 +157,7 @@ func ValidateWaitStepPlacement(steps []models.StepName) error {
 			if i == 0 {
 				return fmt.Errorf("wait step cannot be first in pipeline: requires previous step output")
 			}
-			if i > 0 && steps[i-1] == models.StepWait {
+			if steps[i-1] == models.StepWait {
 				return fmt.Errorf("consecutive wait steps not allowed at position %d: redundant", i)
 			}
 		}

@@ -108,6 +108,25 @@ func TestBuildTLSTransport_ValidCACert(t *testing.T) {
 	assert.NotNil(t, transport.TLSClientConfig.RootCAs, "RootCAs should be set")
 }
 
+func TestBuildTLSTransport_CACertExtendsSystemRoots(t *testing.T) {
+	systemPool, err := x509.SystemCertPool()
+	if err != nil || systemPool.Equal(x509.NewCertPool()) {
+		t.Skip("no system certificate pool on this machine")
+	}
+
+	certPEM := generateTestCACert(t)
+	certFile := filepath.Join(t.TempDir(), "ca.pem")
+	require.NoError(t, os.WriteFile(certFile, certPEM, 0644))
+
+	transport, err := services.BuildTLSTransport(models.TLSConfig{CACertPath: certFile}, lib.NewLogger(lib.LogLevelError))
+	require.NoError(t, err)
+
+	expected := systemPool.Clone()
+	require.True(t, expected.AppendCertsFromPEM(certPEM))
+	assert.True(t, transport.TLSClientConfig.RootCAs.Equal(expected),
+		"RootCAs must hold the system roots and the configured CA")
+}
+
 func TestBuildTLSTransport_ValidServerCert(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelInfo)
 

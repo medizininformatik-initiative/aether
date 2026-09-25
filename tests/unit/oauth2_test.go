@@ -242,6 +242,35 @@ func TestFetchOAuth2Token_ShortExpiresIn(t *testing.T) {
 	assert.Equal(t, 2, requestCount) // Request count increased, cache was not used
 }
 
+// TestFetchOAuth2Token_CacheExpiresThirtySecondsEarly uses a lifetime of 31
+// seconds, so the cached token must expire after one second.
+func TestFetchOAuth2Token_CacheExpiresThirtySecondsEarly(t *testing.T) {
+	services.ClearOAuth2TokenCache()
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"tok","token_type":"Bearer","expires_in":31}`))
+	}))
+	defer server.Close()
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
+	fetch := func() {
+		_, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
+		require.NoError(t, err)
+	}
+
+	fetch()
+	fetch()
+	assert.Equal(t, 1, requestCount, "the token must come from the cache before it expires")
+
+	time.Sleep(1100 * time.Millisecond)
+	fetch()
+	assert.Equal(t, 2, requestCount, "the cached token must expire 30 seconds before expires_in")
+}
+
 func TestFetchOAuth2Token_TrailingSlashInIssuerURI(t *testing.T) {
 	// Clear cache before test
 	services.ClearOAuth2TokenCache()

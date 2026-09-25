@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -110,6 +111,30 @@ func TestRequestDump_WritesNothingWhenUploadSucceeds(t *testing.T) {
 
 	_, statErr := os.Stat(dumpDir)
 	assert.True(t, os.IsNotExist(statErr), "a successful run must not leave patient data on disk")
+}
+
+func TestRequestDump_WarnsOnlyWhenResponseWriteFails(t *testing.T) {
+	const warning = "Failed to write failed response"
+
+	t.Run("write succeeds", func(t *testing.T) {
+		var logs bytes.Buffer
+		dump := services.NewRequestDump(t.TempDir(), lib.NewLoggerWithWriter(lib.LogLevelWarn, &logs))
+
+		dump.Write("batch-1", []byte(`{}`), http.StatusBadRequest, []byte("rejected"))
+
+		assert.NotContains(t, logs.String(), warning)
+	})
+
+	t.Run("write fails", func(t *testing.T) {
+		dumpDir := t.TempDir()
+		require.NoError(t, os.Mkdir(filepath.Join(dumpDir, "batch-1.response.txt"), 0o750))
+		var logs bytes.Buffer
+		dump := services.NewRequestDump(dumpDir, lib.NewLoggerWithWriter(lib.LogLevelWarn, &logs))
+
+		dump.Write("batch-1", []byte(`{}`), http.StatusBadRequest, []byte("rejected"))
+
+		assert.Contains(t, logs.String(), warning)
+	})
 }
 
 // stageTransferSendInput writes one input file for a transfer_load send step and

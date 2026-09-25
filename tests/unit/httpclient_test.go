@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -263,4 +264,71 @@ func TestHTTPClient_WithInvalidCACertPath(t *testing.T) {
 	require.NotNil(t, resp)
 	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestDefaultHTTPClient_TimeoutIsThirtySeconds(t *testing.T) {
+	assert.Equal(t, 30*time.Second, services.DefaultHTTPClient().Timeout())
+}
+
+// TestHTTPClient_Do_ReplaysNonRewindableBodyOnRetry uses a body without
+// GetBody, so the transport cannot replay it and Do must replay it.
+func TestHTTPClient_Do_ReplaysNonRewindableBodyOnRetry(t *testing.T) {
+	const body = `{"resourceType":"Bundle"}`
+
+	var attemptBodies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received, _ := io.ReadAll(r.Body)
+		attemptBodies = append(attemptBodies, string(received))
+		if len(attemptBodies) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	httpClient := FastHTTPClient(lib.NewLogger(lib.LogLevelError))
+
+	req, err := http.NewRequest(http.MethodPost, server.URL, io.MultiReader(strings.NewReader(body)))
+	require.NoError(t, err)
+	require.Nil(t, req.GetBody, "the transport must not be able to rewind the body")
+
+	resp, err := httpClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, []string{body, body}, attemptBodies)
+}
+
+func TestHTTPClient_Do_NoBackoffAfterLastNetworkErrorAttempt(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	url := server.URL
+	server.Close()
+
+	const backoff = 2 * time.Second
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: backoff.Milliseconds(), MaxBackoffMs: backoff.Milliseconds()}, models.TLSConfig{}, logger)
+
+	start := time.Now()
+	_, err := httpClient.Get(url)
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "connection refused")
+	assert.Less(t, elapsed, backoff/2, "no attempt follows, so the client must not wait")
+}
+
+func TestProgressReader_SkipsCallbackForEmptyRead(t *testing.T) {
+	var reported []int64
+	reader := &services.ProgressReader{
+		Reader:   strings.NewReader("abc"),
+		Callback: func(total int64) { reported = append(reported, total) },
+	}
+
+	data, err := io.ReadAll(reader)
+
+	require.NoError(t, err)
+	assert.Equal(t, "abc", string(data))
+	assert.Equal(t, []int64{3}, reported, "the read at EOF returns no bytes and must not report progress")
 }

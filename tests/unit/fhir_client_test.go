@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -833,17 +834,37 @@ func TestNewFHIRClientWithParams(t *testing.T) {
 		Password: "pass",
 	}
 
-	// Test with valid batch size
-	client := services.NewFHIRClientWithParams("http://localhost:8080", 50, auth, httpClient, logger)
-	assert.NotNil(t, client)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
 
-	// Test with zero batch size (should default to 100)
-	clientDefault := services.NewFHIRClientWithParams("http://localhost:8080", 0, auth, httpClient, logger)
-	assert.NotNil(t, clientDefault)
+	var lines []string
+	for i := 0; i < 150; i++ {
+		lines = append(lines, `{"resourceType":"Patient","id":"p`+strconv.Itoa(i)+`"}`)
+	}
+	ndjson := strings.Join(lines, "\n")
 
-	// Test with negative batch size (should default to 100)
-	clientNegative := services.NewFHIRClientWithParams("http://localhost:8080", -1, auth, httpClient, logger)
-	assert.NotNil(t, clientNegative)
+	tests := []struct {
+		name        string
+		batchSize   int
+		wantBatches int
+	}{
+		{"positive batch size is kept", 50, 3},
+		{"zero batch size defaults to 100", 0, 2},
+		{"negative batch size defaults to 100", -1, 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := services.NewFHIRClientWithParams(server.URL, tt.batchSize, auth, httpClient, logger)
+
+			stats, err := client.UploadNDJSON("test.ndjson", strings.NewReader(ndjson))
+
+			require.NoError(t, err)
+			assert.Equal(t, 150, stats.ResourcesUploaded)
+			assert.Equal(t, tt.wantBatches, stats.BatchesSent)
+		})
+	}
 }
 
 func TestFHIRClient_UploadNDJSON_OAuth2Auth(t *testing.T) {

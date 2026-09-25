@@ -96,18 +96,10 @@ func (c *FHIRClient) UploadNDJSON(filePath string, reader io.Reader) (*FHIRUploa
 	return stats, nil
 }
 
-// effectiveBatchSize gives the number of resources per transaction bundle.
-func (c *FHIRClient) effectiveBatchSize() int {
-	if c.batchSize <= 0 {
-		return 100
-	}
-	return c.batchSize
-}
-
 // sendFullBatches reads the NDJSON stream and sends every complete batch. It
 // returns the resources that remain after the last complete batch.
 func (c *FHIRClient) sendFullBatches(filePath string, reader io.Reader, stats *FHIRUploadStats) ([]json.RawMessage, error) {
-	batchSize := c.effectiveBatchSize()
+	batchSize := c.batchSize
 	dec := json.NewDecoder(reader)
 	var batch []json.RawMessage
 

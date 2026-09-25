@@ -45,19 +45,6 @@ type ReassembledBundle struct {
 	WasReassembled bool           // Whether Bundle was reassembled from chunks
 }
 
-// SplitStats captures metrics about Bundle splitting operation
-// Used for logging and monitoring purposes
-type SplitStats struct {
-	BundleID          string
-	OriginalSize      int
-	OriginalEntries   int
-	ChunksCreated     int
-	AverageChunkSize  int
-	LargestChunkSize  int
-	SmallestChunkSize int
-	SplitDuration     time.Duration
-}
-
 // OversizedResourceError indicates a single resource exceeds threshold
 // Cannot be split without violating FHIR semantics
 type OversizedResourceError struct {

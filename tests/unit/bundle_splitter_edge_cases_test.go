@@ -402,89 +402,6 @@ func TestReassembleBundle_SingleChunk(t *testing.T) {
 	assert.Equal(t, "test-bundle", result.OriginalID)
 }
 
-// TestCalculateChunkStats_EmptyResult tests stats calculation with empty result
-func TestCalculateChunkStats_EmptyResult(t *testing.T) {
-	result := models.SplitResult{
-		Metadata: models.BundleMetadata{
-			ID:   "test-bundle",
-			Type: "collection",
-		},
-		Chunks:       []models.BundleChunk{},
-		WasSplit:     false,
-		OriginalSize: 1000,
-		TotalChunks:  0,
-	}
-
-	stats := services.CalculateChunkStats(result)
-
-	assert.Equal(t, "test-bundle", stats.BundleID)
-	assert.Equal(t, 1000, stats.OriginalSize)
-	assert.Equal(t, 0, stats.OriginalEntries)
-	assert.Equal(t, 0, stats.ChunksCreated)
-	assert.Equal(t, 0, stats.SmallestChunkSize)
-	assert.Equal(t, 0, stats.LargestChunkSize)
-	assert.Equal(t, 0, stats.AverageChunkSize)
-}
-
-// TestCalculateChunkStats_SingleChunk tests stats for non-split bundle
-func TestCalculateChunkStats_SingleChunk(t *testing.T) {
-	entries := []map[string]any{
-		{
-			"fullUrl": "urn:uuid:pat-1",
-			"resource": map[string]any{
-				"resourceType": "Patient",
-				"id":           "pat-1",
-			},
-		},
-	}
-
-	metadata := models.BundleMetadata{
-		ID:   "single-chunk",
-		Type: "collection",
-	}
-
-	chunk, _ := models.CreateBundleChunk(metadata, entries, 0, 1)
-
-	result := models.SplitResult{
-		Metadata:     metadata,
-		Chunks:       []models.BundleChunk{chunk},
-		WasSplit:     false,
-		OriginalSize: 500,
-		TotalChunks:  1,
-	}
-
-	stats := services.CalculateChunkStats(result)
-
-	assert.Equal(t, "single-chunk", stats.BundleID)
-	assert.Equal(t, 1, stats.OriginalEntries)
-	assert.Equal(t, 1, stats.ChunksCreated)
-	assert.Equal(t, chunk.EstimatedSize, stats.SmallestChunkSize)
-	assert.Equal(t, chunk.EstimatedSize, stats.LargestChunkSize)
-	assert.Equal(t, chunk.EstimatedSize, stats.AverageChunkSize)
-}
-
-// TestCalculateChunkStats_MultipleChunks tests stats for split bundle
-func TestCalculateChunkStats_MultipleChunks(t *testing.T) {
-	// Create bundle with multiple chunks of varying sizes
-	bundle := CreateTestBundle(100, 100) // ~10MB
-	thresholdBytes := 3 * 1024 * 1024    // 3MB
-
-	result, err := services.SplitBundle(bundle, thresholdBytes)
-	require.NoError(t, err)
-	require.True(t, result.WasSplit)
-	require.Greater(t, len(result.Chunks), 1)
-
-	stats := services.CalculateChunkStats(result)
-
-	assert.Equal(t, bundle["id"].(string), stats.BundleID)
-	assert.Equal(t, 100, stats.OriginalEntries)
-	assert.Equal(t, len(result.Chunks), stats.ChunksCreated)
-	assert.Greater(t, stats.SmallestChunkSize, 0)
-	assert.Greater(t, stats.LargestChunkSize, 0)
-	assert.GreaterOrEqual(t, stats.LargestChunkSize, stats.SmallestChunkSize)
-	assert.Greater(t, stats.AverageChunkSize, 0)
-}
-
 // TestSplitBundle_RealWorldScenario tests realistic large bundle splitting
 func TestSplitBundle_RealWorldScenario(t *testing.T) {
 	// Simulate a 50MB bundle with 500 entries (~100KB each)
@@ -747,6 +664,37 @@ func TestPartitionEntries_WrapperBudgetCountsAgainstThreshold(t *testing.T) {
 	})
 }
 
+// TestPartitionEntries_SeparatorCountsAgainstThreshold tests that two entries
+// share a chunk only when both entries, the separator between them, and the
+// wrapper stay within the threshold
+func TestPartitionEntries_SeparatorCountsAgainstThreshold(t *testing.T) {
+	entries := []map[string]any{
+		{"resource": map[string]any{"resourceType": "Patient", "id": "pat-1"}},
+		{"resource": map[string]any{"resourceType": "Observation", "id": "obs-1"}},
+	}
+	firstSize, err := models.CalculateJSONSize(entries[0])
+	require.NoError(t, err)
+	secondSize, err := models.CalculateJSONSize(entries[1])
+	require.NoError(t, err)
+	exactFit := firstSize + 1 + secondSize + testWrapperBytes
+
+	tests := []struct {
+		name           string
+		thresholdBytes int
+		wantPartitions int
+	}{
+		{"entries fit exactly", exactFit, 1},
+		{"one byte short", exactFit - 1, 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			partitions, err := services.PartitionEntries(entries, tt.thresholdBytes, testWrapperBytes)
+			require.NoError(t, err)
+			assert.Len(t, partitions, tt.wantPartitions)
+		})
+	}
+}
+
 // TestPartitionEntries_SingleEntry tests error path with single small entry
 func TestPartitionEntries_SingleEntry(t *testing.T) {
 	entries := []map[string]any{
@@ -834,29 +782,4 @@ func TestPartitionEntries_MultiplePartitions(t *testing.T) {
 		assert.Greater(t, len(partition), 0, "Each partition should have at least 1 entry")
 	}
 	assert.Equal(t, 5, totalEntries, "All entries should be preserved")
-}
-
-// TestCalculateChunkStats_ConsistentStats tests stats calculation consistency
-func TestCalculateChunkStats_ConsistentStats(t *testing.T) {
-	bundle := CreateTestBundle(50, 100) // ~5MB bundle
-	thresholdBytes := 2 * 1024 * 1024   // 2MB threshold
-
-	splitResult, err := services.SplitBundle(bundle, thresholdBytes)
-	require.NoError(t, err)
-
-	stats := services.CalculateChunkStats(splitResult)
-
-	// Verify stats consistency
-	assert.Equal(t, splitResult.Metadata.ID, stats.BundleID)
-	assert.Equal(t, splitResult.OriginalSize, stats.OriginalSize)
-	assert.Equal(t, len(splitResult.Chunks), stats.ChunksCreated)
-
-	// Verify chunk sizes are logical
-	if len(splitResult.Chunks) > 0 {
-		totalChunkSize := 0
-		for _, chunk := range splitResult.Chunks {
-			totalChunkSize += chunk.EstimatedSize
-		}
-		assert.Greater(t, totalChunkSize, 0, "Total chunk size should be > 0")
-	}
 }

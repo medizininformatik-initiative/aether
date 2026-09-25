@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"path/filepath"
@@ -584,7 +585,28 @@ func TestImportFromLocalDirectory_WithCompression(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, reader.Close())
 		assert.Contains(t, string(content), "resourceType", "Decompressed content should be valid")
+
+		info, err := os.Stat(destPath)
+		require.NoError(t, err)
+		assert.NotEqual(t, int64(len(content)), info.Size(), "fixture must compress to a different size")
+		assert.Equal(t, info.Size(), imported.FileSize, "FileSize is the size of the compressed file")
 	}
+}
+
+// A successful import writes no error to the log, so that an operator sees
+// only real problems.
+func TestImportFromLocalDirectory_SuccessLogsNoError(t *testing.T) {
+	sourceDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "Patient.ndjson"),
+		[]byte(`{"resourceType":"Patient","id":"1"}`), 0644))
+
+	var logs bytes.Buffer
+	logger := lib.NewLoggerWithWriter(lib.LogLevelError, &logs)
+
+	_, err := services.ImportFromLocalDirectory(sourceDir, t.TempDir(), logger, true, "default", false)
+
+	require.NoError(t, err)
+	assert.Empty(t, logs.String())
 }
 
 // TestImportFromLocalDirectory_CompressionAllLevels verifies all compression levels work

@@ -614,6 +614,26 @@ func TestAddAttributesToGroup_UpdateExistingLinkedGroups(t *testing.T) {
 	assert.Equal(t, "encounter-group", result.Attributes[0].LinkedGroups[0], "linkedGroups should be resolved to group ID")
 }
 
+// An enrichment without linkedGroups changes only mustHave of an existing
+// attribute. The links of the attribute stay.
+func TestAddAttributesToGroup_UpdateExistingKeepsLinkedGroups(t *testing.T) {
+	doc := createTestCRTDLDocument()
+	group := models.AttributeGroup{
+		ID:             "test-group",
+		GroupReference: "https://example.org/Test",
+		Attributes: []models.Attribute{
+			{AttributeRef: "Test.existing", LinkedGroups: []string{"encounter-group"}},
+		},
+	}
+	attrs := []models.EnrichmentAttribute{{AttributeRef: "Test.existing", MustHave: true}}
+
+	result := services.AddAttributesToGroup(group, attrs, doc)
+
+	require.Len(t, result.Attributes, 1)
+	assert.True(t, result.Attributes[0].MustHave)
+	assert.Equal(t, []string{"encounter-group"}, result.Attributes[0].LinkedGroups)
+}
+
 // TestEnrichCRTDL_UpdateExistingAttributeLinkedGroups tests updating linkedGroups on existing attribute
 // (covers crtdl_preprocessor.go lines 111-113 via EnrichCRTDL)
 func TestEnrichCRTDL_UpdateExistingAttributeLinkedGroups(t *testing.T) {
@@ -1052,6 +1072,29 @@ func TestGroupEnrichment_UnmarshalJSON_AddGroupIfNotExists_False(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, enrichment.ShouldCreateIfNotExists(),
 		"addGroupIfNotExists: false should not enable group creation")
+}
+
+// addGroupIfNotExists: true names the new group after the last non-empty path
+// segment of groupReference.
+func TestGroupEnrichment_UnmarshalJSON_AddGroupIfNotExists_DerivedGroupName(t *testing.T) {
+	tests := []struct {
+		groupReference string
+		want           string
+	}{
+		{"https://example.org/fhir/StructureDefinition/Patient", "Patient"},
+		{"https://example.org/fhir/StructureDefinition/Patient/", "Patient"},
+		{"Patient", "Patient"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.groupReference, func(t *testing.T) {
+			jsonData := `{"groupReference": "` + tt.groupReference + `", "addGroupIfNotExists": true, "attributesToAdd": []}`
+
+			var enrichment models.GroupEnrichment
+			require.NoError(t, json.Unmarshal([]byte(jsonData), &enrichment))
+
+			assert.Equal(t, tt.want, enrichment.GetGroupName())
+		})
+	}
 }
 
 // TestGroupEnrichment_UnmarshalJSON_BothAddGroupAndCreateIfNotExists_Error tests that

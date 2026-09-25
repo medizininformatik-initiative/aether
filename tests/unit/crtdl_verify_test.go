@@ -82,15 +82,19 @@ func TestVerifyCRTDLFileRejectsGroupWithoutName(t *testing.T) {
 }
 
 func TestVerifyCRTDLFileRejectsGroupWithoutAttributes(t *testing.T) {
+	var groupID string
 	path := mutateCRTDLFixture(t, func(doc map[string]any) {
 		groups := doc["dataExtraction"].(map[string]any)["attributeGroups"].([]any)
 		groups[1].(map[string]any)["attributes"] = []any{}
+		groupID = groups[1].(map[string]any)["id"].(string)
 	})
 
 	err := services.VerifyCRTDLFile(path)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "at least one attribute")
+	assert.Contains(t, err.Error(), "[no-attributes] group '"+groupID+"': ",
+		"a finding of a group names the group")
 }
 
 func TestVerifyCRTDLFileRejectsEmptyAttributeGroups(t *testing.T) {
@@ -100,8 +104,8 @@ func TestVerifyCRTDLFileRejectsEmptyAttributeGroups(t *testing.T) {
 
 	err := services.VerifyCRTDLFile(path)
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "at least one attributeGroup")
+	require.EqualError(t, err, "invalid CRTDL: [no-attribute-groups] CRTDL must have at least one attributeGroup",
+		"a finding without a group has no group prefix")
 }
 
 func TestVerifyCRTDLFileRejectsGroupNamesThatMapToOneCSVFile(t *testing.T) {

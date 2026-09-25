@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -68,6 +69,31 @@ func TestAttachTORCHProgressPersistence_OnlyUpdatesTORCHStep(t *testing.T) {
 	assert.Equal(t, 1, diskStep.Progress.Completed)
 }
 
+// A new batch total is a change of the batch counts, also when the number of
+// completed batches stays the same.
+func TestAttachTORCHProgressPersistence_PersistsChangedTotal(t *testing.T) {
+	jobsDir := t.TempDir()
+	job := progressJob(jobsDir, models.StepTorchImport)
+	require.NoError(t, UpdateJob(jobsDir, job))
+
+	reporter := &progressReporter{}
+	attachTORCHProgressPersistence(job, reporter, lib.NewLogger(lib.LogLevelError))
+	require.NotNil(t, reporter.handler)
+
+	reporter.handler(sampleProgress)
+	grown := sampleProgress
+	grown.BatchesTotal = 3
+	reporter.handler(grown)
+
+	reloaded, err := LoadJob(jobsDir, job.JobID)
+	require.NoError(t, err)
+	diskStep, found := models.GetStepByName(*reloaded, models.StepTorchImport)
+	require.True(t, found)
+	require.NotNil(t, diskStep.Progress)
+	assert.Equal(t, 1, diskStep.Progress.Completed)
+	assert.Equal(t, 3, diskStep.Progress.Total)
+}
+
 // Persistence is best effort: an unwritable jobs directory must not stop the
 // in-memory progress update, which is what the running step reports.
 func TestAttachTORCHProgressPersistence_SurvivesWriteFailure(t *testing.T) {
@@ -76,13 +102,15 @@ func TestAttachTORCHProgressPersistence_SurvivesWriteFailure(t *testing.T) {
 
 	job := progressJob(blocked, models.StepTorchImport)
 	reporter := &progressReporter{}
-	attachTORCHProgressPersistence(job, reporter, lib.NewLogger(lib.LogLevelError))
+	var logs bytes.Buffer
+	attachTORCHProgressPersistence(job, reporter, lib.NewLoggerWithWriter(lib.LogLevelDebug, &logs))
 	require.NotNil(t, reporter.handler)
 
 	assert.NotPanics(t, func() { reporter.handler(sampleProgress) })
 
 	require.NotNil(t, job.Steps[0].Progress)
 	assert.Equal(t, 1, job.Steps[0].Progress.Completed)
+	assert.Contains(t, logs.String(), "failed to persist TORCH progress")
 
 	_, err := LoadJob(blocked, job.JobID)
 	assert.Error(t, err, "nothing can be persisted to an unwritable jobs directory")

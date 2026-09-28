@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -165,6 +166,32 @@ func TestRunLoop_UsesClassifyErrorHook(t *testing.T) {
 	assert.Equal(t, models.ErrorTypeTransient, s.LastError.Type)
 }
 
+func TestRunLoop_StepFailedLogReportsRetryable(t *testing.T) {
+	cases := []struct {
+		errType models.ErrorType
+		want    string
+	}{
+		{models.ErrorTypeTransient, "retryable true"},
+		{models.ErrorTypeNonTransient, "retryable false"},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.errType), func(t *testing.T) {
+			imp := &seamClassifyingStep{
+				seamFakeStep: seamFakeStep{name: models.StepLocalImport, err: errors.New("boom")},
+				errType:      tc.errType,
+			}
+			job := seamLoopJob(t, map[models.StepName]pipeline.Step{models.StepLocalImport: imp})
+			var logs bytes.Buffer
+
+			_, err := pipeline.RunLoop(job, lib.NewLoggerWithWriter(lib.LogLevelError, &logs), pipeline.RunOptions{})
+
+			require.Error(t, err)
+			assert.Contains(t, logs.String(), "Step failed")
+			assert.Contains(t, logs.String(), tc.want)
+		})
+	}
+}
+
 func TestRunLoop_IllegalTransitionSurfacesError(t *testing.T) {
 	imp := &seamFakeStep{name: models.StepLocalImport}
 	dimp := &seamFakeStep{name: models.StepDIMP}
@@ -206,12 +233,25 @@ func TestRunLoop_FailedJobSaveErrorIsLogged(t *testing.T) {
 		models.StepDIMP:        dimp,
 	})
 	failSaveOnNth(t, 1) // the failed-job save is the first save attempt
+	var logs bytes.Buffer
 
-	final, err := pipeline.RunLoop(job, seamLogger(), pipeline.RunOptions{})
+	final, err := pipeline.RunLoop(job, lib.NewLoggerWithWriter(lib.LogLevelError, &logs), pipeline.RunOptions{})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "boom", "the original step error still propagates")
 	assert.Equal(t, models.JobStatusFailed, final.Status, "job is failed even if saving that state fails")
+	assert.Contains(t, logs.String(), "Failed to save failed job state")
+}
+
+func TestRunLoop_FailedJobSaveSuccessIsNotLoggedAsError(t *testing.T) {
+	imp := &seamFakeStep{name: models.StepLocalImport, err: errors.New("boom")}
+	job := seamLoopJob(t, map[models.StepName]pipeline.Step{models.StepLocalImport: imp})
+	var logs bytes.Buffer
+
+	_, err := pipeline.RunLoop(job, lib.NewLoggerWithWriter(lib.LogLevelError, &logs), pipeline.RunOptions{})
+
+	require.Error(t, err)
+	assert.NotContains(t, logs.String(), "Failed to save failed job state")
 }
 
 func TestRunLoop_PostStepSaveErrorSurfaces(t *testing.T) {

@@ -321,6 +321,24 @@ func TestCreateJob_EmptyInputSource(t *testing.T) {
 	assert.Equal(t, string(models.StepLocalImport), job.CurrentStep, "Current step should be local_import")
 }
 
+func TestCreateJob_FirstEnabledImportStepIsInitialStep(t *testing.T) {
+	tmpDir := t.TempDir()
+	config := models.ProjectConfig{
+		JobsDir: filepath.Join(tmpDir, "jobs"),
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepLocalImport, models.StepHttpImport, models.StepDIMP},
+		},
+		Services: models.ServiceConfig{
+			LocalImport: models.LocalImportConfig{Dir: filepath.Join(tmpDir, "local_import")},
+		},
+	}
+
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", "", config, lib.NewLogger(lib.LogLevelError))
+
+	require.NoError(t, err)
+	assert.Equal(t, string(models.StepLocalImport), job.CurrentStep)
+}
+
 // TestCreateJob_DoesNotAttachJobLog pins the contract that CreateJob keeps the
 // logger side effect out: attaching per-job logging is the caller's job, so
 // CreateJob must not create job.log on its own.

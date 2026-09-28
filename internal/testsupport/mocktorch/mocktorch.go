@@ -168,8 +168,8 @@ func (s *Server) handleOutput(w http.ResponseWriter, r *http.Request) {
 // buildOutput returns the NDJSON body that every output request serves.
 func buildOutput(cohortSize int) string {
 	var body strings.Builder
-	for i := 1; i <= cohortSize; i++ {
-		fmt.Fprintf(&body, `{"resourceType":"Patient","id":"mock-patient-%d"}`+"\n", i)
+	for i := range cohortSize {
+		fmt.Fprintf(&body, `{"resourceType":"Patient","id":"mock-patient-%d"}`+"\n", i+1)
 	}
 	return body.String()
 }

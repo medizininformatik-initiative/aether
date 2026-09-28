@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/medizininformatik-initiative/aether/internal/services"
 	"github.com/medizininformatik-initiative/aether/internal/testsupport/mocktorch"
 )
 
@@ -179,6 +180,90 @@ func TestMockTORCH_OutputHasOnePatientForEachCohortMember(t *testing.T) {
 	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
 	assert.Len(t, lines, 150)
 	assert.Contains(t, lines[149], `"id":"mock-patient-150"`)
+}
+
+// pollStatus polls the status route once and returns the status code.
+func pollStatus(t *testing.T, srv *httptest.Server, jobID string) int {
+	t.Helper()
+	resp, err := http.Get(srv.URL + "/fhir/__status/" + jobID)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	return resp.StatusCode
+}
+
+// The extraction completes only after PollsPerBatch polls for each batch.
+func TestMockTORCH_StatusCompletesAfterAllPollsOfAllBatches(t *testing.T) {
+	srv := newMock(t, mocktorch.Config{CohortSize: 2, BatchSize: 1, PollsPerBatch: 3})
+	jobID := submitJob(t, srv)
+
+	for poll := 1; poll < 6; poll++ {
+		require.Equal(t, http.StatusAccepted, pollStatus(t, srv, jobID), "poll %d", poll)
+	}
+	assert.Equal(t, http.StatusOK, pollStatus(t, srv, jobID))
+}
+
+// A batch counts as completed only after PollsPerBatch polls.
+func TestMockTORCH_TaskCountsOnlyFullBatchesAsCompleted(t *testing.T) {
+	srv := newMock(t, mocktorch.Config{CohortSize: 3, BatchSize: 1, PollsPerBatch: 2})
+	jobID := submitJob(t, srv)
+
+	want := []int{0, 0, 1, 1, 2}
+	for poll, completed := range want {
+		assert.Equal(t, completed, taskProgress(t, srv, jobID)["batchesCompleted"], "after %d polls", poll)
+		pollStatus(t, srv, jobID)
+	}
+}
+
+// activeBatch returns the batchId and stage of the activeBatch sub-extension
+// of the Task resource.
+func activeBatch(t *testing.T, srv *httptest.Server, jobID string) (string, string) {
+	t.Helper()
+	resp, err := http.Get(srv.URL + "/fhir/Task/" + jobID)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	type extension struct {
+		URL         string      `json:"url"`
+		ValueString string      `json:"valueString"`
+		Extension   []extension `json:"extension"`
+	}
+	var task struct {
+		Extension []extension `json:"extension"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&task))
+	require.Len(t, task.Extension, 1)
+
+	for _, e := range task.Extension[0].Extension {
+		if e.URL != "activeBatch" {
+			continue
+		}
+		fields := map[string]string{}
+		for _, f := range e.Extension {
+			fields[f.URL] = f.ValueString
+		}
+		return fields["batchId"], fields["stage"]
+	}
+	require.Fail(t, "Task has no activeBatch")
+	return "", ""
+}
+
+// With one poll for each stage, each poll moves the active batch to the next
+// stage, and the next batch starts again at the first stage.
+func TestMockTORCH_ActiveBatchMovesThroughTheStages(t *testing.T) {
+	srv := newMock(t, mocktorch.Config{CohortSize: 2, BatchSize: 1, PollsPerBatch: len(services.TORCHBatchStages)})
+	jobID := submitJob(t, srv)
+
+	for _, stage := range services.TORCHBatchStages {
+		batchID, got := activeBatch(t, srv, jobID)
+		assert.Equal(t, "batch-1", batchID)
+		assert.Equal(t, string(stage), got)
+		pollStatus(t, srv, jobID)
+	}
+
+	batchID, got := activeBatch(t, srv, jobID)
+	assert.Equal(t, "batch-2", batchID)
+	assert.Equal(t, string(services.TORCHBatchStages[0]), got)
 }
 
 func TestMockTORCH_SubmitRejectsNonPost(t *testing.T) {

@@ -63,16 +63,19 @@ A surviving mutant is a change of the source code that no test detects.
 go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
 ```
 
-- `make mutation` tests every mutant in `internal/`.
-- `make mutation PKG=./internal/ui` tests one package.
+- `make mutation` tests every mutant in `internal/` (default `PKG=./internal`).
+- `make mutation PKG=./internal/ui` tests one directory. `PKG` is a directory,
+  not a Go package pattern: gremlins finds no mutants in `./internal/...`.
 - `make mutation-diff` tests only the lines that differ from `MUTATION_REF`
-  (default `origin/main`). If no Go file differs, it stops at once.
+  (default `origin/main`). If no Go source file in `PKG` differs, it stops at
+  once with success. Test files do not count.
+- If gremlins finds no mutants, the run fails.
 - The report goes to `mutation-report.json`.
 
 The settings are in `.gremlins.yaml`. Integration mode is necessary, because the
 tests are in `tests/`, outside the package under test. It runs the complete test
 suite for each mutant, so a run of one package takes many minutes. Give the run
-a package with `PKG` and let it complete in the background.
+a directory with `PKG` and let it complete in the background.
 
 gremlins copies the full module for each worker. The copies go to
 `~/.cache/mutants-tmp`, because `/tmp` is a small tmpfs on some machines.

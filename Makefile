@@ -175,9 +175,9 @@ coverage-merge:
 	@tail -n +2 coverage-integration.out >> coverage.out 2>/dev/null || true
 	@echo "Coverage files merged into coverage.out"
 
-## mutation: Run mutation testing (PKG=./internal/ui selects one package)
+## mutation: Run mutation testing (PKG=./internal/ui selects one directory)
 mutation:
-	@echo "Running mutation testing on $(or $(PKG),./internal/...)..."
+	@echo "Running mutation testing on $(or $(PKG),./internal)..."
 	@PKG="$(PKG)" MUTATION_OUTPUT="$(MUTATION_OUTPUT)" MUTATION_TMPDIR="$(MUTATION_TMPDIR)" \
 		./scripts/mutation.sh
 

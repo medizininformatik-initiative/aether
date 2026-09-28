@@ -2025,3 +2025,32 @@ func TestViewDefinitionSelectStructure(t *testing.T) {
 			`[{"column":[{"name":"status","path":"status"}]}]`)
 	})
 }
+
+func TestBuildViewDefinitionDoesNotWriteIntoLookupSelect(t *testing.T) {
+	ownSelect := make([]models.SelectClause, 1, 2)
+	ownSelect[0] = newSelectClause("code", "code")
+	lookupTables := []models.LookupTable{
+		newLookupTable("https://example.com/Condition", "Condition", map[string]models.LookupElement{
+			"Condition.code": {
+				Children: []string{"Condition.code.display"},
+				ViewDefinition: models.ViewDefSnippet{
+					ForEach: "code.coding",
+					Select:  ownSelect,
+				},
+			},
+			"Condition.code.display": {
+				Parent: "Condition.code",
+				ViewDefinition: models.ViewDefSnippet{
+					Column: []models.ColumnDefinition{{Name: "display", Path: "display"}},
+				},
+			},
+		}),
+	}
+
+	builder := services.NewViewDefinitionBuilder(lookupTables)
+	viewDef, err := builder.BuildViewDefinition(newAttributeGroup("Conditions", "https://example.com/Condition", "Condition.code"))
+
+	require.NoError(t, err)
+	assert.Contains(t, services.ExtractColumnNames(*viewDef), "display")
+	assert.Equal(t, models.SelectClause{}, ownSelect[:2][1], "the build must not write into the spare capacity of the lookup table's Select")
+}

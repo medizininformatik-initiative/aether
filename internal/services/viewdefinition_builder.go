@@ -133,7 +133,7 @@ func (b *ViewDefinitionBuilder) resolveWithChildren(lookup *models.LookupTable, 
 	// If element has root forEach, create wrapper SelectClause with children inside
 	if snippet.HasForEach() {
 		wrapper := viewDefSnippetToSelectClause(snippet)
-		wrapper.Select = append(wrapper.Select, childSelects...)
+		wrapper.Select = append(slices.Clone(wrapper.Select), childSelects...)
 		return []models.SelectClause{wrapper}
 	}
 

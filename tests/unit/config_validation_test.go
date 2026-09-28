@@ -279,6 +279,68 @@ func TestProjectConfig_Validate(t *testing.T) {
 			errMsg:  "max_attempts must be between 1 and 10",
 		},
 		{
+			name: "Max attempts at lower bound",
+			config: models.ProjectConfig{
+				Pipeline: models.PipelineConfig{
+					EnabledSteps: []models.StepName{models.StepLocalImport},
+				},
+				Retry: models.RetryConfig{
+					MaxAttempts:      1,
+					InitialBackoffMs: 500,
+					MaxBackoffMs:     5000,
+				},
+				JobsDir: "/tmp/jobs",
+			},
+			wantErr: false,
+		},
+		{
+			name: "Max attempts at upper bound",
+			config: models.ProjectConfig{
+				Pipeline: models.PipelineConfig{
+					EnabledSteps: []models.StepName{models.StepLocalImport},
+				},
+				Retry: models.RetryConfig{
+					MaxAttempts:      10,
+					InitialBackoffMs: 500,
+					MaxBackoffMs:     5000,
+				},
+				JobsDir: "/tmp/jobs",
+			},
+			wantErr: false,
+		},
+		{
+			name: "Initial backoff zero",
+			config: models.ProjectConfig{
+				Pipeline: models.PipelineConfig{
+					EnabledSteps: []models.StepName{models.StepLocalImport},
+				},
+				Retry: models.RetryConfig{
+					MaxAttempts:      3,
+					InitialBackoffMs: 0,
+					MaxBackoffMs:     5000,
+				},
+				JobsDir: "/tmp/jobs",
+			},
+			wantErr: true,
+			errMsg:  "initial_backoff_ms must be positive",
+		},
+		{
+			name: "Max backoff zero",
+			config: models.ProjectConfig{
+				Pipeline: models.PipelineConfig{
+					EnabledSteps: []models.StepName{models.StepLocalImport},
+				},
+				Retry: models.RetryConfig{
+					MaxAttempts:      3,
+					InitialBackoffMs: 500,
+					MaxBackoffMs:     0,
+				},
+				JobsDir: "/tmp/jobs",
+			},
+			wantErr: true,
+			errMsg:  "max_backoff_ms must be positive",
+		},
+		{
 			name: "Initial backoff negative",
 			config: models.ProjectConfig{
 				Pipeline: models.PipelineConfig{

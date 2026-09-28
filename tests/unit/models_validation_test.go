@@ -285,6 +285,11 @@ func TestGetNormalizedBaseName(t *testing.T) {
 			input:    "Patient",
 			expected: "Patient",
 		},
+		{
+			name:     "Compression extension only",
+			input:    "/path/to/.ZST",
+			expected: "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -292,6 +297,26 @@ func TestGetNormalizedBaseName(t *testing.T) {
 			result := models.GetNormalizedBaseName(tt.input)
 			assert.Equal(t, tt.expected, result)
 		})
+	}
+}
+
+// TestIsTransientHTTPStatus tests that only 5xx, 408 and 429 are transient
+func TestIsTransientHTTPStatus(t *testing.T) {
+	tests := []struct {
+		status    int
+		transient bool
+	}{
+		{status: 499, transient: false},
+		{status: 500, transient: true},
+		{status: 599, transient: true},
+		{status: 600, transient: false},
+		{status: 408, transient: true},
+		{status: 429, transient: true},
+		{status: 404, transient: false},
+	}
+
+	for _, tt := range tests {
+		assert.Equal(t, tt.transient, models.IsTransientHTTPStatus(tt.status), "status %d", tt.status)
 	}
 }
 

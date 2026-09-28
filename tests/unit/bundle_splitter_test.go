@@ -195,6 +195,16 @@ func TestCreateChunk(t *testing.T) {
 		assert.Error(t, err)
 	})
 
+	t.Run("Index equal to total chunks returns error", func(t *testing.T) {
+		_, err := models.CreateBundleChunk(metadata, entries, 3, 3)
+		assert.Error(t, err)
+	})
+
+	t.Run("Last index is valid", func(t *testing.T) {
+		_, err := models.CreateBundleChunk(metadata, entries, 2, 3)
+		assert.NoError(t, err)
+	})
+
 	t.Run("Empty entries create an empty chunk", func(t *testing.T) {
 		chunk, err := models.CreateBundleChunk(metadata, []map[string]any{}, 0, 1)
 		require.NoError(t, err)
@@ -284,6 +294,26 @@ func TestMaxChunkWrapperSize(t *testing.T) {
 			assert.Equal(t, len(serialized), wrapperSize+entryBytes+separatorBytes)
 		})
 	}
+}
+
+// TestMaxChunkWrapperSize_SizesIDWithLastChunkIndex verifies that the bound
+// uses the id of the last possible chunk: for 10 entries the last chunk is
+// "original-bundle-chunk-9", and the bound is exact for that chunk.
+func TestMaxChunkWrapperSize_SizesIDWithLastChunkIndex(t *testing.T) {
+	metadata := models.BundleMetadata{ID: "original-bundle", Type: "collection"}
+	entry := map[string]any{"resource": map[string]any{"resourceType": "Patient", "id": "patient-1"}}
+	entryCount := 10
+
+	wrapperSize := models.MaxChunkWrapperSize(metadata, entryCount)
+
+	entryBytes, err := models.CalculateJSONSize(entry)
+	require.NoError(t, err)
+	chunk, err := models.CreateBundleChunk(metadata, []map[string]any{entry}, entryCount-1, entryCount)
+	require.NoError(t, err)
+	serialized, err := json.Marshal(models.ConvertChunkToBundle(chunk))
+	require.NoError(t, err)
+
+	assert.Equal(t, len(serialized), wrapperSize+entryBytes)
 }
 
 // TestExtractEntriesFromBundle verifies entry extraction

@@ -1019,6 +1019,17 @@ func TestTORCHConfig_ValidateEdgeCases(t *testing.T) {
 			wantErr: true,
 			errMsg:  "must use http or https scheme",
 		},
+		{
+			name: "Extraction timeout zero - invalid",
+			config: models.TORCHConfig{
+				BaseURL:            "http://localhost:8080",
+				ExtractionTimeout:  0,
+				PollingInterval:    5 * time.Second,
+				MaxPollingInterval: 30 * time.Second,
+			},
+			wantErr: true,
+			errMsg:  "extraction_timeout must be > 0",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1294,6 +1305,43 @@ func TestValidateServiceConnectivity_DIMMServiceUnreachable(t *testing.T) {
 	err := config.ValidateServiceConnectivity(nil)
 	assert.Error(t, err, "Should fail when DIMP service is unreachable")
 	assert.Contains(t, err.Error(), "DIMP")
+}
+
+// TestValidateServiceConnectivity_UnresponsiveServiceTimesOut verifies that the
+// check fails after its timeout when a service accepts the connection but
+// never responds.
+func TestValidateServiceConnectivity_UnresponsiveServiceTimesOut(t *testing.T) {
+	t.Parallel()
+
+	release := make(chan struct{})
+	dimpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(dimpServer.Close)
+	t.Cleanup(func() { close(release) })
+
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			DIMP: models.DIMPConfig{URL: dimpServer.URL},
+		},
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepLocalImport, models.StepDIMP},
+		},
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- config.ValidateServiceConnectivity(nil) }()
+
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "DIMP")
+	case <-time.After(10 * time.Second):
+		t.Fatal("connectivity check did not time out")
+	}
 }
 
 // TestValidateServiceConnectivity_SendServiceAvailable verifies connectivity check with Send service available

@@ -124,10 +124,6 @@ func (l JobLayout) InputDir(step models.StepName) string {
 // the step it immediately follows — the same directory the paused pipeline tells
 // the user to populate — so transparent steps are not skipped across a wait.
 func (l JobLayout) inputDirAt(currentStepIndex int) string {
-	if currentStepIndex <= 0 {
-		return l.JobDir()
-	}
-
 	for i := currentStepIndex - 1; i >= 0; i-- {
 		step := l.enabledSteps[i]
 

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
@@ -79,7 +80,8 @@ func TestJobLayout_WaitDir(t *testing.T) {
 	t.Run("wait as first step errors", func(t *testing.T) {
 		layout := services.NewJobLayout("/tmp/jobs", "job-1", []models.StepName{models.StepWait, models.StepDIMP})
 		_, err := layout.WaitDir(0)
-		assert.Error(t, err)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot be first")
 	})
 }
 

@@ -51,7 +51,7 @@ echo ""
 echo "Job ID: $JOB_ID"
 
 # Check if pipeline paused at wait step
-if echo "$OUTPUT" | grep -q "Pipeline paused at wait step"; then
+if grep -q "Pipeline paused at wait step" <<< "$OUTPUT"; then
     echo ""
     echo "Pipeline paused at wait step, copying files to wait directory..."
 
@@ -66,7 +66,7 @@ if echo "$OUTPUT" | grep -q "Pipeline paused at wait step"; then
         CONTINUE_OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline continue aether.yaml "$JOB_ID" 2>&1) || {
             echo "$CONTINUE_OUTPUT"
             # Check if it's just a pause at another wait step
-            if echo "$CONTINUE_OUTPUT" | grep -q "Pipeline paused at wait step\|Pipeline still paused"; then
+            if grep -q "Pipeline paused at wait step\|Pipeline still paused" <<< "$CONTINUE_OUTPUT"; then
                 echo "Pipeline paused again, copying files..."
                 # Find and copy files from the latest *_wait directory
                 docker compose exec -T aether-runner sh -c "
@@ -85,12 +85,12 @@ if echo "$OUTPUT" | grep -q "Pipeline paused at wait step"; then
         echo "$CONTINUE_OUTPUT"
 
         # Check if pipeline completed
-        if echo "$CONTINUE_OUTPUT" | grep -q "Job completed successfully\|Job already completed"; then
+        if grep -q "Job completed successfully\|Job already completed" <<< "$CONTINUE_OUTPUT"; then
             break
         fi
 
         # Check if paused at another wait step
-        if echo "$CONTINUE_OUTPUT" | grep -q "Pipeline paused at wait step"; then
+        if grep -q "Pipeline paused at wait step" <<< "$CONTINUE_OUTPUT"; then
             echo "Pipeline paused at another wait step, copying files..."
             docker compose exec -T aether-runner sh -c "
                 for dir in /app/jobs/$JOB_ID/*_wait; do

@@ -32,7 +32,7 @@ echo ""
 echo "Job ID: $JOB_ID"
 
 # Check if pipeline completed successfully
-if ! echo "$OUTPUT" | grep -q "Pipeline completed successfully"; then
+if ! grep -q "Pipeline completed successfully" <<< "$OUTPUT"; then
     echo "Pipeline did not complete successfully in initial run"
 
     # Try continuing (in case of any intermediate state)
@@ -42,12 +42,12 @@ if ! echo "$OUTPUT" | grep -q "Pipeline completed successfully"; then
         STATUS_OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline status aether-s3-upload.yaml "$JOB_ID" 2>&1) || true
         echo "$STATUS_OUTPUT"
 
-        if echo "$STATUS_OUTPUT" | grep -q "completed"; then
+        if grep -q "completed" <<< "$STATUS_OUTPUT"; then
             echo "Job completed"
             break
         fi
 
-        if echo "$STATUS_OUTPUT" | grep -q "failed"; then
+        if grep -q "failed" <<< "$STATUS_OUTPUT"; then
             echo "Job failed"
             exit 1
         fi

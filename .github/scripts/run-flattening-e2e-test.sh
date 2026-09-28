@@ -120,7 +120,7 @@ OUTPUT=$(docker compose exec -T aether-runner /app/aether pipeline continue aeth
 echo "$OUTPUT"
 
 # Check if pipeline completed
-if ! echo "$OUTPUT" | grep -q "Job completed successfully\|completed"; then
+if ! grep -q "Job completed successfully\|completed" <<< "$OUTPUT"; then
     echo -e "${YELLOW}Pipeline may not have completed. Checking job status...${NC}"
     docker compose exec -T aether-runner /app/aether pipeline status aether-flattening.yaml "$JOB_ID"
 fi

@@ -91,6 +91,22 @@ retry:
 	assert.Equal(t, 2*time.Minute, config.Services.DIMP.Timeout)
 }
 
+func TestEnvOverride_TORCHRequestTimeout(t *testing.T) {
+	t.Setenv("AETHER_SERVICES_TORCH_REQUEST_TIMEOUT", "3m")
+
+	configFile := writeEnvTestConfig(t, `
+services:
+  torch:
+    base_url: "http://torch.example.com:8080"
+pipeline:
+  enabled_steps:
+    - torch`)
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err)
+	assert.Equal(t, 3*time.Minute, config.Services.TORCH.RequestTimeout)
+}
+
 // TestEnvOverride_DIMPAuthAPIKey verifies the dimp auth block is bindable from
 // the environment, so credentials stay out of the config file.
 func TestEnvOverride_DIMPAuthAPIKey(t *testing.T) {

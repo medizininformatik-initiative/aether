@@ -137,3 +137,26 @@ func TestJobIDFromStatusURL(t *testing.T) {
 		})
 	}
 }
+
+// A job state file can hold no request timeout. The TORCH client must use the
+// default and not the timeout of the shared client.
+func TestNewTORCHClient_UnsetRequestTimeoutUsesDefault(t *testing.T) {
+	logger := lib.NewLogger(lib.LogLevelError)
+	shared := NewHTTPClient(10*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
+
+	client := NewTORCHClient(models.TORCHConfig{}, shared, logger)
+
+	assert.Equal(t, 60*time.Second, client.httpClient.Timeout())
+	assert.Equal(t, 10*time.Second, shared.Timeout(), "the shared client must not change")
+}
+
+func TestWithTimeout_KeepsTransportAndRetryConfig(t *testing.T) {
+	logger := lib.NewLogger(lib.LogLevelError)
+	shared := NewHTTPClient(10*time.Second, models.RetryConfig{MaxAttempts: 4}, models.TLSConfig{InsecureSkipVerify: true}, logger)
+
+	copied := shared.withTimeout(time.Minute)
+
+	assert.Same(t, shared.client.Transport, copied.client.Transport)
+	assert.Equal(t, shared.retryConfig, copied.retryConfig)
+	assert.Equal(t, time.Minute, copied.Timeout())
+}

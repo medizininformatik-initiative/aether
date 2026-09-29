@@ -130,6 +130,9 @@ type TORCHConfig struct {
 	// Deprecated: use Auth.OAuthClientSecret.
 	OAuthClientSecret string `yaml:"oauth_client_secret" json:"oauth_client_secret" mapstructure:"oauth_client_secret"`
 
+	// RequestTimeout bounds one request to TORCH, for example the submit of
+	// an extraction. Downloads use DownloadStallTimeout instead.
+	RequestTimeout     time.Duration `yaml:"request_timeout" json:"request_timeout" mapstructure:"request_timeout"`
 	ExtractionTimeout  time.Duration `yaml:"extraction_timeout" json:"extraction_timeout" mapstructure:"extraction_timeout"`
 	PollingInterval    time.Duration `yaml:"polling_interval" json:"polling_interval" mapstructure:"polling_interval"`
 	MaxPollingInterval time.Duration `yaml:"max_polling_interval" json:"max_polling_interval" mapstructure:"max_polling_interval"`
@@ -141,6 +144,20 @@ type TORCHConfig struct {
 	// connection fails fast. Unlike a whole-request deadline, it never has to be
 	// sized to the largest expected download.
 	DownloadStallTimeout time.Duration `yaml:"download_stall_timeout" json:"download_stall_timeout" mapstructure:"download_stall_timeout"`
+}
+
+// defaultTORCHRequestTimeout bounds one TORCH request when
+// TORCHConfig.RequestTimeout is unset.
+const defaultTORCHRequestTimeout = 60 * time.Second
+
+// EffectiveRequestTimeout returns the timeout for one TORCH request. A job
+// state file can hold no value. An unset value resolves to the default, so a
+// request is never unbounded.
+func (c *TORCHConfig) EffectiveRequestTimeout() time.Duration {
+	if c.RequestTimeout <= 0 {
+		return defaultTORCHRequestTimeout
+	}
+	return c.RequestTimeout
 }
 
 // EffectiveAuth returns the authentication settings for the TORCH server. It
@@ -511,6 +528,7 @@ func DefaultConfig() ProjectConfig {
 			},
 			TORCH: TORCHConfig{
 				BaseURL:              "",
+				RequestTimeout:       defaultTORCHRequestTimeout,
 				ExtractionTimeout:    30 * time.Minute,
 				PollingInterval:      5 * time.Second,
 				MaxPollingInterval:   30 * time.Second,
@@ -548,6 +566,16 @@ func DefaultConfig() ProjectConfig {
 
 // Validate checks if the TORCHConfig has all required fields and valid values
 func (c *TORCHConfig) Validate() error {
+	if err := c.validateBaseURL(); err != nil {
+		return err
+	}
+	if err := c.validateAuth(); err != nil {
+		return err
+	}
+	return c.validateTimings()
+}
+
+func (c *TORCHConfig) validateBaseURL() error {
 	if c.BaseURL == "" {
 		return fmt.Errorf("TORCH base_url is required")
 	}
@@ -561,7 +589,10 @@ func (c *TORCHConfig) Validate() error {
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
 		return fmt.Errorf("invalid TORCH base_url: must use http or https scheme, got '%s'", parsedURL.Scheme)
 	}
+	return nil
+}
 
+func (c *TORCHConfig) validateAuth() error {
 	// Authentication is optional - TORCH may not require it in all environments.
 	// Two shapes together are ambiguous, thus EffectiveAuth cannot resolve them.
 	if deprecated := c.DeprecatedAuthFields(); len(deprecated) > 0 && c.Auth != (AuthConfig{}) {
@@ -570,8 +601,13 @@ func (c *TORCHConfig) Validate() error {
 	}
 
 	auth := c.EffectiveAuth()
-	if err := auth.Validate("torch"); err != nil {
-		return err
+	return auth.Validate("torch")
+}
+
+func (c *TORCHConfig) validateTimings() error {
+	// An unset timeout is valid: EffectiveRequestTimeout resolves it to the default.
+	if c.RequestTimeout < 0 {
+		return fmt.Errorf("request_timeout must not be negative, got %s", c.RequestTimeout)
 	}
 
 	if c.ExtractionTimeout <= 0 {

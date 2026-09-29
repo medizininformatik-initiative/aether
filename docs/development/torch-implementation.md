@@ -342,6 +342,7 @@ Sentinel errors: `ErrExtractionTimeout`, `ErrHandleDead`, `ErrInvalidCRTDL`.
 | `file_ready_retries` | `10` | Availability checks before download; `0` disables the check |
 | `file_ready_interval` | `10s` | Delay between availability checks |
 | `download_stall_timeout` | `60s` | Inactivity window while streaming a file; `0` uses the built-in default |
+| `request_timeout` | `60s` | Time limit for one submit, status or availability request; `0` uses the built-in default |
 
 `TORCHConfig` also keeps the deprecated flat auth fields (`Username`,
 `Password`, `OAuthIssuerURI`, `OAuthClientID`, `OAuthClientSecret`) for older

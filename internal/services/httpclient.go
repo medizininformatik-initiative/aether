@@ -46,6 +46,14 @@ func (c *HTTPClient) Timeout() time.Duration {
 	return c.client.Timeout
 }
 
+// withTimeout returns a copy of this client with a different time limit for
+// one complete request. The copy shares the transport and the retry settings.
+func (c *HTTPClient) withTimeout(timeout time.Duration) *HTTPClient {
+	client := *c.client
+	client.Timeout = timeout
+	return &HTTPClient{client: &client, retryConfig: c.retryConfig, logger: c.logger}
+}
+
 // newDownloadClient returns an *http.Client tuned for streaming large response
 // bodies. It drops the whole-request deadline (Timeout: 0) so a big but
 // steadily-progressing download is never cut off mid-body, reuses this client's

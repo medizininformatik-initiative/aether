@@ -20,6 +20,7 @@ services:
     polling_interval: duration      # default: PT5S
     max_polling_interval: duration  # default: PT30S
     download_stall_timeout: duration # default: PT1M
+    request_timeout: duration       # default: PT1M
 
   dimp:
     url: string
@@ -153,6 +154,7 @@ A configuration file that uses both shapes together is an error.
 | `file_ready_retries` | int | 10 | Number of retries for file availability check |
 | `file_ready_interval` | duration | PT10S | Interval between file availability checks |
 | `download_stall_timeout` | duration | PT1M | Inactivity window while streaming a result file to disk: the download is canceled only if no bytes arrive for this long. `0` uses the built-in default. |
+| `request_timeout` | duration | PT1M | Time limit for one request to TORCH, for example the extraction submit or one status check. Downloads use `download_stall_timeout`. `0` uses the built-in default. |
 
 ### DIMP
 

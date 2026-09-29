@@ -70,7 +70,14 @@ go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
   (default `origin/main`). If no Go source file in `PKG` differs, it stops at
   once with success. Test files do not count.
 - If gremlins finds no mutants, the run fails.
+- The run fails when the test efficacy is not above `threshold.efficacy` in
+  `.gremlins.yaml`. Efficacy is killed mutants divided by killed plus lived
+  mutants. In diff mode, a run passes when no mutant on the changed lines has a
+  test result, for example after a change to a comment.
 - The report goes to `mutation-report.json`.
+
+CI runs `make mutation-diff` on each pull request that changes a Go source file
+in `internal/`. `MUTATION_REF` is the base branch of the pull request.
 
 The settings are in `.gremlins.yaml`. Integration mode is necessary, because the
 tests are in `tests/`, outside the package under test. It runs the complete test

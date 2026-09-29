@@ -9,3 +9,7 @@ unleash:
   # between runs.
   workers: 2
   timeout-coefficient: 6
+  # gremlins fails when the test efficacy is not above this value. On a pull
+  # request with fewer than 21 tested mutants, one lived mutant fails the run.
+  threshold:
+    efficacy: 95

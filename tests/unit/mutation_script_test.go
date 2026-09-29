@@ -1,9 +1,11 @@
 package unit
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -94,11 +96,24 @@ type gremlinsStub struct {
 func stubGremlins(t *testing.T) gremlinsStub {
 	t.Helper()
 
+	return stubGremlinsWithReport(t, `{"mutants_total":1}`, 0)
+}
+
+// stubGremlinsWithReport puts a fake gremlins in a new directory. The fake
+// writes the given report and stops with the given exit status.
+func stubGremlinsWithReport(t *testing.T, report string, exitStatus int) gremlinsStub {
+	t.Helper()
+
 	return writeGremlinsStub(t,
 		"out=''; prev=''\n"+
 			"for arg in \"$@\"; do [ \"$prev\" = --output ] && out=\"$arg\"; prev=\"$arg\"; done\n"+
-			"echo '{\"mutants_total\":1}' > \"$out\"\n")
+			"echo '"+report+"' > \"$out\"\n"+
+			fmt.Sprintf("exit %d\n", exitStatus))
 }
+
+// gremlinsEfficacyExit is the exit status of gremlins when the test efficacy
+// is not above the threshold.
+const gremlinsEfficacyExit = 10
 
 // stubGremlinsWithoutMutants puts a fake gremlins in a new directory. Like the
 // real gremlins, the fake writes no report when it finds no mutants.
@@ -168,6 +183,32 @@ func TestMutationDiffSkipsWhenOnlyTestsOrOtherDirectoriesChanged(t *testing.T) {
 	require.NoFileExists(t, stub.argsFile)
 }
 
+// A deleted file has no lines to mutate.
+func TestMutationDiffSkipsWhenGoFilesWereOnlyDeleted(t *testing.T) {
+	repo := newDiffRepo(t, map[string]string{"internal/README.md": "text\n"})
+	gitCmd := exec.Command("git", "rm", "-q", "internal/doc.go")
+	gitCmd.Dir = repo
+	gitCmd.Env = mutationEnv(t, "")
+	out, err := gitCmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+	gitCmd = exec.Command("git", "commit", "-q", "-m", "delete")
+	gitCmd.Dir = repo
+	gitCmd.Env = mutationEnv(t, "")
+	out, err = gitCmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+	stub := stubGremlins(t)
+
+	cmd := exec.Command(mutationScript(t), "diff")
+	cmd.Dir = repo
+	cmd.Env = mutationEnv(t, stub.binDir, "MUTATION_REF=base", "MUTATION_TMPDIR="+t.TempDir())
+
+	out, err = cmd.CombinedOutput()
+
+	require.NoError(t, err, string(out))
+	require.Contains(t, string(out), "No Go file in ./internal differs from base")
+	require.NoFileExists(t, stub.argsFile)
+}
+
 func TestMutationDiffStopsWhenTheReferenceIsUnknown(t *testing.T) {
 	repo := newDiffRepo(t, map[string]string{"internal/lib/add.go": "package lib\n"})
 	stub := stubGremlins(t)
@@ -197,7 +238,101 @@ func TestMutationDiffRunsGremlinsAgainstTheReference(t *testing.T) {
 	args := stub.read(t, stub.argsFile)
 	require.Contains(t, args, "unleash")
 	require.Contains(t, args, "--diff\nbase\n")
-	require.Contains(t, args, "\n./internal\n")
+	require.NotContains(t, args, "--exclude-files")
+}
+
+// gremlins compares the paths of the diff, which start at the module root, with
+// paths that start at the given directory. They match only for the module root.
+func TestMutationDiffGivesGremlinsTheModuleRoot(t *testing.T) {
+	repo := newDiffRepo(t, map[string]string{"internal/lib/add.go": "package lib\n"})
+	stub := stubGremlins(t)
+
+	cmd := exec.Command(mutationScript(t), "diff")
+	cmd.Dir = repo
+	cmd.Env = mutationEnv(t, stub.binDir, "MUTATION_REF=base", "MUTATION_TMPDIR="+t.TempDir())
+
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	args := stub.read(t, stub.argsFile)
+	require.True(t, strings.HasSuffix(args, "\n.\n"), args)
+}
+
+// gremlins gets the module root, so a changed file outside PKG is in the diff.
+// The script excludes it, so that PKG still selects what gremlins mutates.
+func TestMutationDiffExcludesChangedFilesOutsideThePackage(t *testing.T) {
+	repo := newDiffRepo(t, map[string]string{
+		"internal/ui/view.go": "package ui\n",
+		"internal/lib/add.go": "package lib\n",
+		"cmd/aether/main.go":  "package main\n",
+	})
+	stub := stubGremlins(t)
+
+	cmd := exec.Command(mutationScript(t), "diff")
+	cmd.Dir = repo
+	cmd.Env = mutationEnv(t, stub.binDir,
+		"MUTATION_REF=base", "PKG=./internal/ui", "MUTATION_TMPDIR="+t.TempDir())
+
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	args := stub.read(t, stub.argsFile)
+	require.Contains(t, args, "--exclude-files\n^internal/lib/add\\.go$\n")
+	require.Contains(t, args, "--exclude-files\n^cmd/aether/main\\.go$\n")
+	require.NotContains(t, args, "view")
+}
+
+// If the changed lines hold no mutant, for example a changed comment, gremlins
+// skips all mutants. The efficacy is then 0, and gremlins reports a failure.
+func TestMutationDiffPassesWhenNoMutantHasATestResult(t *testing.T) {
+	repo := newDiffRepo(t, map[string]string{"internal/lib/add.go": "package lib\n"})
+	stub := stubGremlinsWithReport(t,
+		`{"test_efficacy":0,"mutants_total":0,"mutants_killed":0,"mutants_lived":0,"mutants_not_viable":0,"mutants_not_covered":0}`,
+		gremlinsEfficacyExit)
+
+	cmd := exec.Command(mutationScript(t), "diff")
+	cmd.Dir = repo
+	cmd.Env = mutationEnv(t, stub.binDir, "MUTATION_REF=base", "MUTATION_TMPDIR="+t.TempDir())
+
+	out, err := cmd.CombinedOutput()
+
+	require.NoError(t, err, string(out))
+	require.Contains(t, string(out), "No mutant on the changed lines has a test result")
+}
+
+func TestMutationDiffFailsWhenTooManyMutantsLive(t *testing.T) {
+	repo := newDiffRepo(t, map[string]string{"internal/lib/add.go": "package lib\n"})
+	stub := stubGremlinsWithReport(t,
+		`{"test_efficacy":0,"mutants_total":12,"mutants_killed":0,"mutants_lived":12,"mutants_not_viable":0,"mutants_not_covered":0}`,
+		gremlinsEfficacyExit)
+
+	cmd := exec.Command(mutationScript(t), "diff")
+	cmd.Dir = repo
+	cmd.Env = mutationEnv(t, stub.binDir, "MUTATION_REF=base", "MUTATION_TMPDIR="+t.TempDir())
+
+	out, err := cmd.CombinedOutput()
+
+	var exitErr *exec.ExitError
+	require.ErrorAs(t, err, &exitErr, string(out))
+	require.Equal(t, gremlinsEfficacyExit, exitErr.ExitCode())
+}
+
+// Code without tests gives only mutants that no test covers.
+func TestMutationDiffFailsWhenNoTestCoversTheChangedLines(t *testing.T) {
+	repo := newDiffRepo(t, map[string]string{"internal/lib/add.go": "package lib\n"})
+	stub := stubGremlinsWithReport(t,
+		`{"test_efficacy":0,"mutants_total":0,"mutants_killed":0,"mutants_lived":0,"mutants_not_viable":0,"mutants_not_covered":3}`,
+		gremlinsEfficacyExit)
+
+	cmd := exec.Command(mutationScript(t), "diff")
+	cmd.Dir = repo
+	cmd.Env = mutationEnv(t, stub.binDir, "MUTATION_REF=base", "MUTATION_TMPDIR="+t.TempDir())
+
+	out, err := cmd.CombinedOutput()
+
+	var exitErr *exec.ExitError
+	require.ErrorAs(t, err, &exitErr, string(out))
+	require.Equal(t, gremlinsEfficacyExit, exitErr.ExitCode())
 }
 
 // gremlins takes a directory, not a Go package pattern. With "./internal/..."
@@ -314,6 +449,23 @@ func TestMutationFailsWhenGremlinsFindsNoMutants(t *testing.T) {
 	require.Error(t, err, string(out))
 	require.Contains(t, string(out), "gremlins found no mutants in ./internal")
 	require.NoFileExists(t, report)
+}
+
+// gremlins writes no report when, for example, the code does not compile.
+func TestMutationKeepsTheStatusWhenGremlinsFailsWithoutAReport(t *testing.T) {
+	repo := newDiffRepo(t, map[string]string{"internal/lib/add.go": "package lib\n"})
+	stub := writeGremlinsStub(t, "exit 3\n")
+
+	cmd := exec.Command(mutationScript(t))
+	cmd.Dir = repo
+	cmd.Env = mutationEnv(t, stub.binDir, "MUTATION_TMPDIR="+t.TempDir())
+
+	out, err := cmd.CombinedOutput()
+
+	var exitErr *exec.ExitError
+	require.ErrorAs(t, err, &exitErr, string(out))
+	require.Equal(t, 3, exitErr.ExitCode())
+	require.NotContains(t, string(out), "found no mutants")
 }
 
 // The PATH holds only the directory of git, where gremlins is not. Go installs

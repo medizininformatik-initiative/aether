@@ -41,6 +41,7 @@ services:
     extraction_timeout: PT30M         # liveness window (silence before giving up)
     polling_interval: PT5S
     download_stall_timeout: PT1M      # cancel a result download after this much inactivity
+    request_timeout: PT1M             # time limit for one request, for example the submit
 ```
 
 The `auth` block is the same for `torch`, `dimp`, and `send`. Aether still

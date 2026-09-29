@@ -114,6 +114,16 @@ func TestValidateSplitConfig_ThresholdConversion(t *testing.T) {
 	assert.LessOrEqual(t, thresholdMB, 100, "MB value should be <= 100")
 }
 
+func TestTORCHConfig_Validate_NegativeFileReadyInterval(t *testing.T) {
+	cfg := models.DefaultConfig().Services.TORCH
+	cfg.BaseURL = "http://localhost:8080"
+	cfg.FileReadyInterval = -time.Second
+
+	err := cfg.Validate()
+
+	assert.ErrorContains(t, err, "file_ready_interval must be >= 0")
+}
+
 // TestProjectConfig_Validate tests validation of ProjectConfig struct
 func TestProjectConfig_Validate(t *testing.T) {
 	tests := []struct {

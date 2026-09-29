@@ -56,6 +56,12 @@ services:
     # Default: PT1M
     # download_stall_timeout: PT1M
 
+    # Time limit for one request to TORCH, for example the submit of an
+    # extraction or one status check. aether does not send the submit again,
+    # because each submit starts a new extraction.
+    # Default: PT1M
+    # request_timeout: PT1M
+
   # DIMP Pseudonymization Service (optional)
   # Leave empty to skip pseudonymization step
   # URL must be the server root; aether appends /fhir internally.

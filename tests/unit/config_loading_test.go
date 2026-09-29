@@ -570,7 +570,7 @@ jobs_dir: "` + jobsDir + `"
 	assert.NoError(t, err, "Valid TORCH config should pass validation")
 }
 
-func TestTORCHConfig_DownloadStallTimeoutLoading(t *testing.T) {
+func TestTORCHConfig_TimeoutLoading(t *testing.T) {
 	writeConfig := func(t *testing.T, torchExtra string) *models.ProjectConfig {
 		tmpDir := t.TempDir()
 		configFile := filepath.Join(tmpDir, "config.yaml")
@@ -604,6 +604,35 @@ jobs_dir: "` + jobsDir + `"
 	t.Run("defaults when omitted", func(t *testing.T) {
 		config := writeConfig(t, "")
 		assert.Equal(t, 60*time.Second, config.Services.TORCH.DownloadStallTimeout)
+	})
+
+	t.Run("request timeout parses", func(t *testing.T) {
+		config := writeConfig(t, "    request_timeout: 2m\n")
+		assert.Equal(t, 2*time.Minute, config.Services.TORCH.RequestTimeout)
+	})
+
+	t.Run("negative request timeout fails validation", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		configFile := filepath.Join(tmpDir, "config.yaml")
+		configContent := `
+services:
+  torch:
+    base_url: "http://localhost:8080"
+    request_timeout: -1s
+pipeline:
+  enabled_steps:
+    - local_import
+jobs_dir: "` + filepath.Join(tmpDir, "jobs") + `"
+`
+		require.NoError(t, os.WriteFile(configFile, []byte(configContent), 0644))
+		_, err := services.LoadConfig(configFile)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "request_timeout")
+	})
+
+	t.Run("request timeout defaults when omitted", func(t *testing.T) {
+		config := writeConfig(t, "")
+		assert.Equal(t, 60*time.Second, config.Services.TORCH.RequestTimeout)
 	})
 }
 

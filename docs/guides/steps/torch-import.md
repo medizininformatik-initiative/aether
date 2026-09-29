@@ -47,6 +47,7 @@ services:
     file_ready_retries: 10       # default
     file_ready_interval: PT10S   # default
     download_stall_timeout: PT1M # default
+    request_timeout: PT1M        # default
 
 pipeline:
   enabled_steps:
@@ -82,3 +83,4 @@ URLs containing `/fhir/extraction/` or `/fhir/result/` are automatically recogni
 | `file_ready_retries` | int | 10 | Retries while waiting for files to appear after extraction completes |
 | `file_ready_interval` | duration | PT10S | Interval between file-availability checks |
 | `download_stall_timeout` | duration | PT1M | Inactivity window while streaming a result file; the download is canceled only if no bytes arrive for this long. `0` uses the built-in default. |
+| `request_timeout` | duration | PT1M | Time limit for one request to TORCH, for example the extraction submit. aether does not send the submit again, because each submit starts a new extraction. `0` uses the built-in default. |

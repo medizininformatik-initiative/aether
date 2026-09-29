@@ -2498,3 +2498,60 @@ func TestTORCHClient_DownloadExtractionFiles_ZeroRetryAttemptsStillDownloadsOnce
 	require.Len(t, files, 1)
 	assert.Equal(t, int32(1), atomic.LoadInt32(&calls), "zero-attempt config must still make exactly one attempt")
 }
+
+// slowSubmitServer accepts an extraction request after the given delay and
+// counts the requests it gets.
+func slowSubmitServer(t *testing.T, delay time.Duration) (*httptest.Server, *int32) {
+	t.Helper()
+	var calls int32
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		select {
+		case <-time.After(delay):
+		case <-r.Context().Done():
+			return
+		}
+		w.Header().Set("Content-Location", serverURL+"/fhir/extraction/job-slow")
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	serverURL = server.URL
+	t.Cleanup(server.Close)
+	return server, &calls
+}
+
+func TestTORCHClient_SubmitExtraction_UsesRequestTimeoutNotHTTPClientTimeout(t *testing.T) {
+	server, _ := slowSubmitServer(t, 300*time.Millisecond)
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(50*time.Millisecond, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 5}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{BaseURL: server.URL, RequestTimeout: 5 * time.Second}
+
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+	extractionURL, err := client.SubmitExtractionWithContent([]byte(`{"cohortDefinition":{}}`))
+
+	require.NoError(t, err)
+	assert.Equal(t, server.URL+"/fhir/extraction/job-slow", extractionURL)
+}
+
+// Each submit starts a new extraction. For this reason, the client does not
+// send the submit again after a timeout.
+func TestTORCHClient_SubmitExtraction_FailsAfterRequestTimeoutWithoutRetry(t *testing.T) {
+	server, calls := slowSubmitServer(t, 500*time.Millisecond)
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 5}, models.TLSConfig{}, logger)
+	torchConfig := models.TORCHConfig{BaseURL: server.URL, RequestTimeout: 50 * time.Millisecond}
+
+	client := services.NewTORCHClient(torchConfig, httpClient, logger)
+	_, err := client.SubmitExtractionWithContent([]byte(`{"cohortDefinition":{}}`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "deadline exceeded")
+	assert.Equal(t, int32(1), atomic.LoadInt32(calls))
+}
+
+func TestTORCHConfig_EffectiveRequestTimeout(t *testing.T) {
+	assert.Equal(t, 60*time.Second, (&models.TORCHConfig{}).EffectiveRequestTimeout(), "unset")
+	assert.Equal(t, 90*time.Second, (&models.TORCHConfig{RequestTimeout: 90 * time.Second}).EffectiveRequestTimeout())
+}

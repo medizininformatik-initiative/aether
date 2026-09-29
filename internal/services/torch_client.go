@@ -27,7 +27,7 @@ type TORCHClient struct {
 	httpClient *HTTPClient
 	// downloadClient streams extraction files without a whole-request deadline;
 	// stallTimeout bounds inactivity during that stream. Submit/poll/availability
-	// keep using httpClient, whose short timeout suits their small payloads.
+	// use httpClient, which has the TORCH request timeout.
 	downloadClient *http.Client
 	stallTimeout   time.Duration
 	logger         *lib.Logger
@@ -139,7 +139,7 @@ func NewTORCHClient(config models.TORCHConfig, httpClient *HTTPClient, logger *l
 
 	return &TORCHClient{
 		config:         config,
-		httpClient:     httpClient,
+		httpClient:     httpClient.withTimeout(config.EffectiveRequestTimeout()),
 		downloadClient: httpClient.newDownloadClient(stallTimeout),
 		stallTimeout:   stallTimeout,
 		logger:         logger,

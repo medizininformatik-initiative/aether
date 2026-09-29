@@ -213,25 +213,73 @@ func verifyFlatteningLookupForJob(job *models.PipelineJob, logger *lib.Logger) e
 func runPipelineStart(cmd *cobra.Command, args []string) error {
 	// Positional contract: <config> <crtdl> [input]. The third positional, if
 	// supplied, is the input source for the enabled import step.
-	cfgPath := args[0]
 	crtdlPath := args[1]
-	var inputSource string
-	if len(args) > 2 {
-		inputSource = args[2]
+	inputSource := optionalArg(args, 2)
+
+	config, err := prepareStartConfig(args[0], crtdlPath, inputSource)
+	if err != nil {
+		return err
+	}
+	if err := preflightStart(config, crtdlPath); err != nil {
+		return err
 	}
 
-	if t, err := lib.DetectInputType(crtdlPath); err != nil {
-		return fmt.Errorf("invalid CRTDL argument %q: %w", crtdlPath, err)
-	} else if t != models.InputTypeCRTDL {
-		return fmt.Errorf("second argument must be a CRTDL file, got %s: %q", t, crtdlPath)
+	logger := lib.NewLogger(startLogLevel())
+	defer func() { _ = logger.Close() }()
+
+	job, err := createStartJob(config, crtdlPath, inputSource, logger)
+	if err != nil {
+		return err
+	}
+	return runStartJob(config, job, logger)
+}
+
+func optionalArg(args []string, index int) string {
+	if len(args) > index {
+		return args[index]
+	}
+	return ""
+}
+
+func startLogLevel() lib.LogLevel {
+	if verbose {
+		return lib.LogLevelDebug
+	}
+	return lib.LogLevelInfo
+}
+
+// prepareStartConfig loads the configuration, applies the command flags and
+// checks that the arguments agree with the enabled import step.
+func prepareStartConfig(cfgPath, crtdlPath, inputSource string) (*models.ProjectConfig, error) {
+	if err := checkCRTDLArgument(crtdlPath); err != nil {
+		return nil, err
 	}
 
 	config, err := services.LoadConfig(cfgPath)
 	if err != nil {
-		return fmt.Errorf("failed to load configuration: %w", err)
+		return nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Apply --dir flag override if provided
+	applyStartFlags(config)
+
+	if err := validateStartSources(config, inputSource); err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
+func checkCRTDLArgument(crtdlPath string) error {
+	t, err := lib.DetectInputType(crtdlPath)
+	if err != nil {
+		return fmt.Errorf("invalid CRTDL argument %q: %w", crtdlPath, err)
+	}
+	if t != models.InputTypeCRTDL {
+		return fmt.Errorf("second argument must be a CRTDL file, got %s: %q", t, crtdlPath)
+	}
+	return nil
+}
+
+func applyStartFlags(config *models.ProjectConfig) {
 	if localImportDir != "" {
 		config.Services.LocalImport.Dir = localImportDir
 	}
@@ -241,13 +289,11 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	if anonymizationConfig != "" {
 		config.Services.DIMP.AnonymizationConfig = anonymizationConfig
 	}
+}
 
-	// Validate local_import directory is configured when local_import step is enabled
-	if config.Pipeline.IsStepEnabled(models.StepLocalImport) && !config.Pipeline.IsStepEnabled(models.StepTorchImport) {
-		hasSourceDir := config.Services.LocalImport.Dir != "" || inputSource != ""
-		if !hasSourceDir {
-			return fmt.Errorf("local_import step enabled but no directory specified\n\nProvide directory via:\n  1. Positional: aether pipeline start <config> <crtdl> /path/to/data\n  2. --dir flag: aether pipeline start <config> <crtdl> --dir /path/to/data\n  3. Config file: services.local_import.dir in aether.yaml")
-		}
+func validateStartSources(config *models.ProjectConfig, inputSource string) error {
+	if err := validateLocalImportSource(config, inputSource); err != nil {
+		return err
 	}
 
 	// Gate: http_import + CRTDL requires explicit acknowledgement that HTTP
@@ -255,13 +301,26 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	if config.Pipeline.IsStepEnabled(models.StepHttpImport) && !allowHTTPCRTDL {
 		return fmt.Errorf("combining http_import with a CRTDL requires --allow-http-crtdl\n\nThe HTTP endpoint's data may not match the CRTDL query.\nPass --allow-http-crtdl to acknowledge and proceed")
 	}
+	return nil
+}
 
+func validateLocalImportSource(config *models.ProjectConfig, inputSource string) error {
+	if !config.Pipeline.IsStepEnabled(models.StepLocalImport) || config.Pipeline.IsStepEnabled(models.StepTorchImport) {
+		return nil
+	}
+	if config.Services.LocalImport.Dir != "" || inputSource != "" {
+		return nil
+	}
+	return fmt.Errorf("local_import step enabled but no directory specified\n\nProvide directory via:\n  1. Positional: aether pipeline start <config> <crtdl> /path/to/data\n  2. --dir flag: aether pipeline start <config> <crtdl> --dir /path/to/data\n  3. Config file: services.local_import.dir in aether.yaml")
+}
+
+// preflightStart runs the checks that stop a defective start before the job
+// directory exists and before hours of extraction.
+func preflightStart(config *models.ProjectConfig, crtdlPath string) error {
 	if err := verifyFlatteningLookup(config, lib.DefaultLogger); err != nil {
 		return err
 	}
 
-	// Verify the CRTDL file before the first step starts, so a defective file
-	// stops the job before hours of extraction.
 	if err := services.VerifyCRTDLFile(crtdlPath); err != nil {
 		return fmt.Errorf("CRTDL check failed: %w\n\nCorrect the CRTDL file before you start the pipeline", err)
 	}
@@ -272,29 +331,25 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("service connectivity check failed: %w\n\nPlease ensure all required services are running and accessible", err)
 	}
 	fmt.Println("✓ All required services are reachable")
+	return nil
+}
 
-	logLevel := lib.LogLevelInfo
-	if verbose {
-		logLevel = lib.LogLevelDebug
-	}
-	logger := lib.NewLogger(logLevel)
-	defer func() { _ = logger.Close() }()
-
+func createStartJob(config *models.ProjectConfig, crtdlPath, inputSource string, logger *lib.Logger) (*models.PipelineJob, error) {
 	// Attach job.log before CreateJob so its diagnostics are captured too. The
-	// caller owns this side effect; Close runs via the defer above.
+	// caller owns this side effect and closes the logger.
 	jobID := models.GenerateJobID()
 	jobDir := services.GetJobDir(config.JobsDir, jobID)
 	if err := os.MkdirAll(jobDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create job directory: %w", err)
+		return nil, fmt.Errorf("failed to create job directory: %w", err)
 	}
 	if err := logger.AttachJobLogFile(services.GetJobLogFilePath(config.JobsDir, jobID)); err != nil {
-		return fmt.Errorf("failed to attach job log file: %w", err)
+		return nil, fmt.Errorf("failed to attach job log file: %w", err)
 	}
 
 	logger.Info("Creating new pipeline job", "crtdl", crtdlPath, "input", inputSource, "localImportDir", config.Services.LocalImport.Dir)
 	job, err := pipeline.CreateJob(jobID, inputSource, crtdlPath, *config, logger)
 	if err != nil {
-		return fmt.Errorf("failed to create job: %w", err)
+		return nil, fmt.Errorf("failed to create job: %w", err)
 	}
 
 	lib.LogJobCreated(logger, job.JobID, inputSource)
@@ -303,7 +358,12 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Input: %s\n", inputSource)
 	fmt.Printf("  Type: %s\n", job.InputType)
 	fmt.Printf("\n")
+	return job, nil
+}
 
+// runStartJob holds the job lock and runs the job until it completes, pauses
+// or fails.
+func runStartJob(config *models.ProjectConfig, job *models.PipelineJob, logger *lib.Logger) error {
 	lock, err := services.AcquireJobLock(config.JobsDir, job.JobID, logger)
 	if err != nil {
 		return fmt.Errorf("cannot start pipeline: %w\n\nAnother process may be working on this job", err)

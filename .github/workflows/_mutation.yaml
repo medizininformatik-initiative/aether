@@ -1,0 +1,86 @@
+name: Mutation Testing
+
+on:
+  workflow_call:
+    inputs:
+      base_ref:
+        description: 'Branch that the pull request merges into'
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # gremlins mutates no test file. The script makes the same check, but only
+      # after the installation of Go and gremlins.
+      - name: Check for Go source changes
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: filter
+        with:
+          predicate-quantifier: 'every'
+          filters: |
+            code:
+              - 'internal/**/*.go'
+              - '!**/*_test.go'
+
+  mutation:
+    name: Mutation Testing
+    runs-on: ubuntu-26.04
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.code == 'true'
+    # gremlins runs the full test suite for each mutant on a changed line.
+    timeout-minutes: 60
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      # The diff needs the merge base of the pull request and the base branch.
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Install gremlins
+        run: |
+          version="$(sed -n 's/^GREMLINS_VERSION="\(.*\)"$/\1/p' scripts/mutation.sh)"
+          go install "github.com/go-gremlins/gremlins/cmd/gremlins@${version}"
+
+      # Each gremlins worker copies the full module. runner.temp is on the disk
+      # of the runner, not on a tmpfs.
+      - name: Run mutation testing on the changed lines
+        env:
+          MUTATION_REF: origin/${{ inputs.base_ref }}
+          MUTATION_TMPDIR: ${{ runner.temp }}/mutants-tmp
+        run: make mutation-diff
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mutation-report-${{ github.run_id }}
+          path: mutation-report.json
+          retention-days: 30
+          if-no-files-found: ignore

@@ -78,6 +78,14 @@ jobs:
       check_changes: ${{ !startsWith(github.ref, 'refs/tags/') && github.event_name != 'merge_group' }}
     secrets: inherit
 
+  # Pull requests only: the diff needs the base branch of the pull request.
+  mutation:
+    name: Mutation Testing
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: ./.github/workflows/_mutation.yaml
+    with:
+      base_ref: ${{ github.base_ref }}
+
   release:
     name: Release
     needs: [tests]

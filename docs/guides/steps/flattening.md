@@ -48,6 +48,28 @@ aether does not send a request again when the flattener does not answer within
 request adds load. If a request times out, decrease `batch_size_mb` or increase
 `timeout`.
 
+## Flattener Health Check
+
+The flattener has no health route. aether sends `GET <service_url>/fhir/metadata`
+to check that the flattener answers. The check runs at these times:
+
+- `aether pipeline start` checks the flattener before the first step runs, when
+  the flattening step is enabled.
+- The flattening step checks the flattener again before it sends the first
+  request.
+- While a request waits for the flattener, aether checks the flattener every
+  30 seconds. A check that does not pass within 10 seconds counts as failed.
+  After three failed checks in sequence, aether cancels the request and the step
+  fails with the error `flattener stopped answering`. A check that passes resets
+  the count, so a busy flattener that answers is not cancelled before `timeout`.
+
+The check at start and the check before the first request also require that
+the response is a CapabilityStatement that declares the `$run` operation. A
+service that answers with another response is not a flattener, and the check
+fails without a retry. The checks during a request look only at the HTTP status.
+
+These values are fixed and have no configuration key.
+
 ## Lookup File Validation
 
 When the flattening step is enabled, `aether pipeline start` validates the

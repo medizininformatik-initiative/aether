@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -229,29 +230,17 @@ func TestImportStep_TorchExtraction_UsesFakeExtractor(t *testing.T) {
 	assert.Equal(t, 1, importStep.FilesProcessed)
 }
 
-// TestFlatteningStep_UsesFakeFlattener drives the flattening step through a fake
-// Flattener and asserts the step's orchestration: the CRTDL group is compiled
-// into a ViewDefinition, the provenance-linked resource is routed and batched to
-// the flattener, and the flattener's rows are written to disk as CSV. The fake
-// stands in for the HTTP flattener service.
-func TestFlatteningStep_UsesFakeFlattener(t *testing.T) {
-	var (
-		gotViewDef models.ViewDefinition
-		gotCount   int
-	)
-	fake := &servicestest.MockFlattener{
-		FlattenFunc: func(vd models.ViewDefinition, resources []map[string]any) ([][]string, error) {
-			gotViewDef = vd
-			gotCount = len(resources)
-			return [][]string{{"flattened-patient"}}, nil
-		},
-	}
+// newFlatteningStepFixture installs fake as the flattener of the flattening
+// step and writes one provenance-linked Patient into the import directory of a
+// job. It returns the job and its directory.
+func newFlatteningStepFixture(t *testing.T, fake services.Flattener) (*models.PipelineJob, string) {
+	t.Helper()
 	pipeline.SetFlattenerFactoryForTesting(
 		func(models.FlatteningConfig, models.RetryConfig, *http.Transport, *lib.Logger) services.Flattener {
 			return fake
 		},
 	)
-	defer pipeline.ResetFlattenerFactory()
+	t.Cleanup(pipeline.ResetFlattenerFactory)
 
 	tempDir := t.TempDir()
 	jobDir := filepath.Join(tempDir, "jobs", "flatten-seam-job")
@@ -275,7 +264,27 @@ func TestFlatteningStep_UsesFakeFlattener(t *testing.T) {
 
 	// A dummy (well-formed but unused) service URL: config validation runs, but
 	// the fake replaces the HTTP round-trip.
-	job := createFlatteningTestJob("http://flattener.invalid", lookupPath, crtdlPath)
+	return createFlatteningTestJob("http://flattener.invalid", lookupPath, crtdlPath), jobDir
+}
+
+// TestFlatteningStep_UsesFakeFlattener drives the flattening step through a fake
+// Flattener and asserts the step's orchestration: the CRTDL group is compiled
+// into a ViewDefinition, the provenance-linked resource is routed and batched to
+// the flattener, and the flattener's rows are written to disk as CSV. The fake
+// stands in for the HTTP flattener service.
+func TestFlatteningStep_UsesFakeFlattener(t *testing.T) {
+	var (
+		gotViewDef models.ViewDefinition
+		gotCount   int
+	)
+	fake := &servicestest.MockFlattener{
+		FlattenFunc: func(vd models.ViewDefinition, resources []map[string]any) ([][]string, error) {
+			gotViewDef = vd
+			gotCount = len(resources)
+			return [][]string{{"flattened-patient"}}, nil
+		},
+	}
+	job, jobDir := newFlatteningStepFixture(t, fake)
 
 	require.NoError(t, runPipelineStep(models.StepFlattening, job, jobDir, createFlatteningTestLogger()))
 
@@ -292,6 +301,36 @@ func TestFlatteningStep_UsesFakeFlattener(t *testing.T) {
 	content, err := os.ReadFile(csvFiles[0])
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "flattened-patient")
+}
+
+// The step checks the flattener before it sends any request, so a stopped
+// flattener fails the step at once.
+func TestFlatteningStep_FailsWhenFlattenerHealthCheckFails(t *testing.T) {
+	fake := &servicestest.MockFlattener{HealthCheckErr: errors.New("flattener does not answer")}
+	job, jobDir := newFlatteningStepFixture(t, fake)
+
+	err := runPipelineStep(models.StepFlattening, job, jobDir, createFlatteningTestLogger())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "flattener check failed")
+	assert.Contains(t, err.Error(), "flattener does not answer")
+	assert.Equal(t, 0, fake.Calls)
+	assert.Equal(t, 1, fake.HealthCheckCalls)
+}
+
+// The health check runs before the step scans the input, because the scan can
+// take long. An empty input directory would fail the scan, so the health check
+// error shows which check ran first.
+func TestFlatteningStep_ChecksFlattenerBeforeScanningInput(t *testing.T) {
+	fake := &servicestest.MockFlattener{HealthCheckErr: errors.New("flattener does not answer")}
+	job, jobDir := newFlatteningStepFixture(t, fake)
+	require.NoError(t, os.Remove(filepath.Join(jobDir, "import", "patients.ndjson")))
+
+	err := runPipelineStep(models.StepFlattening, job, jobDir, createFlatteningTestLogger())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "flattener check failed")
+	assert.Equal(t, 0, fake.Calls)
 }
 
 // The zero value of MockFlattener must be usable: a step under test that only

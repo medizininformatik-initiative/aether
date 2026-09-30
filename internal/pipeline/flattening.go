@@ -52,31 +52,9 @@ func (flatteningStep) Run(ctx *StepContext) (StepResult, error) {
 	logger := ctx.Logger
 	stepName := models.StepFlattening
 
-	// Validate flattening configuration
-	if err := job.Config.Services.Flattening.Validate(); err != nil {
+	crtdl, lookupTables, err := loadFlatteningDefinitions(job, logger)
+	if err != nil {
 		return StepResult{}, err
-	}
-
-	// CRTDL file is required for flattening. It may come from the positional
-	// arg (for torch) or from --crtdl (for http_import/local_import).
-	if job.CRTDLPath == "" {
-		return StepResult{}, fmt.Errorf("flattening step requires a CRTDL file: pass one as the positional input or via --crtdl")
-	}
-
-	// Load CRTDL document
-	crtdlPath := job.CRTDLPath
-	logger.Debug("Loading CRTDL file", "path", crtdlPath)
-	crtdl, err := services.ParseCRTDL(crtdlPath)
-	if err != nil {
-		return StepResult{}, fmt.Errorf("failed to parse CRTDL file: %w", err)
-	}
-
-	// Load lookup tables (LoadLookupTables normalizes and validates them)
-	lookupPath := job.Config.Services.Flattening.LookupPath
-	logger.Debug("Loading lookup tables", "path", lookupPath)
-	lookupTables, err := services.LoadLookupTables(lookupPath)
-	if err != nil {
-		return StepResult{}, fmt.Errorf("failed to load lookup tables: %w", err)
 	}
 
 	inputDir := ctx.Layout.InputDir(stepName)
@@ -87,35 +65,19 @@ func (flatteningStep) Run(ctx *StepContext) (StepResult, error) {
 		return StepResult{}, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	// Find FHIR NDJSON files in input directory
-	files, err := findFHIRFiles(inputDir)
-	if err != nil {
-		return StepResult{}, fmt.Errorf("failed to list input files: %w", err)
-	}
-
-	if len(files) == 0 {
-		return StepResult{}, fmt.Errorf("no FHIR NDJSON files found in %s", inputDir)
-	}
-
-	logger.Info("Streaming FHIR resources from input files",
-		"input_dir", inputDir,
-		"file_count", len(files),
-		"job_id", job.JobID)
-
-	// Pass 1: scan input files for provenance index
-	provenanceIndex, err := scanProvenanceIndex(files)
-	if err != nil {
-		return StepResult{}, fmt.Errorf("failed to load resources: %w", err)
-	}
-
-	logger.Info("Built provenance index",
-		"provenance_entries", len(provenanceIndex),
-		"provenance_source", inputDir,
-		"job_id", job.JobID)
-
-	// Create clients
+	// The provenance scan can take long, so a flattener that does not answer
+	// must fail the step first.
 	flattenerTransport, _ := services.BuildTLSTransport(job.Config.TLS, logger)
 	flattenerClient := flattenerFactory(job.Config.Services.Flattening, job.Config.Retry, flattenerTransport, logger)
+	if err := flattenerClient.HealthCheck(); err != nil {
+		return StepResult{}, fmt.Errorf("flattener check failed: %w", err)
+	}
+
+	files, provenanceIndex, err := scanFlatteningInput(inputDir, job.JobID, logger)
+	if err != nil {
+		return StepResult{}, err
+	}
+
 	viewDefBuilder := services.NewViewDefinitionBuilder(lookupTables)
 	csvWriter := services.NewCSVWriter(outputDir)
 	viewDefWriter := services.NewViewDefinitionWriter(viewDefDir)
@@ -129,46 +91,17 @@ func (flatteningStep) Run(ctx *StepContext) (StepResult, error) {
 	attributeGroups := services.GetAttributeGroups(crtdl)
 	fmt.Printf("Processing %d attribute group(s)...\n\n", len(attributeGroups))
 
-	// Pre-compute: build groupIDToIndex mapping and ViewDefinitions
-	groupIDToIndex := make(map[string]int)
-	viewDefs := make([]*models.ViewDefinition, len(attributeGroups))
-	headers := make([][]string, len(attributeGroups))
-	filenames := make([]string, len(attributeGroups))
-
-	for i, group := range attributeGroups {
-		viewDef, err := viewDefBuilder.BuildViewDefinition(group)
-		if err != nil {
-			logger.Warn("Failed to build ViewDefinition for group, skipping",
-				"group_name", group.Name,
-				"error", err)
-			fmt.Printf("  ⚠ %s (skipped: %v)\n", group.Name, err)
-			continue
-		}
-
-		viewDefs[i] = viewDef
-		groupIDToIndex[group.ID] = i
-		headers[i] = services.ExtractColumnNames(*viewDef)
-		filenames[i] = services.BuildCSVFilename(group.Name)
-
-		// Save ViewDefinition to disk
-		viewDefFilename := services.BuildViewDefinitionFilename(group.Name)
-		if err := viewDefWriter.WriteViewDefinition(viewDefFilename, *viewDef); err != nil {
-			logger.Warn("Failed to save ViewDefinition, continuing",
-				"group_name", group.Name,
-				"filename", viewDefFilename,
-				"error", err)
-		}
-	}
+	views := buildGroupViews(attributeGroups, viewDefBuilder, viewDefWriter, logger)
 
 	// Pass 2: stream resources and flatten in batches using provenance routing
 	totals, err := streamAndFlattenResources(
 		files,
 		attributeGroups,
 		provenanceIndex,
-		groupIDToIndex,
-		viewDefs,
-		headers,
-		filenames,
+		views.groupIDToIndex,
+		views.viewDefs,
+		views.headers,
+		views.filenames,
 		flattenerClient,
 		csvWriter,
 		logger,
@@ -178,25 +111,137 @@ func (flatteningStep) Run(ctx *StepContext) (StepResult, error) {
 		return StepResult{}, annotateWithPartialFiles(err, csvWriter)
 	}
 
-	// Print per-group progress
-	totalFilesWritten := 0
-	for i, group := range attributeGroups {
-		if viewDefs[i] == nil {
-			continue
-		}
-		if totals[i] == 0 {
-			fmt.Printf("  ⊙ %s (no matching resources)\n", group.Name)
-			continue
-		}
-		totalFilesWritten++
-		fmt.Printf("  ✓ %s (%d resources → %s)\n", group.Name, totals[i], filenames[i])
-	}
+	totalFilesWritten := printGroupTotals(attributeGroups, views, totals)
 
 	logger.Debug("Flattening step completed",
 		"files_written", totalFilesWritten,
 		"job_id", job.JobID)
 
 	return StepResult{FilesProcessed: totalFilesWritten}, nil
+}
+
+// loadFlatteningDefinitions validates the flattening configuration and loads
+// the CRTDL and the lookup tables.
+func loadFlatteningDefinitions(job *models.PipelineJob, logger *lib.Logger) (*models.CRTDLDocument, []models.LookupTable, error) {
+	if err := job.Config.Services.Flattening.Validate(); err != nil {
+		return nil, nil, err
+	}
+
+	// The CRTDL comes from the positional arg (for torch) or from --crtdl
+	// (for http_import/local_import).
+	if job.CRTDLPath == "" {
+		return nil, nil, fmt.Errorf("flattening step requires a CRTDL file: pass one as the positional input or via --crtdl")
+	}
+
+	logger.Debug("Loading CRTDL file", "path", job.CRTDLPath)
+	crtdl, err := services.ParseCRTDL(job.CRTDLPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse CRTDL file: %w", err)
+	}
+
+	lookupPath := job.Config.Services.Flattening.LookupPath
+	logger.Debug("Loading lookup tables", "path", lookupPath)
+	lookupTables, err := services.LoadLookupTables(lookupPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load lookup tables: %w", err)
+	}
+
+	return crtdl, lookupTables, nil
+}
+
+// scanFlatteningInput finds the FHIR NDJSON files in inputDir and builds the
+// provenance index from them (pass 1).
+func scanFlatteningInput(inputDir, jobID string, logger *lib.Logger) ([]string, models.ProvenanceIndex, error) {
+	files, err := findFHIRFiles(inputDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to list input files: %w", err)
+	}
+
+	if len(files) == 0 {
+		return nil, nil, fmt.Errorf("no FHIR NDJSON files found in %s", inputDir)
+	}
+
+	logger.Info("Streaming FHIR resources from input files",
+		"input_dir", inputDir,
+		"file_count", len(files),
+		"job_id", jobID)
+
+	provenanceIndex, err := scanProvenanceIndex(files)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load resources: %w", err)
+	}
+
+	logger.Info("Built provenance index",
+		"provenance_entries", len(provenanceIndex),
+		"provenance_source", inputDir,
+		"job_id", jobID)
+
+	return files, provenanceIndex, nil
+}
+
+// groupViews holds the ViewDefinition, CSV header, and CSV filename of each
+// attribute group, by group index. A group without a ViewDefinition has a nil
+// entry and no groupIDToIndex entry.
+type groupViews struct {
+	groupIDToIndex map[string]int
+	viewDefs       []*models.ViewDefinition
+	headers        [][]string
+	filenames      []string
+}
+
+// buildGroupViews builds the ViewDefinition of each attribute group and saves
+// it to disk. It skips a group whose ViewDefinition fails to build.
+func buildGroupViews(groups []models.AttributeGroup, builder *services.ViewDefinitionBuilder, writer *services.ViewDefinitionWriter, logger *lib.Logger) groupViews {
+	views := groupViews{
+		groupIDToIndex: make(map[string]int),
+		viewDefs:       make([]*models.ViewDefinition, len(groups)),
+		headers:        make([][]string, len(groups)),
+		filenames:      make([]string, len(groups)),
+	}
+
+	for i, group := range groups {
+		viewDef, err := builder.BuildViewDefinition(group)
+		if err != nil {
+			logger.Warn("Failed to build ViewDefinition for group, skipping",
+				"group_name", group.Name,
+				"error", err)
+			fmt.Printf("  ⚠ %s (skipped: %v)\n", group.Name, err)
+			continue
+		}
+
+		views.viewDefs[i] = viewDef
+		views.groupIDToIndex[group.ID] = i
+		views.headers[i] = services.ExtractColumnNames(*viewDef)
+		views.filenames[i] = services.BuildCSVFilename(group.Name)
+
+		viewDefFilename := services.BuildViewDefinitionFilename(group.Name)
+		if err := writer.WriteViewDefinition(viewDefFilename, *viewDef); err != nil {
+			logger.Warn("Failed to save ViewDefinition, continuing",
+				"group_name", group.Name,
+				"filename", viewDefFilename,
+				"error", err)
+		}
+	}
+
+	return views
+}
+
+// printGroupTotals prints the result of each attribute group and returns the
+// number of CSV files written.
+func printGroupTotals(groups []models.AttributeGroup, views groupViews, totals []int) int {
+	filesWritten := 0
+	for i, group := range groups {
+		if views.viewDefs[i] == nil {
+			continue
+		}
+		if totals[i] == 0 {
+			fmt.Printf("  ⊙ %s (no matching resources)\n", group.Name)
+			continue
+		}
+		filesWritten++
+		fmt.Printf("  ✓ %s (%d resources → %s)\n", group.Name, totals[i], views.filenames[i])
+	}
+	return filesWritten
 }
 
 // scanProvenanceIndex performs a lightweight first pass over all input files,

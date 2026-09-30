@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +17,17 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/pipeline"
 	"github.com/medizininformatik-initiative/aether/internal/services"
+	"github.com/medizininformatik-initiative/aether/internal/services/servicestest"
 )
+
+// healthyFlattenerURL returns the URL of a flattener that only answers its
+// metadata route.
+func healthyFlattenerURL(t *testing.T) string {
+	t.Helper()
+	server := servicestest.NewFlattenerServer(http.NotFoundHandler())
+	t.Cleanup(server.Close)
+	return server.URL
+}
 
 // Helper function to create a test logger
 func createFlatteningTestLogger() *lib.Logger {
@@ -272,7 +281,7 @@ func TestExecuteFlatteningStep_AcceptsHTTPInputWithCRTDLPath(t *testing.T) {
 	bundle := makeBundle("b1", patient, prov)
 	writeTestNDJSON(t, filepath.Join(inputDir, "test.ndjson"), []map[string]any{bundle})
 
-	job := createFlatteningTestJob("http://localhost:8080", lookupPath, crtdlPath)
+	job := createFlatteningTestJob(healthyFlattenerURL(t), lookupPath, crtdlPath)
 	job.InputSource = "https://example.com/data.ndjson"
 	job.InputType = models.InputTypeHTTP
 	// CRTDLPath is set by createFlatteningTestJob via crtdlPath arg
@@ -486,7 +495,7 @@ func TestExecuteFlatteningStep_ViewDefinitionBuildError(t *testing.T) {
 	ndjsonContent := `{"resourceType":"Patient","id":"1","meta":{"profile":["https://example.com/UnknownProfile"]}}`
 	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "test.ndjson"), []byte(ndjsonContent), 0644))
 
-	job := createFlatteningTestJob("http://localhost:8080", lookupPath, crtdlPath)
+	job := createFlatteningTestJob(healthyFlattenerURL(t), lookupPath, crtdlPath)
 
 	logger := createFlatteningTestLogger()
 
@@ -519,7 +528,7 @@ func TestExecuteFlatteningStep_NoMatchingResources(t *testing.T) {
 	bundle := makeBundle("b1", patient, prov)
 	writeTestNDJSON(t, filepath.Join(inputDir, "test.ndjson"), []map[string]any{bundle})
 
-	job := createFlatteningTestJob("http://localhost:8080", lookupPath, crtdlPath)
+	job := createFlatteningTestJob(healthyFlattenerURL(t), lookupPath, crtdlPath)
 
 	logger := createFlatteningTestLogger()
 
@@ -551,7 +560,7 @@ func TestExecuteFlatteningStep_ScanProvenanceError(t *testing.T) {
 	fakeFile := filepath.Join(inputDir, "fake.ndjson")
 	require.NoError(t, os.MkdirAll(fakeFile, 0755)) // Create directory instead of file
 
-	job := createFlatteningTestJob("http://localhost:8080", lookupPath, crtdlPath)
+	job := createFlatteningTestJob(healthyFlattenerURL(t), lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
 
 	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
@@ -598,7 +607,7 @@ func TestExecuteFlatteningStep_ViewDefinitionWriteError(t *testing.T) {
 		t.Skip("Cannot test permission errors as root")
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
@@ -659,7 +668,7 @@ func TestExecuteFlatteningStep_CSVWriteError(t *testing.T) {
 		t.Skip("Cannot test permission errors as root")
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
@@ -712,7 +721,7 @@ func TestExecuteFlatteningStep_CSVWriteError(t *testing.T) {
 func TestExecuteFlatteningStep_MultipleBatches(t *testing.T) {
 	// Track how many times flattener is called
 	callCount := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			callCount++
 			w.Header().Set("Content-Type", "application/x-ndjson")
@@ -787,7 +796,7 @@ func TestExecuteFlatteningStep_MultipleBatches(t *testing.T) {
 // that the step error names the partial file
 func TestExecuteFlatteningStep_FailedBatchLeavesPartialFile(t *testing.T) {
 	callCount := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/fhir/ViewDefinition/$run" {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -839,7 +848,7 @@ func TestExecuteFlatteningStep_FailedBatchLeavesPartialFile(t *testing.T) {
 func TestExecuteFlatteningStep_RerunAfterFailureDoesNotDoubleRows(t *testing.T) {
 	callCount := 0
 	failSecondCall := true
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/fhir/ViewDefinition/$run" {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -912,7 +921,7 @@ func TestExecuteFlatteningStep_RerunAfterFailureDoesNotDoubleRows(t *testing.T) 
 // and the step error names it
 func TestExecuteFlatteningStep_SiblingGroupFailureKeepsPartial(t *testing.T) {
 	callCount := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/fhir/ViewDefinition/$run" {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -1008,7 +1017,7 @@ func TestExecuteFlatteningStep_SiblingGroupFailureKeepsPartial(t *testing.T) {
 // TestExecuteFlatteningStep_RemovesStalePartialFile verifies that a rerun
 // removes a stale .partial file, also when the group gets no new data
 func TestExecuteFlatteningStep_RemovesStalePartialFile(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -1084,7 +1093,7 @@ func TestExecuteFlatteningStep_RemoveStalePartialError(t *testing.T) {
 	require.NoError(t, os.Chmod(csvDir, 0555))
 	t.Cleanup(func() { _ = os.Chmod(csvDir, 0755) })
 
-	job := createFlatteningTestJob("http://localhost:8080", lookupPath, crtdlPath)
+	job := createFlatteningTestJob(healthyFlattenerURL(t), lookupPath, crtdlPath)
 	logger := createFlatteningTestLogger()
 
 	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
@@ -1100,7 +1109,7 @@ func TestExecuteFlatteningStep_RemoveStalePartialError(t *testing.T) {
 // TestExecuteFlatteningStep_FinalizeError verifies that a failed rename keeps
 // the output as .partial and names it, instead of reporting a complete export
 func TestExecuteFlatteningStep_FinalizeError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/fhir/ViewDefinition/$run" {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -1152,7 +1161,7 @@ func TestExecuteFlatteningStep_FinalizeError(t *testing.T) {
 
 // TestExecuteFlatteningStep_FlattenerError verifies fail-fast on flattener error
 func TestExecuteFlatteningStep_FlattenerError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte("internal server error"))
@@ -1196,7 +1205,7 @@ func TestExecuteFlatteningStep_FlattenerError(t *testing.T) {
 // TestExecuteFlatteningStep_BundleExtraction verifies Bundle entries are correctly
 // routed to groups during streaming
 func TestExecuteFlatteningStep_BundleExtraction(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
@@ -1251,7 +1260,7 @@ func TestExecuteFlatteningStep_BundleExtraction(t *testing.T) {
 // empty lines, invalid JSON, resources without meta, non-string profiles, and Bundle entry edge cases
 func TestExecuteFlatteningStep_StreamingEdgeCases(t *testing.T) {
 	flattenCalls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			flattenCalls++
 			w.Header().Set("Content-Type", "application/x-ndjson")
@@ -1316,7 +1325,7 @@ func TestExecuteFlatteningStep_StreamingEdgeCases(t *testing.T) {
 // works for both Bundle entries and non-Bundle resources
 func TestExecuteFlatteningStep_BatchFlushOnThreshold(t *testing.T) {
 	callCount := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			callCount++
 			w.Header().Set("Content-Type", "application/x-ndjson")
@@ -1403,7 +1412,7 @@ func TestExecuteFlatteningStep_BatchFlushOnThreshold(t *testing.T) {
 // TestExecuteFlatteningStep_NilViewDefSkipped verifies that resources matching a group
 // whose ViewDefinition build failed (nil viewDef) are silently skipped
 func TestExecuteFlatteningStep_NilViewDefSkipped(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Should never be called — the only group has no valid ViewDefinition
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -1447,7 +1456,7 @@ func TestExecuteFlatteningStep_NilViewDefSkipped(t *testing.T) {
 // TestExecuteFlatteningStep_BundleEntryUnmatchedProfile verifies that bundle entries
 // whose profile doesn't match any group are silently skipped
 func TestExecuteFlatteningStep_BundleEntryUnmatchedProfile(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
@@ -1486,7 +1495,7 @@ func TestExecuteFlatteningStep_BundleEntryUnmatchedProfile(t *testing.T) {
 // flattener returns an error during a mid-stream batch flush (covers both bundle
 // and non-bundle flush error paths with reader cleanup)
 func TestExecuteFlatteningStep_FlattenerErrorDuringFlush(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("service error"))
 	}))
@@ -1560,7 +1569,7 @@ func TestExecuteFlatteningStep_OpenFileError(t *testing.T) {
 		t.Skip("Cannot test permission errors as root")
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -1596,7 +1605,7 @@ func TestExecuteFlatteningStep_OpenFileError(t *testing.T) {
 // TestExecuteFlatteningStep_ProvenanceInPseudonymizedDir verifies that provenance is scanned
 // from the input directory (pseudonymized/) when DIMP preserves Provenance.entity.
 func TestExecuteFlatteningStep_ProvenanceInPseudonymizedDir(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
@@ -1665,7 +1674,7 @@ func TestExecuteFlatteningStep_ProvenanceInPseudonymizedDir(t *testing.T) {
 }
 
 func TestExecuteFlatteningStep_UnknownProfile(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Should never be called if all resources have unknown profiles
 		w.WriteHeader(http.StatusInternalServerError)
 	}))

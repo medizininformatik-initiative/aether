@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +16,24 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
+
+func TestHTTPClient_Do_RetriesOnTimeout(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		select {
+		case <-r.Context().Done():
+		case <-time.After(time.Second):
+		}
+	}))
+	defer server.Close()
+
+	httpClient := services.NewHTTPClient(50*time.Millisecond, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 1, MaxBackoffMs: 1}, models.TLSConfig{}, lib.DefaultLogger)
+
+	_, err := httpClient.Get(server.URL)
+	require.Error(t, err)
+	assert.Equal(t, int32(3), attempts.Load())
+}
 
 // TestHTTPClient_Put_Success tests the Put method with a successful response
 func TestHTTPClient_Put_Success(t *testing.T) {

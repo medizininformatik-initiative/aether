@@ -36,6 +36,17 @@ pipeline:
 | `formats` | []string | ["csv"] | Output formats |
 | `timeout` | duration | 30m | Request timeout |
 | `batch_size_mb` | int | 500 | Total memory budget in MB, divided across groups (0 = default) |
+| `max_attempts` | int | 0 | Attempts per flattener request, 0-10. `0` uses `retry.max_attempts` |
+
+## Retries and Timeouts
+
+aether sends a flattener request again after a connection error or an HTTP 5xx
+response. `max_attempts` sets the number of attempts.
+
+aether does not send a request again when the flattener does not answer within
+`timeout`. The flattener can continue to work on the request, and a second
+request adds load. If a request times out, decrease `batch_size_mb` or increase
+`timeout`.
 
 ## Lookup File Validation
 

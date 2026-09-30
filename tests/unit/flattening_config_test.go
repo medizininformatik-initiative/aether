@@ -129,6 +129,26 @@ func TestFlatteningConfigValidation(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "timeout must be > 0")
 	})
+
+	t.Run("max_attempts", func(t *testing.T) {
+		tests := map[int]bool{-1: false, 0: true, 1: true, 10: true, 11: false}
+		for maxAttempts, valid := range tests {
+			config := models.FlatteningConfig{
+				ServiceURL:  "http://localhost:8080",
+				LookupPath:  "/path/to/lookup.json",
+				Formats:     []string{"csv"},
+				Timeout:     time.Minute,
+				MaxAttempts: maxAttempts,
+			}
+			err := config.Validate()
+			if valid {
+				assert.NoError(t, err, "max_attempts %d", maxAttempts)
+				continue
+			}
+			require.Error(t, err, "max_attempts %d", maxAttempts)
+			assert.Contains(t, err.Error(), "flattening max_attempts must be between 0 and 10")
+		}
+	})
 }
 
 func TestDefaultFlatteningConfig(t *testing.T) {

@@ -160,6 +160,13 @@ services:
     # Default: 500 MB (0 means "use default")
     batch_size_mb: 500
 
+    # Number of attempts for one flattener request after a connection error or
+    # an HTTP 5xx response. Range: 0-10. 0 uses retry.max_attempts.
+    # A request that exceeds the timeout is not sent again, because the
+    # flattener can continue to work on it. If a request times out, decrease
+    # batch_size_mb or increase timeout.
+    max_attempts: 0
+
   # Send Step Configuration
   # Supports three modes determined by the 'send_as' setting:
   # - direct_resource_load: Sends NDJSON directly to a FHIR server using transaction bundles

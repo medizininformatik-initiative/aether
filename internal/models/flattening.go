@@ -22,6 +22,7 @@ type FlatteningConfig struct {
 	Formats     []string      `yaml:"formats" json:"formats" mapstructure:"formats"`                   // Output formats: ["csv"] for now
 	Timeout     time.Duration `yaml:"timeout" json:"timeout" mapstructure:"timeout"`                   // Request timeout
 	BatchSizeMB int           `yaml:"batch_size_mb" json:"batch_size_mb" mapstructure:"batch_size_mb"` // Total memory budget in MB for batched streaming (default 500)
+	MaxAttempts int           `yaml:"max_attempts" json:"max_attempts" mapstructure:"max_attempts"`    // Attempts per flattener request; 0 uses retry.max_attempts
 }
 
 // DefaultFlatteningConfig returns the default flattening configuration
@@ -74,6 +75,10 @@ func (c *FlatteningConfig) Validate() error {
 
 	if c.Timeout <= 0 {
 		return fmt.Errorf("flattening timeout must be > 0, got %s", c.Timeout)
+	}
+
+	if c.MaxAttempts < 0 || c.MaxAttempts > 10 {
+		return fmt.Errorf("flattening max_attempts must be between 0 and 10, got %d", c.MaxAttempts)
 	}
 
 	return nil

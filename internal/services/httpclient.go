@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 
@@ -18,6 +20,10 @@ type HTTPClient struct {
 	client      *http.Client
 	retryConfig lib.RetryConfig
 	logger      *lib.Logger
+	// noTimeoutRetry stops the retries after a request exceeds the client
+	// timeout. A service that continues to work on an abandoned request gets
+	// more load from each retry.
+	noTimeoutRetry bool
 }
 
 // NewHTTPClient creates an HTTP client with timeout, retry, and TLS configuration.
@@ -47,11 +53,13 @@ func (c *HTTPClient) Timeout() time.Duration {
 }
 
 // withTimeout returns a copy of this client with a different time limit for
-// one complete request. The copy shares the transport and the retry settings.
+// one complete request. The copy shares the transport and all other settings.
 func (c *HTTPClient) withTimeout(timeout time.Duration) *HTTPClient {
 	client := *c.client
 	client.Timeout = timeout
-	return &HTTPClient{client: &client, retryConfig: c.retryConfig, logger: c.logger}
+	cp := *c
+	cp.client = &client
+	return &cp
 }
 
 // newDownloadClient returns an *http.Client tuned for streaming large response
@@ -187,6 +195,10 @@ func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 			return resp, nil
 		}
 
+		if c.noTimeoutRetry && isClientTimeout(lastErr) {
+			return nil, lastErr
+		}
+
 		// Network error occurred
 		// Check if it's a retryable network error
 		if lib.IsNetworkError(lastErr) {
@@ -214,6 +226,19 @@ func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 	}
 
 	return nil, fmt.Errorf("request failed after %d attempts: %w", c.retryConfig.MaxAttempts, lastErr)
+}
+
+// isClientTimeout reports whether err is a request that exceeded the client
+// timeout after the connection was made, while it waited for the headers or
+// read the body. A dial timeout is not included, because the server did not
+// receive the request.
+func isClientTimeout(err error) bool {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Op == "dial" {
+		return false
+	}
+	var timeoutErr interface{ Timeout() bool }
+	return errors.As(err, &timeoutErr) && timeoutErr.Timeout()
 }
 
 // DoOnce executes a request exactly once with no retry. It is for callers that

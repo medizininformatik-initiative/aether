@@ -2,7 +2,6 @@ package models
 
 import (
 	"fmt"
-	"net/url"
 	"time"
 )
 
@@ -50,13 +49,8 @@ func (c *FlatteningConfig) Validate() error {
 		return fmt.Errorf("flattening service_url is required")
 	}
 
-	parsedURL, err := url.Parse(c.ServiceURL)
-	if err != nil {
-		return fmt.Errorf("invalid flattening service_url: %w", err)
-	}
-
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("invalid flattening service_url: must use http or https scheme, got '%s'", parsedURL.Scheme)
+	if err := validateHTTPURL("flattening service_url", c.ServiceURL); err != nil {
+		return err
 	}
 
 	if c.LookupPath == "" {

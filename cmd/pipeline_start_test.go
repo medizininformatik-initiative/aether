@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -154,4 +156,28 @@ func TestRunPipelineStart_WritesLookupWarningLocationsToJobLog(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(jobLog), "parent-not-prefix 2")
 	assert.Contains(t, string(jobLog), "Patient.other")
+}
+
+func TestRunPipelineStart_StopsBeforeJobWhenTORCHIsWrongServer(t *testing.T) {
+	startFlags(t, "", "", false)
+	server := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(server.Close)
+	configPath, jobsDir := writeStartConfig(t, `services:
+  torch:
+    base_url: "`+server.URL+`"
+    username: "user"
+    password: "pass"
+pipeline:
+  enabled_steps:
+    - torch
+`)
+
+	err := runPipelineStart(pipelineStartCmd, []string{configPath, startCRTDLFixture})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), server.URL+"/fhir/metadata")
+	assert.Contains(t, err.Error(), "services.torch.base_url")
+	entries, readErr := os.ReadDir(jobsDir)
+	require.NoError(t, readErr)
+	assert.Empty(t, entries, "no job must exist after a failed preflight check")
 }

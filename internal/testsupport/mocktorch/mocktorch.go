@@ -57,18 +57,17 @@ func (s *Server) batchesTotal() int {
 // Handler returns the HTTP handler that serves the TORCH API surface.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/fhir/metadata", handleMetadata)
 	mux.HandleFunc("/fhir/$extract-data", s.handleSubmit)
 	mux.HandleFunc("/fhir/__status/", s.handleStatus)
 	mux.HandleFunc("/fhir/Task/", s.handleTask)
 	mux.HandleFunc("/output/", s.handleOutput)
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	})
 	return mux
+}
+
+func handleMetadata(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/fhir+json")
+	_, _ = w.Write([]byte(`{"resourceType":"CapabilityStatement","software":{"name":"Torch (mock)"}}`))
 }
 
 func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {

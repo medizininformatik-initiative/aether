@@ -361,8 +361,25 @@ func preflightStart(config *models.ProjectConfig, crtdlPath string, logger *lib.
 	if err := config.ValidateServiceConnectivity(connectTransport); err != nil {
 		return nil, fmt.Errorf("service connectivity check failed: %w\n\nPlease ensure all required services are running and accessible", err)
 	}
+	if err := verifyTORCHServer(config, lib.DefaultLogger); err != nil {
+		return nil, err
+	}
 	fmt.Println("✓ All required services are reachable")
 	return lookupWarnings, nil
+}
+
+// verifyTORCHServer reads the TORCH CapabilityStatement, so a wrong base URL or
+// wrong credentials stop the start before the extraction is submitted.
+func verifyTORCHServer(config *models.ProjectConfig, logger *lib.Logger) error {
+	if !config.Pipeline.IsStepEnabled(models.StepTorchImport) {
+		return nil
+	}
+	httpClient := services.NewHTTPClient(config.Services.TORCH.EffectiveRequestTimeout(), config.Retry, config.TLS, logger)
+	torch := services.NewTORCHClient(config.Services.TORCH, httpClient, logger)
+	if err := torch.CheckCapabilityStatement(); err != nil {
+		return fmt.Errorf("%w\n\nCorrect services.torch.base_url and the TORCH credentials before you start the pipeline", err)
+	}
+	return nil
 }
 
 func createStartJob(config *models.ProjectConfig, crtdlPath, inputSource string, logger *lib.Logger) (*models.PipelineJob, error) {

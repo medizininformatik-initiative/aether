@@ -14,6 +14,10 @@ Extracts patient data from a TORCH server. Supports two modes: CRTDL-based extra
 - Downloads FHIR NDJSON data when ready
 - Skips the extraction submission step
 
+## Start check
+
+Before the first step starts, `aether pipeline start` sends `GET {base_url}/fhir/metadata` with the TORCH credentials and a 5-second timeout. The start stops if TORCH is unreachable, rejects the credentials (HTTP 401 or 403), sends a different status, or does not send a `CapabilityStatement`. The error shows the full URL and the HTTP status. If `software.name` in the statement does not contain `Torch`, aether logs a warning and continues.
+
 ## Progress display
 
 While the step polls, aether reads batch progress from the TORCH Task API
@@ -74,7 +78,7 @@ URLs containing `/fhir/extraction/` or `/fhir/result/` are automatically recogni
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `base_url` | string | - | TORCH server URL (required) |
+| `base_url` | string | - | TORCH server root URL (required). aether appends `/fhir`. |
 | `username` | string | - | Authentication username |
 | `password` | string | - | Authentication password |
 | `extraction_timeout` | duration | PT30M | Max wait time for extraction |

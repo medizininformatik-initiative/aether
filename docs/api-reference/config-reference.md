@@ -141,7 +141,7 @@ A configuration file that uses both shapes together is an error.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `base_url` | string | - | TORCH server URL (required if torch step enabled) |
+| `base_url` | string | - | TORCH server root URL (required if torch step enabled). aether appends `/fhir`. |
 | `auth.username` | string | - | Basic Auth username |
 | `auth.password` | string | - | Basic Auth password |
 | `auth.oauth_issuer_uri` | string | - | OAuth 2.0 issuer URI. When set, Aether fetches client-credentials bearer tokens instead of using Basic Auth. |

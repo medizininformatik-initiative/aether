@@ -6,7 +6,7 @@ services:
   # Used for extracting FHIR cohort data directly via CRTDL files
   # Leave empty to skip TORCH integration
   torch:
-    # TORCH server base URL
+    # TORCH server base URL. URL must be the server root; aether appends /fhir internally.
     base_url: "http://localhost:8080"
 
     # TORCH authentication. Use Basic Auth or OAuth2 client credentials, not both.

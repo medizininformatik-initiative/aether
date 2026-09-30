@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/medizininformatik-initiative/aether/internal/lib"
+	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
 	"github.com/medizininformatik-initiative/aether/internal/testsupport/mocktorch"
 )
@@ -287,18 +290,21 @@ func TestMockTORCH_UnknownJobIsNotFound(t *testing.T) {
 	}
 }
 
-// The root route answers so a reachability probe succeeds, while any other
-// unrouted path is a 404.
-func TestMockTORCH_RootIsReachableAndOtherPathsAre404(t *testing.T) {
+func TestMockTORCH_UnroutedPathIsNotFound(t *testing.T) {
 	srv := newMock(t, mocktorch.Config{CohortSize: 1})
 
-	resp, err := http.Get(srv.URL + "/")
-	require.NoError(t, err)
-	require.NoError(t, resp.Body.Close())
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	resp, err = http.Get(srv.URL + "/not-a-torch-route")
+	resp, err := http.Get(srv.URL + "/not-a-torch-route")
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+func TestMockTORCH_PassesCapabilityStatementCheck(t *testing.T) {
+	srv := newMock(t, mocktorch.Config{CohortSize: 1})
+	var logs bytes.Buffer
+	logger := lib.NewLoggerWithWriter(lib.LogLevelInfo, &logs)
+	client := capabilityClient(models.TORCHConfig{BaseURL: srv.URL}, logger)
+
+	require.NoError(t, client.CheckCapabilityStatement())
+	assert.NotContains(t, logs.String(), "WARN")
 }

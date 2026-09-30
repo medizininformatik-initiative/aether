@@ -727,35 +727,80 @@ func (c *TORCHClient) downloadFileOnce(fileURL, destPath string, compress bool, 
 	}, nil
 }
 
-// Ping checks connectivity to TORCH server
-// Used by ValidateServiceConnectivity()
-func (c *TORCHClient) Ping() error {
-	c.logger.Debug("Checking TORCH server connectivity", "url", c.config.BaseURL)
+// capabilityCheckTimeout is shorter than the TORCH request timeout: a start
+// check must fail fast.
+const capabilityCheckTimeout = 5 * time.Second
 
-	// Simple GET request to base URL
-	req, err := http.NewRequest("GET", c.config.BaseURL, nil)
+// CheckCapabilityStatement reads the TORCH CapabilityStatement to find a wrong
+// base URL or wrong credentials before a run starts.
+func (c *TORCHClient) CheckCapabilityStatement() error {
+	checkURL := c.config.BaseURL + "/fhir/metadata"
+	resp, err := c.fetchMetadata(checkURL)
 	if err != nil {
-		return fmt.Errorf("failed to create ping request: %w", err)
-	}
-
-	if err := c.httpClient.ApplyAuth(req, c.config.EffectiveAuth()); err != nil {
-		return fmt.Errorf("failed to add auth header: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		c.logger.Error("TORCH ping failed", "error", err)
-		return fmt.Errorf("TORCH server unreachable: %w", err)
+		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Accept any non-5xx response as "server is up"
-	if resp.StatusCode >= 500 {
-		return fmt.Errorf("TORCH server error: HTTP %d", resp.StatusCode)
+	if err := checkMetadataStatus(checkURL, resp.StatusCode); err != nil {
+		return err
+	}
+	statement, err := decodeCapabilityStatement(checkURL, resp)
+	if err != nil {
+		return err
 	}
 
-	c.logger.Debug("TORCH server ping successful", "status", resp.StatusCode)
+	if !strings.Contains(strings.ToLower(statement.Software.Name), "torch") {
+		c.logger.Warn("Server at TORCH base URL does not identify as TORCH",
+			"url", checkURL, "software_name", statement.Software.Name)
+	}
+
 	return nil
+}
+
+// fetchMetadata sends one authenticated GET to checkURL, without retries.
+func (c *TORCHClient) fetchMetadata(checkURL string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodGet, checkURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create metadata request: %w", err)
+	}
+	// The OAuth token request goes through the retry loop of the client, so
+	// one attempt keeps the complete check inside the time limit.
+	client := c.httpClient.withTimeout(capabilityCheckTimeout)
+	client.retryConfig.MaxAttempts = 1
+	if err := client.ApplyAuth(req, c.config.EffectiveAuth()); err != nil {
+		return nil, fmt.Errorf("TORCH authentication failed at %s: failed to add auth header: %w", checkURL, err)
+	}
+
+	resp, err := client.DoOnce(req)
+	if err != nil {
+		return nil, fmt.Errorf("TORCH unreachable at %s: %w", checkURL, err)
+	}
+	return resp, nil
+}
+
+func checkMetadataStatus(checkURL string, status int) error {
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return fmt.Errorf("TORCH authentication failed at %s: HTTP %d", checkURL, status)
+	}
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("TORCH metadata check failed at %s: HTTP %d", checkURL, status)
+	}
+	return nil
+}
+
+func decodeCapabilityStatement(checkURL string, resp *http.Response) (capabilityStatement, error) {
+	var statement capabilityStatement
+	if err := json.NewDecoder(resp.Body).Decode(&statement); err != nil || statement.ResourceType != "CapabilityStatement" {
+		return statement, fmt.Errorf("TORCH metadata check failed at %s: HTTP %d: body is not a CapabilityStatement", checkURL, resp.StatusCode)
+	}
+	return statement, nil
+}
+
+type capabilityStatement struct {
+	ResourceType string `json:"resourceType"`
+	Software     struct {
+		Name string `json:"name"`
+	} `json:"software"`
 }
 
 // encodeCRTDLToBase64 reads CRTDL file and encodes it to base64

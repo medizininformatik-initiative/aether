@@ -293,13 +293,8 @@ func (c *SendConfig) Validate() error {
 			return fmt.Errorf("send url is required")
 		}
 
-		parsedURL, err := url.Parse(c.URL)
-		if err != nil {
-			return fmt.Errorf("invalid send url: %w", err)
-		}
-
-		if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-			return fmt.Errorf("invalid send url: must use http or https scheme, got '%s'", parsedURL.Scheme)
+		if err := validateHTTPURL("send url", c.URL); err != nil {
+			return err
 		}
 	}
 
@@ -366,12 +361,8 @@ func (c *SendConfig) validateS3Upload() error {
 
 	// Validate endpoint URL scheme if provided
 	if c.S3.Endpoint != "" {
-		parsedURL, err := url.Parse(c.S3.Endpoint)
-		if err != nil {
-			return fmt.Errorf("invalid s3 endpoint: %w", err)
-		}
-		if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-			return fmt.Errorf("invalid s3 endpoint: must use http or https scheme, got '%s'", parsedURL.Scheme)
+		if err := validateHTTPURL("s3 endpoint", c.S3.Endpoint); err != nil {
+			return err
 		}
 	}
 
@@ -580,14 +571,18 @@ func (c *TORCHConfig) validateBaseURL() error {
 		return fmt.Errorf("TORCH base_url is required")
 	}
 
-	parsedURL, err := url.Parse(c.BaseURL)
-	if err != nil {
-		return fmt.Errorf("invalid TORCH base_url: %w", err)
-	}
+	return validateHTTPURL("TORCH base_url", c.BaseURL)
+}
 
-	// Require http or https scheme for TORCH service
+// validateHTTPURL requires that raw parses as a URL with the http or https scheme.
+// The label names the configuration key in the error message.
+func validateHTTPURL(label, raw string) error {
+	parsedURL, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid %s: %w", label, err)
+	}
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("invalid TORCH base_url: must use http or https scheme, got '%s'", parsedURL.Scheme)
+		return fmt.Errorf("invalid %s: must use http or https scheme, got '%s'", label, parsedURL.Scheme)
 	}
 	return nil
 }

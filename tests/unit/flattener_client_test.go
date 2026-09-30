@@ -278,7 +278,50 @@ func TestFlattenerClient_ConfiguredTimeout(t *testing.T) {
 
 	_, err := client.Flatten(newTestViewDefinition("TestView", "Patient"), newTestResources("1"))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "request failed")
+	assert.Contains(t, err.Error(), "timed out after 50ms")
+}
+
+func TestFlattenerClient_Flatten_NoRetryOnTimeout(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		select {
+		case <-r.Context().Done():
+		case <-time.After(time.Second):
+		}
+	}))
+	defer server.Close()
+
+	config := models.FlatteningConfig{ServiceURL: server.URL, Timeout: 50 * time.Millisecond}
+	client := services.NewFlattenerClient(config, fastRetryConfig(3), nil, lib.DefaultLogger)
+
+	_, err := client.Flatten(newTestViewDefinition("TestView", "Patient"), newTestResources("1"))
+	require.Error(t, err)
+	assert.Equal(t, int32(1), attempts.Load(), "a timed-out flattener request must not be sent again")
+	assert.Contains(t, err.Error(), "services.flattening.batch_size_mb")
+	assert.Contains(t, err.Error(), "services.flattening.timeout")
+}
+
+func TestFlattenerClient_Flatten_TimeoutWhileReadingBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"1"}` + "\n"))
+		w.(http.Flusher).Flush()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(time.Second):
+		}
+	}))
+	defer server.Close()
+
+	config := models.FlatteningConfig{ServiceURL: server.URL, Timeout: 100 * time.Millisecond}
+	client := services.NewFlattenerClient(config, fastRetryConfig(3), nil, lib.DefaultLogger)
+
+	_, err := client.Flatten(newTestViewDefinitionWithColumns("TestView", "Patient", "id"), newTestResources("1", "2"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "services.flattening.batch_size_mb")
+	assert.Contains(t, err.Error(), "services.flattening.timeout")
 }
 
 func TestFlattenerClient_HealthCheck(t *testing.T) {
@@ -530,6 +573,36 @@ func TestFlattenerClient_Flatten_ExhaustsRetries(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "3 attempts")
 	assert.Equal(t, int32(3), attempts.Load())
+}
+
+func TestFlattenerClient_Flatten_MaxAttemptsOverridesGlobalRetry(t *testing.T) {
+	tests := map[string]struct {
+		maxAttempts int
+		expected    int32
+	}{
+		"flattener value one":     {maxAttempts: 1, expected: 1},
+		"flattener value set":     {maxAttempts: 2, expected: 2},
+		"flattener value not set": {maxAttempts: 0, expected: 4},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var attempts atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				attempts.Add(1)
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}))
+			defer server.Close()
+
+			config := newTestFlatteningConfig(server.URL)
+			config.MaxAttempts = tc.maxAttempts
+			client := services.NewFlattenerClient(config, fastRetryConfig(4), nil, lib.DefaultLogger)
+
+			_, err := client.Flatten(newTestViewDefinition("TestView", "Patient"), newTestResources("1"))
+			require.Error(t, err)
+			assert.Equal(t, tc.expected, attempts.Load())
+		})
+	}
 }
 
 func TestFlattenerClient_HealthCheck_RetriesOnEOF(t *testing.T) {

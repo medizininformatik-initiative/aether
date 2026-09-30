@@ -2700,6 +2700,45 @@ jobs_dir: "` + jobsDir + `"
 	})
 }
 
+func TestConfigLoading_FlatteningMaxAttempts(t *testing.T) {
+	load := func(t *testing.T, flatteningExtra string) *models.ProjectConfig {
+		tmpDir := t.TempDir()
+		configFile := filepath.Join(tmpDir, "config.yaml")
+		configContent := `
+services:
+  flattening:
+    service_url: "http://localhost:8080"
+    lookup_path: "/path/to/lookup.json"
+` + flatteningExtra + `
+pipeline:
+  enabled_steps:
+    - local_import
+
+retry:
+  max_attempts: 5
+  initial_backoff_ms: 1000
+  max_backoff_ms: 30000
+
+jobs_dir: "` + filepath.Join(tmpDir, "jobs") + `"
+`
+		require.NoError(t, os.WriteFile(configFile, []byte(configContent), 0644))
+		config, err := services.LoadConfig(configFile)
+		require.NoError(t, err)
+		return config
+	}
+
+	t.Run("loads max_attempts from config", func(t *testing.T) {
+		config := load(t, "    max_attempts: 1\n")
+		assert.Equal(t, 1, config.Services.Flattening.MaxAttempts)
+		assert.Equal(t, 5, config.Retry.MaxAttempts)
+	})
+
+	t.Run("defaults to 0 when not set", func(t *testing.T) {
+		config := load(t, "")
+		assert.Equal(t, 0, config.Services.Flattening.MaxAttempts)
+	})
+}
+
 // TestConfigLoading_OmittedFieldsUseStructDefaults verifies the struct-driven
 // loader: fields absent from YAML resolve to the defaults declared in
 // models.DefaultConfig() across every value kind (duration, int, int64, string,

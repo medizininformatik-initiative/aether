@@ -42,6 +42,7 @@ services:
     formats: [string]                    # ["csv"]
     timeout: duration                    # default: PT30M
     batch_size_mb: integer               # default: 500
+    max_attempts: integer                # 0-10, default: 0 (use retry.max_attempts)
 
   send:
     send_as: string                      # "direct_resource_load", "transfer_load", or "s3_upload"
@@ -216,6 +217,7 @@ services:
 | `formats` | []string | ["csv"] | Output formats |
 | `timeout` | duration | 30m | Request timeout |
 | `batch_size_mb` | int | 500 | Total memory budget in MB, divided across attribute groups (0 = use default) |
+| `max_attempts` | int | 0 | Attempts per flattener request, 0-10. `0` uses `retry.max_attempts`. A request that exceeds `timeout` is not sent again |
 
 ### Send
 

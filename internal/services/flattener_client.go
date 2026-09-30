@@ -24,8 +24,12 @@ type FlattenerClient struct {
 // HTTPClient so retry, TLS, and error classification follow the single shared
 // path. If transport is non-nil it is applied for custom TLS. The request
 // timeout is config.Timeout, which FlatteningConfig.Validate requires to be
-// positive.
+// positive. A positive config.MaxAttempts replaces retryConfig.MaxAttempts.
 func NewFlattenerClient(config models.FlatteningConfig, retryConfig models.RetryConfig, transport *http.Transport, logger *lib.Logger) *FlattenerClient {
+	if config.MaxAttempts > 0 {
+		retryConfig.MaxAttempts = config.MaxAttempts
+	}
+
 	client := &http.Client{Timeout: config.Timeout}
 	if transport != nil {
 		client.Transport = transport
@@ -34,9 +38,10 @@ func NewFlattenerClient(config models.FlatteningConfig, retryConfig models.Retry
 	return &FlattenerClient{
 		baseURL: config.ServiceURL,
 		httpClient: &HTTPClient{
-			client:      client,
-			retryConfig: lib.NewRetryConfigFromModel(retryConfig),
-			logger:      logger,
+			client:         client,
+			retryConfig:    lib.NewRetryConfigFromModel(retryConfig),
+			logger:         logger,
+			noTimeoutRetry: true,
 		},
 		logger: logger,
 	}
@@ -46,7 +51,8 @@ func NewFlattenerClient(config models.FlatteningConfig, retryConfig models.Retry
 // flattened rows in ViewDefinition column order. The service responds with
 // NDJSON (one JSON object per row); values are mapped to columns by name, so
 // a change of column order upstream cannot mislabel columns. Transient errors
-// (network + HTTP 5xx) are retried by the shared HTTPClient.
+// (network + HTTP 5xx) are retried by the shared HTTPClient. A request that
+// exceeds the timeout is not retried.
 func (c *FlattenerClient) Flatten(viewDef models.ViewDefinition, resources []map[string]any) ([][]string, error) {
 	if len(resources) == 0 {
 		c.logger.Debug("No resources to flatten", "viewDefinition", viewDef.Name)
@@ -79,7 +85,7 @@ func (c *FlattenerClient) Flatten(viewDef models.ViewDefinition, resources []map
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		c.logger.Error("Flattener HTTP request failed", "viewDefinition", viewDef.Name, "error", err)
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, c.timeoutHint(fmt.Errorf("request failed: %w", err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -89,11 +95,21 @@ func (c *FlattenerClient) Flatten(viewDef models.ViewDefinition, resources []map
 
 	rows, err := c.decodeNDJSONRows(resp.Body, ExtractColumnNames(viewDef), len(resources))
 	if err != nil {
-		return nil, err
+		return nil, c.timeoutHint(err)
 	}
 
 	c.logger.Debug("Flattener returned rows", "viewDefinition", viewDef.Name, "rows", len(rows))
 	return rows, nil
+}
+
+// timeoutHint names the configuration keys that prevent a timeout. It
+// returns other errors unchanged.
+func (c *FlattenerClient) timeoutHint(err error) error {
+	if !isClientTimeout(err) {
+		return err
+	}
+	return fmt.Errorf("flattener request timed out after %s: decrease services.flattening.batch_size_mb or increase services.flattening.timeout: %w",
+		c.httpClient.Timeout(), err)
 }
 
 // decodeNDJSONRows streams the NDJSON response body and maps each object to a

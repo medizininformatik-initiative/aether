@@ -10,6 +10,7 @@ import (
 
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/pipeline"
+	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
 const startCRTDLFixture = "../internal/lib/crtdl/testdata/diagnosis_linked_with_encounter_corrected.json"
@@ -137,4 +138,20 @@ func TestRunPipelineStart_ReturnsStepFailure(t *testing.T) {
 	require.Error(t, err)
 	job := loadOnlyJob(t, jobsDir)
 	assert.Equal(t, models.JobStatusFailed, job.Status)
+}
+
+func TestRunPipelineStart_WritesLookupWarningLocationsToJobLog(t *testing.T) {
+	startFlags(t, "", "", false)
+	verbose = false
+	lookupPath := writeParentMismatchLookup(t)
+	configPath, jobsDir := writeStartConfig(t, "pipeline:\n  enabled_steps:\n    - local_import\n    - wait\n    - flattening\n"+
+		"services:\n  flattening:\n    lookup_path: \""+lookupPath+"\"\n")
+
+	require.NoError(t, runPipelineStart(pipelineStartCmd, []string{configPath, startCRTDLFixture, writeImportDir(t)}))
+
+	job := loadOnlyJob(t, jobsDir)
+	jobLog, err := os.ReadFile(services.GetJobLogFilePath(jobsDir, job.JobID))
+	require.NoError(t, err)
+	assert.Contains(t, string(jobLog), "parent-not-prefix 2")
+	assert.Contains(t, string(jobLog), "Patient.other")
 }

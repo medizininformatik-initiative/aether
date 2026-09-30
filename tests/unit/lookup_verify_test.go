@@ -54,9 +54,10 @@ func TestVerifyLookupFileAggregatesUnresolvedChildrenIntoOneWarning(t *testing.T
 
 	require.NoError(t, err)
 	require.Len(t, warnings, 1)
-	assert.Contains(t, warnings[0], "unresolved-child")
-	assert.Contains(t, warnings[0], "Patient.name.missing")
-	assert.Contains(t, warnings[0], "Patient.name.gone")
+	assert.Equal(t, "unresolved-child", warnings[0].Code)
+	assert.Equal(t, 2, warnings[0].Count)
+	assert.Contains(t, warnings[0].Locations, "Patient.name.missing")
+	assert.Contains(t, warnings[0].Locations, "Patient.name.gone")
 }
 
 func TestVerifyLookupFileMergesOneWarningCodeAcrossTables(t *testing.T) {
@@ -81,8 +82,9 @@ func TestVerifyLookupFileMergesOneWarningCodeAcrossTables(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, warnings, 1)
-	assert.Contains(t, warnings[0], "ProfileA")
-	assert.Contains(t, warnings[0], "ProfileB")
+	assert.Equal(t, 2, warnings[0].Count)
+	assert.Contains(t, warnings[0].Locations, "ProfileA")
+	assert.Contains(t, warnings[0].Locations, "ProfileB")
 }
 
 func TestVerifyLookupFileKeepsDistinctWarningCodesSeparate(t *testing.T) {
@@ -103,8 +105,8 @@ func TestVerifyLookupFileKeepsDistinctWarningCodesSeparate(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, warnings, 2)
-	assert.Contains(t, warnings[0], "unresolved-child")
-	assert.Contains(t, warnings[1], "parent-not-prefix")
+	assert.Equal(t, "unresolved-child", warnings[0].Code)
+	assert.Equal(t, "parent-not-prefix", warnings[1].Code)
 }
 
 func TestVerifyLookupFileReturnsWarningsWithoutError(t *testing.T) {
@@ -125,7 +127,8 @@ func TestVerifyLookupFileReturnsWarningsWithoutError(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, warnings, 1)
-	assert.Contains(t, warnings[0], "parent-not-prefix")
+	assert.Equal(t, "parent-not-prefix", warnings[0].Code)
+	assert.Equal(t, 1, warnings[0].Count)
 }
 
 func TestVerifyLookupFileRejectsDuplicateURL(t *testing.T) {
@@ -146,6 +149,28 @@ func TestVerifyLookupFileRejectsDuplicateURL(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "duplicate profile URL")
+}
+
+func TestVerifyLookupFileReturnsWarningsWithError(t *testing.T) {
+	path := writeLookupFile(t, `[
+		{
+			"url": "https://example.com/StructureDefinition/TestProfile",
+			"resourceType": "Patient",
+			"elements": {"Patient.name": {"viewDefinition": `+minimalViewDefinition+`, "children": ["Patient.name.missing"]}}
+		},
+		{
+			"url": "https://example.com/StructureDefinition/TestProfile",
+			"resourceType": "Patient",
+			"elements": {"Patient.name": {"viewDefinition": `+minimalViewDefinition+`}}
+		}
+	]`)
+
+	warnings, err := services.VerifyLookupFile(path)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate profile URL")
+	require.Len(t, warnings, 1)
+	assert.Equal(t, "unresolved-child", warnings[0].Code)
 }
 
 func TestVerifyLookupFileRejectsMissingFile(t *testing.T) {

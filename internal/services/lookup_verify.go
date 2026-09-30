@@ -10,9 +10,9 @@ import (
 )
 
 // VerifyLookupFile validates a flatten-lookup file with the flattenlookup
-// library. It returns the warning findings as formatted strings. If the file
+// library. It returns one warning per finding code. If the file
 // has error findings, the returned error lists them all.
-func VerifyLookupFile(path string) ([]string, error) {
+func VerifyLookupFile(path string) ([]LookupWarning, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read lookup file: %w", err)
@@ -22,8 +22,8 @@ func VerifyLookupFile(path string) ([]string, error) {
 
 // verifyLookupData validates raw lookup-file bytes and splits the findings
 // into warnings and one combined error. Warning findings that share a code
-// collapse into one warning, so a job logs at most one line per code.
-func verifyLookupData(data []byte) ([]string, error) {
+// collapse into one warning.
+func verifyLookupData(data []byte) ([]LookupWarning, error) {
 	result := flattenlookup.Validate(data)
 
 	var errorMessages []string
@@ -71,10 +71,17 @@ func duplicateURLMessages(data []byte) []string {
 	return messages
 }
 
-// groupWarningsByCode renders one warning per finding code, in the order the
-// codes first occur. The locations of all findings with the same code join
-// into that one warning.
-func groupWarningsByCode(findings []flattenlookup.Finding) []string {
+// LookupWarning collects all warning findings of one code.
+type LookupWarning struct {
+	Code  string
+	Count int
+	// Locations joins the location of each finding with "; ".
+	Locations string
+}
+
+// groupWarningsByCode makes one warning per finding code, in the order the
+// codes first occur.
+func groupWarningsByCode(findings []flattenlookup.Finding) []LookupWarning {
 	var codes []string
 	locations := make(map[string][]string)
 	for _, finding := range findings {
@@ -84,9 +91,13 @@ func groupWarningsByCode(findings []flattenlookup.Finding) []string {
 		locations[finding.Code] = append(locations[finding.Code], formatFindingLocation(finding))
 	}
 
-	var warnings []string
+	var warnings []LookupWarning
 	for _, code := range codes {
-		warnings = append(warnings, fmt.Sprintf("[%s] %s", code, strings.Join(locations[code], "; ")))
+		warnings = append(warnings, LookupWarning{
+			Code:      code,
+			Count:     len(locations[code]),
+			Locations: strings.Join(locations[code], "; "),
+		})
 	}
 	return warnings
 }

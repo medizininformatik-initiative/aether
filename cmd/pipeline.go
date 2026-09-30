@@ -180,22 +180,51 @@ func init() {
 	pipelineContinueCmd.Flags().BoolVar(&noProgress, "no-progress", false, "Disable progress indicators")
 }
 
-// verifyFlatteningLookup validates the flatten-lookup file before the first
+// checkFlatteningLookup validates the flatten-lookup file before the first
 // step starts, so a defective file stops the job before hours of extraction.
-// The check runs only when the flattening step is enabled; warnings go to the
-// log, error findings stop the start.
-func verifyFlatteningLookup(config *models.ProjectConfig, logger *lib.Logger) error {
+// The check runs only when the flattening step is enabled. It returns the
+// warnings also with an error, and does not log them.
+func checkFlatteningLookup(config *models.ProjectConfig) ([]services.LookupWarning, error) {
 	if !config.Pipeline.IsStepEnabled(models.StepFlattening) {
-		return nil
+		return nil, nil
 	}
 	warnings, err := services.VerifyLookupFile(config.Services.Flattening.LookupPath)
-	for _, warning := range warnings {
-		logger.Warn("Lookup file finding", "finding", warning)
-	}
 	if err != nil {
-		return fmt.Errorf("lookup file check failed: %w\n\nCorrect the file at services.flattening.lookup_path before you start the pipeline", err)
+		return warnings, fmt.Errorf("lookup file check failed: %w\n\nCorrect the file at services.flattening.lookup_path before you start the pipeline", err)
 	}
-	return nil
+	return warnings, nil
+}
+
+// verifyFlatteningLookup runs checkFlatteningLookup and logs the warnings at
+// once.
+func verifyFlatteningLookup(config *models.ProjectConfig, logger *lib.Logger) error {
+	warnings, err := checkFlatteningLookup(config)
+	logLookupWarnings(warnings, logger)
+	return err
+}
+
+// commandLogLevel gives the console log level that --verbose selects.
+func commandLogLevel() lib.LogLevel {
+	if verbose {
+		return lib.LogLevelDebug
+	}
+	return lib.LogLevelInfo
+}
+
+// logLookupWarnings writes one WARN line with the count per code. The
+// locations can fill many kilobytes, so they go to DEBUG only.
+func logLookupWarnings(warnings []services.LookupWarning, logger *lib.Logger) {
+	if len(warnings) == 0 {
+		return
+	}
+	counts := make([]any, 0, 2*len(warnings))
+	for _, warning := range warnings {
+		counts = append(counts, warning.Code, warning.Count)
+	}
+	logger.Warn("Lookup file has warning findings (use --verbose to see them)", counts...)
+	for _, warning := range warnings {
+		logger.Debug("Lookup file finding", "code", warning.Code, "locations", warning.Locations)
+	}
 }
 
 // verifyFlatteningLookupForJob applies the lookup file check to a resumed job.
@@ -220,17 +249,22 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := preflightStart(config, crtdlPath); err != nil {
+
+	logger := lib.NewLogger(commandLogLevel())
+	defer func() { _ = logger.Close() }()
+
+	lookupWarnings, err := preflightStart(config, crtdlPath, logger)
+	if err != nil {
 		return err
 	}
-
-	logger := lib.NewLogger(startLogLevel())
-	defer func() { _ = logger.Close() }()
 
 	job, err := createStartJob(config, crtdlPath, inputSource, logger)
 	if err != nil {
 		return err
 	}
+	// The lookup warnings are logged after job.log is attached, so job.log
+	// keeps the locations also without --verbose.
+	logLookupWarnings(lookupWarnings, logger)
 	return runStartJob(config, job, logger)
 }
 
@@ -239,13 +273,6 @@ func optionalArg(args []string, index int) string {
 		return args[index]
 	}
 	return ""
-}
-
-func startLogLevel() lib.LogLevel {
-	if verbose {
-		return lib.LogLevelDebug
-	}
-	return lib.LogLevelInfo
 }
 
 // prepareStartConfig loads the configuration, applies the command flags and
@@ -315,23 +342,27 @@ func validateLocalImportSource(config *models.ProjectConfig, inputSource string)
 }
 
 // preflightStart runs the checks that stop a defective start before the job
-// directory exists and before hours of extraction.
-func preflightStart(config *models.ProjectConfig, crtdlPath string) error {
-	if err := verifyFlatteningLookup(config, lib.DefaultLogger); err != nil {
-		return err
+// directory exists and before hours of extraction. It returns the lookup
+// warnings, so the caller can log them after it attaches job.log. If the
+// lookup check fails, it logs the warnings at once.
+func preflightStart(config *models.ProjectConfig, crtdlPath string, logger *lib.Logger) ([]services.LookupWarning, error) {
+	lookupWarnings, err := checkFlatteningLookup(config)
+	if err != nil {
+		logLookupWarnings(lookupWarnings, logger)
+		return nil, err
 	}
 
 	if err := services.VerifyCRTDLFile(crtdlPath); err != nil {
-		return fmt.Errorf("CRTDL check failed: %w\n\nCorrect the CRTDL file before you start the pipeline", err)
+		return nil, fmt.Errorf("CRTDL check failed: %w\n\nCorrect the CRTDL file before you start the pipeline", err)
 	}
 
 	fmt.Println("Validating service connectivity...")
 	connectTransport, _ := services.BuildTLSTransport(config.TLS, lib.DefaultLogger)
 	if err := config.ValidateServiceConnectivity(connectTransport); err != nil {
-		return fmt.Errorf("service connectivity check failed: %w\n\nPlease ensure all required services are running and accessible", err)
+		return nil, fmt.Errorf("service connectivity check failed: %w\n\nPlease ensure all required services are running and accessible", err)
 	}
 	fmt.Println("✓ All required services are reachable")
-	return nil
+	return lookupWarnings, nil
 }
 
 func createStartJob(config *models.ProjectConfig, crtdlPath, inputSource string, logger *lib.Logger) (*models.PipelineJob, error) {
@@ -459,11 +490,7 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	logLevel := lib.LogLevelInfo
-	if verbose {
-		logLevel = lib.LogLevelDebug
-	}
-	logger := lib.NewLogger(logLevel)
+	logger := lib.NewLogger(commandLogLevel())
 	defer func() { _ = logger.Close() }()
 
 	fmt.Printf("Loading job %s...\n", jobID)

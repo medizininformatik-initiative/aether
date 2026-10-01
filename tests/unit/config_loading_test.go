@@ -1531,6 +1531,24 @@ func TestValidateServiceConnectivity_S3ModeSkipsHTTPCheck(t *testing.T) {
 	assert.NoError(t, err, "S3 mode should skip connectivity check")
 }
 
+// ValidateServiceConnectivity does not probe TORCH. TORCHClient.CheckCapabilityStatement
+// does, with the TORCH credentials.
+func TestValidateServiceConnectivity_DoesNotCheckTORCH(t *testing.T) {
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closed.Close()
+
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			TORCH: models.TORCHConfig{BaseURL: closed.URL},
+		},
+		Pipeline: models.PipelineConfig{
+			EnabledSteps: []models.StepName{models.StepTorchImport},
+		},
+	}
+
+	assert.NoError(t, config.ValidateServiceConnectivity(nil))
+}
+
 // TestConfigLoading_BundleSplitThreshold verifies bundle_split_threshold_mb is loaded correctly
 func TestConfigLoading_BundleSplitThreshold(t *testing.T) {
 	tmpDir := t.TempDir()

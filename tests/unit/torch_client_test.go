@@ -855,75 +855,6 @@ func TestTORCHClient_PollExtractionStatus_ExponentialBackoff(t *testing.T) {
 	}
 }
 
-func TestTORCHClient_Ping_Success(t *testing.T) {
-	// Mock TORCH server responding to GET request
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "GET", r.Method)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-	torchConfig := models.TORCHConfig{
-		BaseURL: server.URL,
-		Auth:    models.AuthConfig{Username: "testuser", Password: "testpass"},
-	}
-
-	client := services.NewTORCHClient(torchConfig, httpClient, logger)
-	err := client.Ping()
-
-	assert.NoError(t, err)
-}
-
-func TestTORCHClient_Ping_Unreachable(t *testing.T) {
-	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-	torchConfig := models.TORCHConfig{
-		BaseURL: "http://unreachable-host-12345.invalid:9999",
-		Auth:    models.AuthConfig{Username: "testuser", Password: "testpass"},
-	}
-
-	client := services.NewTORCHClient(torchConfig, httpClient, logger)
-	err := client.Ping()
-
-	assert.Error(t, err)
-}
-
-// Performance test - verify TORCH connectivity check < 5 seconds
-
-func TestTORCHClient_Ping_PerformanceWithin5Seconds(t *testing.T) {
-	// Mock TORCH server with slight delay to simulate realistic network latency
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Simulate 100ms network latency
-		time.Sleep(100 * time.Millisecond)
-		assert.Equal(t, "GET", r.Method)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	logger := lib.NewLogger(lib.LogLevelError) // Reduce log noise for performance test
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-	torchConfig := models.TORCHConfig{
-		BaseURL: server.URL,
-		Auth:    models.AuthConfig{Username: "testuser", Password: "testpass"},
-	}
-
-	client := services.NewTORCHClient(torchConfig, httpClient, logger)
-
-	// Measure execution time
-	startTime := time.Now()
-	err := client.Ping()
-	duration := time.Since(startTime)
-
-	// Assertions
-	assert.NoError(t, err)
-	assert.Less(t, duration, 5*time.Second, "TORCH connectivity check must complete within 5 seconds, took: %v", duration)
-
-	// Log performance for visibility
-	t.Logf("TORCH connectivity check completed in %v (requirement: < 5s)", duration)
-}
-
 // Tests for makeAbsoluteURL helper (relative URL handling)
 
 func TestTORCHClient_MakeAbsoluteURL_RelativeURL(t *testing.T) {
@@ -1786,28 +1717,6 @@ func TestTORCHClient_DownloadFile_HTTP4xxError(t *testing.T) {
 	assert.Contains(t, err.Error(), "403")
 }
 
-// TestTORCHClient_Ping_ServerError verifies ping error for 5xx responses
-// (covers lines 450-453 in torch_client.go)
-func TestTORCHClient_Ping_ServerError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer server.Close()
-
-	logger := lib.NewLogger(lib.LogLevelDebug)
-	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 100, MaxBackoffMs: 1000}, models.TLSConfig{}, logger)
-	torchConfig := models.TORCHConfig{
-		BaseURL: server.URL,
-		Auth:    models.AuthConfig{Username: "testuser", Password: "testpass"},
-	}
-
-	client := services.NewTORCHClient(torchConfig, httpClient, logger)
-	err := client.Ping()
-
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "server error")
-}
-
 // TestTORCHClient_DownloadExtractionFiles_LargeFileWithCompression verifies large file download with compression
 func TestTORCHClient_DownloadExtractionFiles_LargeFileWithCompression(t *testing.T) {
 	// Create larger content
@@ -2118,21 +2027,6 @@ func TestTORCHClient_SubmitExtractionWithContent_AuthError(t *testing.T) {
 
 	_, err := client.SubmitExtractionWithContent(
 		[]byte(`{"cohortDefinition":{"inclusionCriteria":[]},"dataExtraction":{"attributeGroups":[]}}`))
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to add auth header")
-}
-
-func TestTORCHClient_Ping_AuthError(t *testing.T) {
-	services.ClearOAuth2TokenCache()
-	defer services.ClearOAuth2TokenCache()
-
-	tokenServer := oauthTokenServer(http.StatusInternalServerError)
-	defer tokenServer.Close()
-
-	client := torchOAuthClient(tokenServer.URL)
-
-	err := client.Ping()
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to add auth header")

@@ -256,28 +256,6 @@ func (c *ProjectConfig) ValidateServiceConnectivity(transport *http.Transport) e
 		client.Transport = transport
 	}
 
-	// Check TORCH connectivity if base URL is configured
-	// TORCH is used by InputTypeCRTDL and InputTypeTORCHURL
-	if c.Services.TORCH.BaseURL != "" {
-		parsedURL, err := url.Parse(c.Services.TORCH.BaseURL)
-		if err != nil {
-			return fmt.Errorf("invalid TORCH service URL: %w", err)
-		}
-
-		checkURL := fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host)
-
-		req, err := http.NewRequest("HEAD", checkURL, nil)
-		if err != nil {
-			return fmt.Errorf("failed to create request for TORCH service: %w", err)
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return fmt.Errorf("TORCH service unreachable at %s: %w", checkURL, err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-	}
-
 	for _, step := range c.Pipeline.EnabledSteps {
 		var serviceURL string
 		var serviceName string

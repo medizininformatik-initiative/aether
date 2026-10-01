@@ -6,10 +6,12 @@ import (
 )
 
 // MockFlattener is a test double for services.Flattener. It counts calls and,
-// when FlattenFunc is unset, returns no rows.
+// when FlattenFunc is unset, returns no rows. HealthCheck returns HealthCheckErr.
 type MockFlattener struct {
-	FlattenFunc func(models.ViewDefinition, []map[string]any) ([][]string, error)
-	Calls       int
+	FlattenFunc      func(models.ViewDefinition, []map[string]any) ([][]string, error)
+	HealthCheckErr   error
+	Calls            int
+	HealthCheckCalls int
 }
 
 var _ services.Flattener = (*MockFlattener)(nil)
@@ -20,4 +22,9 @@ func (m *MockFlattener) Flatten(viewDef models.ViewDefinition, resources []map[s
 		return m.FlattenFunc(viewDef, resources)
 	}
 	return nil, nil
+}
+
+func (m *MockFlattener) HealthCheck() error {
+	m.HealthCheckCalls++
+	return m.HealthCheckErr
 }

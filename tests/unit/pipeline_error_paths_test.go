@@ -56,7 +56,7 @@ func TestExecuteFlatteningStep_ListInputFilesError(t *testing.T) {
 	crtdlPath := filepath.Join(baseDir, "crtdl.json")
 	writeTestCRTDL(t, crtdlPath, "group-1", "Patient", "https://example.com/Patient")
 
-	job := createFlatteningTestJob("http://localhost:9999", lookupPath, crtdlPath)
+	job := createFlatteningTestJob(healthyFlattenerURL(t), lookupPath, crtdlPath)
 	err := runPipelineStep(models.StepFlattening, job, jobDir, createFlatteningTestLogger())
 
 	require.Error(t, err)

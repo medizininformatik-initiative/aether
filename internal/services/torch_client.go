@@ -796,13 +796,6 @@ func decodeCapabilityStatement(checkURL string, resp *http.Response) (capability
 	return statement, nil
 }
 
-type capabilityStatement struct {
-	ResourceType string `json:"resourceType"`
-	Software     struct {
-		Name string `json:"name"`
-	} `json:"software"`
-}
-
 // encodeCRTDLToBase64 reads CRTDL file and encodes it to base64
 func (c *TORCHClient) encodeCRTDLToBase64(crtdlPath string) (string, error) {
 	// Read CRTDL file

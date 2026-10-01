@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -146,8 +147,10 @@ func TestRunPipelineStart_WritesLookupWarningLocationsToJobLog(t *testing.T) {
 	startFlags(t, "", "", false)
 	verbose = false
 	lookupPath := writeParentMismatchLookup(t)
+	var probes atomic.Int32
+	flattener := metadataServer(t, http.StatusOK, &probes)
 	configPath, jobsDir := writeStartConfig(t, "pipeline:\n  enabled_steps:\n    - local_import\n    - wait\n    - flattening\n"+
-		"services:\n  flattening:\n    lookup_path: \""+lookupPath+"\"\n")
+		"services:\n  flattening:\n    service_url: \""+flattener.URL+"\"\n    lookup_path: \""+lookupPath+"\"\n")
 
 	require.NoError(t, runPipelineStart(pipelineStartCmd, []string{configPath, startCRTDLFixture, writeImportDir(t)}))
 

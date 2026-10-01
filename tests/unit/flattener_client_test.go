@@ -14,6 +14,7 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
 	"github.com/medizininformatik-initiative/aether/internal/services"
+	"github.com/medizininformatik-initiative/aether/internal/services/servicestest"
 )
 
 // Test helpers for flattener client tests
@@ -327,8 +328,9 @@ func TestFlattenerClient_Flatten_TimeoutWhileReadingBody(t *testing.T) {
 func TestFlattenerClient_HealthCheck(t *testing.T) {
 	t.Run("healthy service", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Equal(t, "/health", r.URL.Path)
-			w.WriteHeader(http.StatusOK)
+			assert.Equal(t, http.MethodGet, r.Method)
+			assert.Equal(t, "/fhir/metadata", r.URL.Path)
+			_, _ = w.Write([]byte(servicestest.FlattenerCapabilityStatement))
 		}))
 		defer server.Close()
 
@@ -360,6 +362,30 @@ func TestFlattenerClient_HealthCheck(t *testing.T) {
 		assert.Contains(t, err.Error(), "HTTP 400")
 	})
 
+	t.Run("HTTP 204 has no CapabilityStatement", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer server.Close()
+
+		client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), noRetryConfig(), nil, lib.DefaultLogger)
+		err := client.HealthCheck()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "is not a flattener")
+	})
+
+	t.Run("HTTP 404 is an error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), noRetryConfig(), nil, lib.DefaultLogger)
+		err := client.HealthCheck()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "HTTP 404")
+	})
+
 	t.Run("connection refused", func(t *testing.T) {
 		config := models.FlatteningConfig{
 			ServiceURL: "http://localhost:59998",
@@ -368,8 +394,76 @@ func TestFlattenerClient_HealthCheck(t *testing.T) {
 		client := services.NewFlattenerClient(config, noRetryConfig(), nil, lib.DefaultLogger)
 		err := client.HealthCheck()
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "health check failed")
+		assert.Contains(t, err.Error(), "flattener does not answer at http://localhost:59998/fhir/metadata")
 	})
+}
+
+func metadataBodyClient(t *testing.T, body string, requests *atomic.Int32) *services.FlattenerClient {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/fhir+json")
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(server.Close)
+	retry := models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 1, MaxBackoffMs: 1}
+	return services.NewFlattenerClient(newTestFlatteningConfig(server.URL), retry, nil, lib.DefaultLogger)
+}
+
+func TestFlattenerClient_HealthCheck_AcceptsFlattenerCapabilityStatement(t *testing.T) {
+	var requests atomic.Int32
+	client := metadataBodyClient(t, servicestest.FlattenerCapabilityStatement, &requests)
+
+	assert.NoError(t, client.HealthCheck())
+}
+
+func TestFlattenerClient_HealthCheck_RejectsServiceThatIsNotAFlattener(t *testing.T) {
+	tests := map[string]struct {
+		body    string
+		message string
+	}{
+		"statement without $run": {
+			body:    `{"resourceType":"CapabilityStatement","rest":[{"mode":"server","resource":[{"type":"Patient"}],"operation":[{"name":"$export"},{"name":"$validate"}]}]}`,
+			message: "its CapabilityStatement declares no $run operation",
+		},
+		"$run only at system level": {
+			body:    `{"resourceType":"CapabilityStatement","rest":[{"mode":"server","operation":[{"name":"$run"}]}]}`,
+			message: "its CapabilityStatement declares no $run operation for ViewDefinition",
+		},
+		"$run on another resource type": {
+			body:    `{"resourceType":"CapabilityStatement","rest":[{"mode":"server","resource":[{"type":"Patient","operation":[{"name":"$run"}]}]}]}`,
+			message: "its CapabilityStatement declares no $run operation for ViewDefinition",
+		},
+		"statement without rest": {
+			body:    `{"resourceType":"CapabilityStatement"}`,
+			message: "its CapabilityStatement declares no $run operation",
+		},
+		"other resource type": {
+			body:    `{"resourceType":"OperationOutcome"}`,
+			message: "/fhir/metadata returned no CapabilityStatement",
+		},
+		"not JSON": {
+			body:    "<html>",
+			message: "/fhir/metadata returned no CapabilityStatement",
+		},
+		"empty body": {
+			body:    "",
+			message: "/fhir/metadata returned no CapabilityStatement",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var requests atomic.Int32
+			client := metadataBodyClient(t, tt.body, &requests)
+
+			err := client.HealthCheck()
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "is not a flattener")
+			assert.Contains(t, err.Error(), tt.message)
+			assert.Equal(t, int32(1), requests.Load())
+		})
+	}
 }
 
 func TestFlattenerServiceError_Error(t *testing.T) {
@@ -617,7 +711,7 @@ func TestFlattenerClient_HealthCheck_RetriesOnEOF(t *testing.T) {
 			_ = conn.Close()
 			return
 		}
-		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(servicestest.FlattenerCapabilityStatement))
 	}))
 	defer server.Close()
 
@@ -640,7 +734,7 @@ func TestFlattenerClient_HealthCheck_RetriesOnTransientHTTP(t *testing.T) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(servicestest.FlattenerCapabilityStatement))
 	}))
 	defer server.Close()
 

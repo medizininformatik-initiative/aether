@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -364,6 +365,11 @@ func preflightStart(config *models.ProjectConfig, crtdlPath string, logger *lib.
 	if err := verifyTORCHServer(config, lib.DefaultLogger); err != nil {
 		return nil, err
 	}
+	if config.Pipeline.IsStepEnabled(models.StepFlattening) {
+		if err := checkFlattener(config, connectTransport); err != nil {
+			return nil, err
+		}
+	}
 	fmt.Println("✓ All required services are reachable")
 	return lookupWarnings, nil
 }
@@ -378,6 +384,22 @@ func verifyTORCHServer(config *models.ProjectConfig, logger *lib.Logger) error {
 	torch := services.NewTORCHClient(config.Services.TORCH, httpClient, logger)
 	if err := torch.CheckCapabilityStatement(); err != nil {
 		return fmt.Errorf("%w\n\nCorrect services.torch.base_url and the TORCH credentials before you start the pipeline", err)
+	}
+	return nil
+}
+
+// checkFlattener verifies that the flattener answers. The check needs an HTTP
+// 2xx status from /fhir/metadata and a CapabilityStatement that declares $run.
+// ValidateServiceConnectivity accepts any response, and the models package
+// cannot use the flattener client.
+func checkFlattener(config *models.ProjectConfig, transport *http.Transport) error {
+	if err := config.Services.Flattening.Validate(); err != nil {
+		return fmt.Errorf("flattener check failed: %w\n\nCorrect the services.flattening settings before you start the pipeline", err)
+	}
+	client := services.NewFlattenerClient(config.Services.Flattening, config.Retry, transport, lib.DefaultLogger)
+	if err := client.HealthCheck(); err != nil {
+		return fmt.Errorf("flattener check failed: %w\n\nEnsure that services.flattening.service_url (%s) points to a running fhir-flattener service",
+			err, config.Services.Flattening.ServiceURL)
 	}
 	return nil
 }

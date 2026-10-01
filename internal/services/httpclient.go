@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -182,7 +183,9 @@ func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 				_ = resp.Body.Close()
 
 				backoff := lib.CalculateBackoff(attempt, c.retryConfig.InitialBackoffMs, c.retryConfig.MaxBackoffMs)
-				time.Sleep(backoff)
+				if err := sleepContext(req.Context(), backoff); err != nil {
+					return nil, fmt.Errorf("retry wait ended: %w (last error: %v)", err, lastErr)
+				}
 
 				// Reset request body for retry
 				if bodyBytes != nil {
@@ -209,7 +212,9 @@ func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 				// Wait before retry
 				if attempt < c.retryConfig.MaxAttempts-1 {
 					backoff := lib.CalculateBackoff(attempt, c.retryConfig.InitialBackoffMs, c.retryConfig.MaxBackoffMs)
-					time.Sleep(backoff)
+					if err := sleepContext(req.Context(), backoff); err != nil {
+						return nil, fmt.Errorf("retry wait ended: %w (last error: %v)", err, lastErr)
+					}
 				}
 
 				// Reset request body for retry
@@ -226,6 +231,19 @@ func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 	}
 
 	return nil, fmt.Errorf("request failed after %d attempts: %w", c.retryConfig.MaxAttempts, lastErr)
+}
+
+// sleepContext waits for d. It returns the cancellation cause of ctx when ctx
+// ends first, so a cancelled request does not wait for the retry backoff.
+func sleepContext(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
 }
 
 // isClientTimeout reports whether err is a request that exceeded the client

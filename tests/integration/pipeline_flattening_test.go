@@ -3,7 +3,6 @@ package integration
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
+	"github.com/medizininformatik-initiative/aether/internal/services/servicestest"
 )
 
 // makeProvenance builds a Provenance resource for integration testing
@@ -76,7 +76,7 @@ func wrapCRTDL(dataExtraction string) string {
 
 func TestExecuteFlatteningStep_FullPipeline(t *testing.T) {
 	// Create a mock fhir-flattener server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
@@ -347,6 +347,9 @@ func TestExecuteFlatteningStep_MissingLookupTables(t *testing.T) {
 }
 
 func TestExecuteFlatteningStep_NoInputFiles(t *testing.T) {
+	flattener := servicestest.NewFlattenerServer(http.NotFoundHandler())
+	defer flattener.Close()
+
 	tempDir := t.TempDir()
 	jobID := "test-job-no-input"
 	jobDir := filepath.Join(tempDir, "jobs", jobID)
@@ -379,7 +382,7 @@ func TestExecuteFlatteningStep_NoInputFiles(t *testing.T) {
 		Config: models.ProjectConfig{
 			Services: models.ServiceConfig{
 				Flattening: models.FlatteningConfig{
-					ServiceURL: "http://localhost:8080",
+					ServiceURL: flattener.URL,
 					LookupPath: lookupPath,
 					Formats:    []string{"csv"},
 					Timeout:    30 * time.Second,
@@ -399,7 +402,7 @@ func TestExecuteFlatteningStep_NoInputFiles(t *testing.T) {
 
 func TestExecuteFlatteningStep_FlattenerServiceError(t *testing.T) {
 	// Create a mock server that returns 500 error
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"error": "Internal server error"}`))
 	}))
@@ -482,7 +485,7 @@ func TestExecuteFlatteningStep_FlattenerServiceError(t *testing.T) {
 // Covers the non-Bundle branch in streamAndFlattenResources.
 func TestExecuteFlatteningStep_NonBundleStreamRouting(t *testing.T) {
 	flushed := false
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
 			flushed = true
 			w.Header().Set("Content-Type", "application/x-ndjson")

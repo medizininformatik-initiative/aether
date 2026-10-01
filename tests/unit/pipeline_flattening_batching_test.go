@@ -36,10 +36,23 @@ type flatteningRun struct {
 // resources. The fake flattener returns one row per resource.
 func runFlatteningWithFake(t *testing.T, inputs map[string][]map[string]any) flatteningRun {
 	t.Helper()
+	run, _, err := runFlatteningWithOptions(t, inputs, lib.LogLevelInfo, nil)
+	require.NoError(t, err)
+	return run
+}
+
+// runFlatteningWithOptions is runFlatteningWithFake with a log level and an
+// optional error that the fake flattener returns on every call. It returns the
+// captured log text and the step error instead of requiring success.
+func runFlatteningWithOptions(t *testing.T, inputs map[string][]map[string]any, level lib.LogLevel, flattenErr error) (flatteningRun, string, error) {
+	t.Helper()
 	var run flatteningRun
 	fake := &servicestest.MockFlattener{
 		FlattenFunc: func(_ models.ViewDefinition, resources []map[string]any) ([][]string, error) {
 			run.batches = append(run.batches, len(resources))
+			if flattenErr != nil {
+				return nil, flattenErr
+			}
 			rows := make([][]string, len(resources))
 			for i, r := range resources {
 				rows[i] = []string{fmt.Sprint(r["id"])}
@@ -71,14 +84,14 @@ func runFlatteningWithFake(t *testing.T, inputs map[string][]map[string]any) fla
 	job.Config.Services.Flattening.BatchSizeMB = 1
 
 	stopCapture := captureStdoutForTest(t)
-	err := runPipelineStep(models.StepFlattening, job, jobDir, createFlatteningTestLogger())
+	var logBuf strings.Builder
+	err := runPipelineStep(models.StepFlattening, job, jobDir, lib.NewLoggerWithWriter(level, &logBuf))
 	run.stdout = stopCapture()
-	require.NoError(t, err)
 
 	step, found := models.GetStepByName(*job, models.StepFlattening)
 	require.True(t, found)
 	run.step = step
-	return run
+	return run, logBuf.String(), err
 }
 
 func batchingPatient(id string) map[string]any {

@@ -246,102 +246,164 @@ func streamAndFlattenResources(
 	logger *lib.Logger,
 	batchSizeBytes int,
 ) ([]int, error) {
-	numGroups := len(groups)
-	batches := make([]groupBatch, numGroups)
-	totals := make([]int, numGroups)
-
-	// Divide total memory budget across groups so peak usage stays within batchSizeBytes
-	perGroupBytes := perGroupBudget(batchSizeBytes, numGroups)
-
-	// Initialize all batches as first batch
-	for i := range batches {
-		batches[i].isFirstBatch = true
+	s := &groupStreamer{
+		groups:          groups,
+		provenanceIndex: provenanceIndex,
+		groupIDToIndex:  groupIDToIndex,
+		viewDefs:        viewDefs,
+		headers:         headers,
+		filenames:       filenames,
+		flattenerClient: flattenerClient,
+		csvWriter:       csvWriter,
+		logger:          logger,
+		// Divide total memory budget across groups so peak usage stays within batchSizeBytes
+		perGroupBytes: perGroupBudget(batchSizeBytes, len(groups)),
 	}
+	s.init()
+	defer s.logSummaries()
 
-	// Stream through all files
 	for _, filePath := range files {
-		err := func() error {
-			reader, err := lib.OpenFileForReading(filePath)
-			if err != nil {
-				return fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), err)
-			}
-			defer func() { _ = reader.Close() }()
-
-			dec := json.NewDecoder(reader)
-
-			for {
-				startOffset := dec.InputOffset()
-				var resource map[string]any
-				if err := dec.Decode(&resource); err != nil {
-					if errors.Is(err, io.EOF) {
-						return nil
-					}
-					return fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), err)
-				}
-				resourceSize := int(dec.InputOffset() - startOffset)
-
-				// If resource is a Bundle, extract clinical entries (skip Provenance)
-				if lib.IsBundle(resource) {
-					clinicalResources, _ := extractBundleResources(resource)
-					for _, entryResource := range clinicalResources {
-						entryBytes, marshalErr := json.Marshal(entryResource)
-						if marshalErr != nil {
-							continue
-						}
-						for _, groupIdx := range routeResourceToGroups(entryResource, provenanceIndex, groupIDToIndex, viewDefs) {
-							batches[groupIdx].resources = append(batches[groupIdx].resources, entryResource)
-							batches[groupIdx].byteSize += len(entryBytes)
-							totals[groupIdx]++
-
-							if batches[groupIdx].byteSize >= perGroupBytes {
-								if err := flushGroupBatch(&batches[groupIdx], viewDefs[groupIdx], headers[groupIdx], filenames[groupIdx], flattenerClient, csvWriter, logger, groups[groupIdx].Name); err != nil {
-									return err
-								}
-							}
-						}
-					}
-				} else {
-					// Non-Bundle resource: route via provenance index
-					for _, groupIdx := range routeResourceToGroups(resource, provenanceIndex, groupIDToIndex, viewDefs) {
-						batches[groupIdx].resources = append(batches[groupIdx].resources, resource)
-						batches[groupIdx].byteSize += resourceSize
-						totals[groupIdx]++
-
-						if batches[groupIdx].byteSize >= perGroupBytes {
-							if err := flushGroupBatch(&batches[groupIdx], viewDefs[groupIdx], headers[groupIdx], filenames[groupIdx], flattenerClient, csvWriter, logger, groups[groupIdx].Name); err != nil {
-								return err
-							}
-						}
-					}
-				}
-			}
-		}()
-		if err != nil {
+		if err := s.streamFile(filePath); err != nil {
 			return nil, err
 		}
 	}
+	if err := s.flushRemaining(); err != nil {
+		return nil, err
+	}
+	if err := s.finalize(); err != nil {
+		return nil, err
+	}
+	return s.totals, nil
+}
 
-	// Flush remaining non-empty batches
-	for i := range batches {
-		if len(batches[i].resources) > 0 {
-			if err := flushGroupBatch(&batches[i], viewDefs[i], headers[i], filenames[i], flattenerClient, csvWriter, logger, groups[i].Name); err != nil {
-				return nil, err
+// groupStreamer holds the per-group batches, totals and size statistics of
+// one streaming pass.
+type groupStreamer struct {
+	groups          []models.AttributeGroup
+	provenanceIndex models.ProvenanceIndex
+	groupIDToIndex  map[string]int
+	viewDefs        []*models.ViewDefinition
+	headers         [][]string
+	filenames       []string
+	flattenerClient services.Flattener
+	csvWriter       *services.CSVWriter
+	logger          *lib.Logger
+	perGroupBytes   int
+	batches         []groupBatch
+	totals          []int
+	stats           []*groupSizeStats
+}
+
+func (s *groupStreamer) init() {
+	n := len(s.groups)
+	s.batches = make([]groupBatch, n)
+	s.totals = make([]int, n)
+	s.stats = make([]*groupSizeStats, n)
+	for i := range s.batches {
+		s.batches[i].isFirstBatch = true
+		s.stats[i] = &groupSizeStats{groupName: s.groups[i].Name, budgetBytes: s.perGroupBytes, logger: s.logger}
+	}
+}
+
+// logSummaries logs the size statistics of each group that has a ViewDefinition.
+func (s *groupStreamer) logSummaries() {
+	for i, st := range s.stats {
+		if s.viewDefs[i] != nil {
+			st.logSummary()
+		}
+	}
+}
+
+func (s *groupStreamer) streamFile(filePath string) error {
+	reader, err := lib.OpenFileForReading(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), err)
+	}
+	defer func() { _ = reader.Close() }()
+
+	dec := json.NewDecoder(reader)
+	for {
+		startOffset := dec.InputOffset()
+		var resource map[string]any
+		if err := dec.Decode(&resource); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), err)
+		}
+		if err := s.addDecoded(resource, int(dec.InputOffset()-startOffset)); err != nil {
+			return err
+		}
+	}
+}
+
+// addDecoded adds a decoded resource. A Bundle adds its clinical entries and
+// skips its Provenance entries.
+func (s *groupStreamer) addDecoded(resource map[string]any, size int) error {
+	if !lib.IsBundle(resource) {
+		return s.add(resource, size)
+	}
+	clinicalResources, _ := extractBundleResources(resource)
+	for _, entry := range clinicalResources {
+		entryBytes, err := json.Marshal(entry)
+		if err != nil {
+			continue
+		}
+		if err := s.add(entry, len(entryBytes)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// add routes the resource to its groups via the provenance index and flushes
+// each group batch that reaches the byte threshold.
+func (s *groupStreamer) add(resource map[string]any, size int) error {
+	ref := lib.ResourceReference(resource)
+	for _, i := range routeResourceToGroups(resource, s.provenanceIndex, s.groupIDToIndex, s.viewDefs) {
+		s.batches[i].resources = append(s.batches[i].resources, resource)
+		s.batches[i].byteSize += size
+		s.stats[i].addResource(ref, size)
+		s.totals[i]++
+
+		if s.batches[i].byteSize >= s.perGroupBytes {
+			if err := s.flush(i); err != nil {
+				return err
 			}
 		}
 	}
+	return nil
+}
 
-	// Publish complete files under their final names. A group whose batch
-	// never flushed has no file to publish.
-	for i := range batches {
-		if batches[i].isFirstBatch {
+func (s *groupStreamer) flush(i int) error {
+	return flushGroupBatch(&s.batches[i], s.viewDefs[i], s.headers[i], s.filenames[i],
+		s.flattenerClient, s.csvWriter, s.logger, s.groups[i].Name, s.stats[i])
+}
+
+func (s *groupStreamer) flushRemaining() error {
+	for i := range s.batches {
+		if len(s.batches[i].resources) == 0 {
 			continue
 		}
-		if err := csvWriter.Finalize(filenames[i]); err != nil {
-			return nil, fmt.Errorf("failed to finalize CSV for group '%s': %w", groups[i].Name, err)
+		if err := s.flush(i); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
-	return totals, nil
+// finalize publishes complete files under their final names. A group whose
+// batch never flushed has no file to publish.
+func (s *groupStreamer) finalize() error {
+	for i := range s.batches {
+		if s.batches[i].isFirstBatch {
+			continue
+		}
+		if err := s.csvWriter.Finalize(s.filenames[i]); err != nil {
+			return fmt.Errorf("failed to finalize CSV for group '%s': %w", s.groups[i].Name, err)
+		}
+	}
+	return nil
 }
 
 // annotateWithPartialFiles names the partial CSV files that a failed run left
@@ -392,12 +454,14 @@ func flushGroupBatch(
 	csvWriter *services.CSVWriter,
 	logger *lib.Logger,
 	groupName string,
+	stats *groupSizeStats,
 ) error {
 	logger.Debug("Flushing batch",
 		"group_name", groupName,
 		"resource_count", len(batch.resources),
 		"byte_size", batch.byteSize)
 
+	stats.addBatch(batch.byteSize)
 	rows, err := flattenerClient.Flatten(*viewDef, batch.resources)
 	if err != nil {
 		return fmt.Errorf("flattener failed for group '%s': %w", groupName, err)

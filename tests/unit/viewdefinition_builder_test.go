@@ -1896,7 +1896,13 @@ func countOccurrences(names []string, target string) int {
 // because JSON is the form that the flattener receives.
 func assertAttributeSelectsJSON(t *testing.T, lookup models.LookupTable, attributeRef, expected string) {
 	t.Helper()
-	viewDef := buildAndAssertViewDef(t, []models.LookupTable{lookup}, newAttributeGroup("G", lookup.URL, attributeRef))
+	assertGroupSelectsJSON(t, lookup, expected, attributeRef)
+}
+
+// assertGroupSelectsJSON is assertAttributeSelectsJSON for a group with more than one attribute.
+func assertGroupSelectsJSON(t *testing.T, lookup models.LookupTable, expected string, attributeRefs ...string) {
+	t.Helper()
+	viewDef := buildAndAssertViewDef(t, []models.LookupTable{lookup}, newAttributeGroup("G", lookup.URL, attributeRefs...))
 	require.NotEmpty(t, viewDef.Select)
 	actual, err := json.Marshal(viewDef.Select[1:])
 	require.NoError(t, err)
@@ -2053,4 +2059,196 @@ func TestBuildViewDefinitionDoesNotWriteIntoLookupSelect(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, services.ExtractColumnNames(*viewDef), "display")
 	assert.Equal(t, models.SelectClause{}, ownSelect[:2][1], "the build must not write into the spare capacity of the lookup table's Select")
+}
+
+func TestSharedAncestorsMergeIntoOneClause(t *testing.T) {
+	t.Run("attributes with a shared root forEach parent share one clause", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Medication", "Medication", map[string]models.LookupElement{
+			"Medication.ingredient": {
+				Children:       []string{"Medication.ingredient.item[x]", "Medication.ingredient.strength"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "ingredient"},
+			},
+			"Medication.ingredient.item[x]": {
+				Parent: "Medication.ingredient",
+				ViewDefinition: models.ViewDefSnippet{
+					ForEachOrNull: "item.ofType(CodeableConcept).coding",
+					Column:        []models.ColumnDefinition{{Name: "code", Path: "code"}},
+				},
+			},
+			"Medication.ingredient.strength": {
+				Parent: "Medication.ingredient",
+				ViewDefinition: models.ViewDefSnippet{
+					ForEachOrNull: "strength",
+					Column:        []models.ColumnDefinition{{Name: "numerator", Path: "numerator.value"}},
+				},
+			},
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[{
+			"forEachOrNull": "ingredient",
+			"select": [
+				{"forEachOrNull": "item.ofType(CodeableConcept).coding", "column": [{"name": "code", "path": "code"}]},
+				{"forEachOrNull": "strength", "column": [{"name": "numerator", "path": "numerator.value"}]}
+			]
+		}]`, "Medication.ingredient.item[x]", "Medication.ingredient.strength")
+	})
+
+	t.Run("attributes with a shared select-level forEach parent show its columns once", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Observation", "Observation", map[string]models.LookupElement{
+			"Observation.component": {
+				Children: []string{"Observation.component.code", "Observation.component.value[x]"},
+				ViewDefinition: newViewDefSnippet(models.SelectClause{
+					ForEach: "component",
+					Column:  []models.ColumnDefinition{{Name: "component_id", Path: "id"}},
+				}),
+			},
+			"Observation.component.code": {
+				Parent:         "Observation.component",
+				ViewDefinition: newViewDefSnippet(newSelectClause("code", "code.coding.code")),
+			},
+			"Observation.component.value[x]": {
+				Parent:         "Observation.component",
+				ViewDefinition: newViewDefSnippet(newSelectClause("value", "value.ofType(string)")),
+			},
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[{
+			"forEach": "component",
+			"column": [{"name": "component_id", "path": "id"}],
+			"select": [
+				{"column": [{"name": "code", "path": "code.coding.code"}]},
+				{"column": [{"name": "value", "path": "value.ofType(string)"}]}
+			]
+		}]`, "Observation.component.code", "Observation.component.value[x]")
+	})
+
+	t.Run("a shared grandparent clause holds one clause for each distinct parent", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Encounter", "Encounter", map[string]models.LookupElement{
+			"Encounter.diagnosis": {
+				Children:       []string{"Encounter.diagnosis.condition", "Encounter.diagnosis.use"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "diagnosis"},
+			},
+			"Encounter.diagnosis.condition": {
+				Parent:         "Encounter.diagnosis",
+				Children:       []string{"Encounter.diagnosis.condition.reference"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "condition"},
+			},
+			"Encounter.diagnosis.condition.reference": {
+				Parent:         "Encounter.diagnosis.condition",
+				ViewDefinition: newViewDefSnippet(newSelectClause("condition_ref", "reference")),
+			},
+			"Encounter.diagnosis.use": {
+				Parent:         "Encounter.diagnosis",
+				Children:       []string{"Encounter.diagnosis.use.text"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "use"},
+			},
+			"Encounter.diagnosis.use.text": {
+				Parent:         "Encounter.diagnosis.use",
+				ViewDefinition: newViewDefSnippet(newSelectClause("use_text", "text")),
+			},
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[{
+			"forEachOrNull": "diagnosis",
+			"select": [
+				{"forEachOrNull": "condition", "select": [{"column": [{"name": "condition_ref", "path": "reference"}]}]},
+				{"forEachOrNull": "use", "select": [{"column": [{"name": "use_text", "path": "text"}]}]}
+			]
+		}]`, "Encounter.diagnosis.condition.reference", "Encounter.diagnosis.use.text")
+	})
+
+	t.Run("a shared ancestor clause takes the position of its first attribute", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Observation", "Observation", map[string]models.LookupElement{
+			"Observation.x": {
+				Children:       []string{"Observation.x.a", "Observation.x.c"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "x"},
+			},
+			"Observation.x.a": {
+				Parent:         "Observation.x",
+				ViewDefinition: models.ViewDefSnippet{Column: []models.ColumnDefinition{{Name: "a", Path: "a"}}},
+			},
+			"Observation.x.c": {
+				Parent:         "Observation.x",
+				ViewDefinition: models.ViewDefSnippet{Column: []models.ColumnDefinition{{Name: "c", Path: "c"}}},
+			},
+			"Observation.b": {
+				ViewDefinition: models.ViewDefSnippet{Column: []models.ColumnDefinition{{Name: "b", Path: "b"}}},
+			},
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[
+			{"forEachOrNull": "x", "select": [
+				{"column": [{"name": "a", "path": "a"}]},
+				{"column": [{"name": "c", "path": "c"}]}
+			]},
+			{"column": [{"name": "b", "path": "b"}]}
+		]`, "Observation.x.a", "Observation.b", "Observation.x.c")
+
+		assertGroupSelectsJSON(t, lookup, `[
+			{"column": [{"name": "b", "path": "b"}]},
+			{"forEachOrNull": "x", "select": [
+				{"column": [{"name": "a", "path": "a"}]},
+				{"column": [{"name": "c", "path": "c"}]}
+			]}
+		]`, "Observation.b", "Observation.x.a", "Observation.x.c")
+	})
+
+	t.Run("a selected ancestor includes its selected descendant once in the shared clause", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Observation", "Observation", map[string]models.LookupElement{
+			"Observation.g": {
+				Children:       []string{"Observation.g.p", "Observation.g.q"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "g"},
+			},
+			"Observation.g.p": {
+				Parent:         "Observation.g",
+				Children:       []string{"Observation.g.p.c"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "p"},
+			},
+			"Observation.g.p.c": {
+				Parent:         "Observation.g.p",
+				ViewDefinition: models.ViewDefSnippet{Column: []models.ColumnDefinition{{Name: "c", Path: "c"}}},
+			},
+			"Observation.g.q": {
+				Parent:         "Observation.g",
+				ViewDefinition: models.ViewDefSnippet{Column: []models.ColumnDefinition{{Name: "q", Path: "q"}}},
+			},
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[
+			{"forEachOrNull": "g", "select": [
+				{"column": [{"name": "q", "path": "q"}]},
+				{"forEachOrNull": "p", "select": [{"column": [{"name": "c", "path": "c"}]}]}
+			]}
+		]`, "Observation.g.p.c", "Observation.g.q", "Observation.g.p")
+	})
+
+	t.Run("attributes merge only below an ancestor that the lookup does not have", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Observation", "Observation", map[string]models.LookupElement{
+			"Observation.p": {
+				Parent:         "Observation.missing",
+				Children:       []string{"Observation.p.c", "Observation.p.d"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "p"},
+			},
+			"Observation.p.c": {
+				Parent:         "Observation.p",
+				ViewDefinition: models.ViewDefSnippet{Column: []models.ColumnDefinition{{Name: "c", Path: "c"}}},
+			},
+			"Observation.p.d": {
+				Parent:         "Observation.p",
+				ViewDefinition: models.ViewDefSnippet{Column: []models.ColumnDefinition{{Name: "d", Path: "d"}}},
+			},
+			"Observation.e": {
+				Parent:         "Observation.missing",
+				ViewDefinition: models.ViewDefSnippet{Column: []models.ColumnDefinition{{Name: "e", Path: "e"}}},
+			},
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[
+			{"forEachOrNull": "p", "select": [
+				{"column": [{"name": "c", "path": "c"}]},
+				{"column": [{"name": "d", "path": "d"}]}
+			]},
+			{"column": [{"name": "e", "path": "e"}]}
+		]`, "Observation.p.c", "Observation.e", "Observation.p.d")
+	})
 }

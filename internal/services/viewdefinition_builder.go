@@ -19,69 +19,38 @@ func NewViewDefinitionBuilder(tables []models.LookupTable) *ViewDefinitionBuilde
 	}
 }
 
-// BuildViewDefinition creates a complete ViewDefinition for an attributeGroup
-// Implements the algorithm from test.py:
-// 1. Create base ViewDefinition with metadata
-// 2. For each attribute, look up element and resolve children
-// 3. Add fixed id/patient columns at front
+// BuildViewDefinition creates the ViewDefinition for an attribute group. The fixed
+// id and patient columns come first. The attributes follow, merged in one ancestor
+// tree, so that attributes with a common ancestor share its forEach context.
 func (b *ViewDefinitionBuilder) BuildViewDefinition(group models.AttributeGroup) (*models.ViewDefinition, error) {
-	// Find the matching lookup table by groupReference
 	lookup := GetProfileLookup(b.lookupTables, group.GroupReference)
 	if lookup == nil {
 		return nil, fmt.Errorf("no lookup table found for profile: %s", group.GroupReference)
 	}
 
-	// Create base ViewDefinition
 	viewDef := models.NewBaseViewDefinition(group.Name, lookup.ResourceType)
 
-	// Fixed columns come first
-	selectClauses := []models.SelectClause{{Column: b.buildFixedColumns(lookup.ResourceType)}}
-
-	// Build set of attribute refs for fast lookup (used to detect overlapping parent-child)
 	attrRefSet := make(map[string]bool)
 	for _, attr := range group.Attributes {
 		attrRefSet[attr.AttributeRef] = true
 	}
 
-	// Process each attribute in the group, skipping children whose parent is already in the list
+	root := &ancestorNode{}
 	for _, attr := range group.Attributes {
-		// Skip if this element's parent (or any ancestor) is already in the attribute list
-		// Parent's downward traversal will include this child automatically
-		if isParentInAttributeList(lookup, attr.AttributeRef, attrRefSet) {
+		element := GetElement(lookup, attr.AttributeRef)
+		if element == nil {
 			continue
 		}
-
-		attrSelects, err := b.buildAttributeSelect(lookup, attr.AttributeRef)
-		if err != nil {
-			// Log warning but continue - some attributes might not have lookup entries
+		chain := ancestorChain(lookup, element)
+		// The resolved children of a selected ancestor already include this attribute.
+		if slices.ContainsFunc(chain, func(a *ancestorNode) bool { return attrRefSet[a.id] }) {
 			continue
 		}
-		selectClauses = append(selectClauses, attrSelects...)
+		root.insert(chain, b.resolveWithChildren(lookup, element))
 	}
 
-	viewDef.Select = selectClauses
+	viewDef.Select = append([]models.SelectClause{{Column: b.buildFixedColumns(lookup.ResourceType)}}, root.render()...)
 	return &viewDef, nil
-}
-
-// isParentInAttributeList checks if the element's parent (or any ancestor) is in the attribute list.
-// NormalizeLookupTables derives Parent links at load time, so the parent chain is complete here.
-// This is used to avoid duplicates when both a parent and its children are specified in the CRTDL.
-// When a parent is in the list, its downward traversal includes all children automatically,
-// so the children should be skipped to avoid duplicates.
-func isParentInAttributeList(lookup *models.LookupTable, elementID string, attrRefs map[string]bool) bool {
-	element := GetElement(lookup, elementID)
-	if element == nil {
-		return false
-	}
-	if element.Parent == "" {
-		return false
-	}
-	// Check if parent is in the attribute list
-	if attrRefs[element.Parent] {
-		return true
-	}
-	// Recursively check grandparent (handle multi-level hierarchy)
-	return isParentInAttributeList(lookup, element.Parent, attrRefs)
 }
 
 // buildFixedColumns creates the fixed columns (id, and optionally patient) for a ViewDefinition.
@@ -103,20 +72,7 @@ func (b *ViewDefinitionBuilder) buildFixedColumns(resourceType string) []models.
 	return columns
 }
 
-// buildAttributeSelect creates the select clauses for a single attribute
-func (b *ViewDefinitionBuilder) buildAttributeSelect(lookup *models.LookupTable, attributeRef string) ([]models.SelectClause, error) {
-	element := GetElement(lookup, attributeRef)
-	if element == nil {
-		return nil, fmt.Errorf("element not found: %s", attributeRef)
-	}
-
-	// The ancestors only give their forEach context. Their other children are not resolved,
-	// so sibling attributes that share an ancestor do not change the output of each other.
-	return b.wrapInAncestors(lookup, element.Parent, b.resolveWithChildren(lookup, element)), nil
-}
-
 // resolveWithChildren recursively resolves an element and its children
-// This matches the Python reference implementation (test.py lines 52-57)
 func (b *ViewDefinitionBuilder) resolveWithChildren(lookup *models.LookupTable, element *models.LookupElement) []models.SelectClause {
 	snippet := element.ViewDefinition
 	if len(element.Children) == 0 {
@@ -153,20 +109,62 @@ func leafSelects(snippet models.ViewDefSnippet) []models.SelectClause {
 	return snippet.Select
 }
 
-// wrapInAncestors walks up the parent chain starting at parentID and wraps
-// selects in each ancestor's forEach context. Placeholder ancestors (no root
-// forEach and no select-level forEach) are passed through unchanged so the
-// selects bubble up to the next ancestor that provides context.
-func (b *ViewDefinitionBuilder) wrapInAncestors(lookup *models.LookupTable, parentID string, selects []models.SelectClause) []models.SelectClause {
-	if parentID == "" {
-		return selects
+// ancestorChain returns the ancestors of element as tree nodes, from the root down to its parent.
+// The walk stops at an empty Parent or at an element that the lookup does not have.
+func ancestorChain(lookup *models.LookupTable, element *models.LookupElement) []*ancestorNode {
+	var chain []*ancestorNode
+	for id := element.Parent; id != ""; {
+		parent := GetElement(lookup, id)
+		if parent == nil {
+			break
+		}
+		chain = append(chain, &ancestorNode{id: id, element: parent})
+		id = parent.Parent
 	}
-	parent := GetElement(lookup, parentID)
-	if parent == nil {
-		return selects
-	}
+	slices.Reverse(chain)
+	return chain
+}
 
-	return b.wrapInAncestors(lookup, parent.Parent, wrapInParentContext(parent, selects))
+// ancestorNode is a node of the ancestor tree. A node without an element is the
+// root or a leaf with the selects of one attribute. The children keep the order
+// of their first insertion. Attributes with a common ancestor share its node, so
+// the forEach context of the ancestor appears once and each of its rows pairs
+// only its own children.
+type ancestorNode struct {
+	id       string
+	element  *models.LookupElement
+	selects  []models.SelectClause
+	children []*ancestorNode
+}
+
+// insert adds selects below the node that chain describes. A chain node with
+// an element ID that is already a child of n is merged into that child.
+func (n *ancestorNode) insert(chain []*ancestorNode, selects []models.SelectClause) {
+	if len(chain) == 0 {
+		n.children = append(n.children, &ancestorNode{selects: selects})
+		return
+	}
+	for _, c := range n.children {
+		if c.id == chain[0].id {
+			c.insert(chain[1:], selects)
+			return
+		}
+	}
+	n.children = append(n.children, chain[0])
+	chain[0].insert(chain[1:], selects)
+}
+
+// render concatenates the selects of the node and its rendered children and
+// wraps them once in the context of the node element.
+func (n *ancestorNode) render() []models.SelectClause {
+	selects := n.selects
+	for _, c := range n.children {
+		selects = append(selects, c.render()...)
+	}
+	if n.element == nil {
+		return selects
+	}
+	return wrapInParentContext(n.element, selects)
 }
 
 // wrapInParentContext wraps selects in the forEach context of parent. A root forEach

@@ -29,6 +29,26 @@ func TestSelectClauseHasForEach(t *testing.T) {
 	}
 }
 
+func TestSelectClauseForEachExpression(t *testing.T) {
+	cases := []struct {
+		name          string
+		forEach       string
+		forEachOrNull string
+		want          string
+	}{
+		{"neither set", "", "", ""},
+		{"forEach only", "component", "", "component"},
+		{"forEachOrNull only", "", "code", "code"},
+		{"forEach has priority", "component", "code", "component"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sel := models.SelectClause{ForEach: tc.forEach, ForEachOrNull: tc.forEachOrNull}
+			assert.Equal(t, tc.want, sel.ForEachExpression())
+		})
+	}
+}
+
 func TestViewDefSnippetHasForEach(t *testing.T) {
 	for _, tc := range hasForEachCases {
 		t.Run(tc.name, func(t *testing.T) {

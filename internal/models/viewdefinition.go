@@ -16,11 +16,20 @@ type SelectClause struct {
 	Select        []SelectClause     `json:"select,omitempty"`        // Nested select clauses
 	ForEach       string             `json:"forEach,omitempty"`       // ForEach expression
 	ForEachOrNull string             `json:"forEachOrNull,omitempty"` // ForEachOrNull expression
+	UnionAll      []SelectClause     `json:"unionAll,omitempty"`      // Branches whose rows are appended
 }
 
 // HasForEach tells if the select clause iterates with forEach or forEachOrNull.
 func (s SelectClause) HasForEach() bool {
 	return s.ForEach != "" || s.ForEachOrNull != ""
+}
+
+// ForEachExpression returns the forEach expression, or else the forEachOrNull expression.
+func (s SelectClause) ForEachExpression() string {
+	if s.ForEach != "" {
+		return s.ForEach
+	}
+	return s.ForEachOrNull
 }
 
 // ColumnDefinition represents a column in a ViewDefinition select clause

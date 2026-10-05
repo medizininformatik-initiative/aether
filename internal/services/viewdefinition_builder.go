@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/medizininformatik-initiative/aether/internal/models"
 )
@@ -46,7 +47,7 @@ func (b *ViewDefinitionBuilder) BuildViewDefinition(group models.AttributeGroup)
 		if slices.ContainsFunc(chain, func(a *ancestorNode) bool { return attrRefSet[a.id] }) {
 			continue
 		}
-		root.insert(chain, b.resolveWithChildren(lookup, element))
+		root.insert(chain, &ancestorNode{id: attr.AttributeRef, selects: b.resolveWithChildren(lookup, element)})
 	}
 
 	viewDef.Select = append([]models.SelectClause{{Column: b.buildFixedColumns(lookup.ResourceType)}}, root.render()...)
@@ -79,12 +80,13 @@ func (b *ViewDefinitionBuilder) resolveWithChildren(lookup *models.LookupTable, 
 		return leafSelects(snippet)
 	}
 
-	var childSelects []models.SelectClause
+	var items []siblingItem
 	for _, childID := range element.Children {
 		if childElement := GetElement(lookup, childID); childElement != nil {
-			childSelects = append(childSelects, b.resolveWithChildren(lookup, childElement)...)
+			items = append(items, siblingItem{id: childID, selects: b.resolveWithChildren(lookup, childElement)})
 		}
 	}
+	childSelects := unionSlices(items)
 
 	// If element has root forEach, create wrapper SelectClause with children inside
 	if snippet.HasForEach() {
@@ -98,6 +100,127 @@ func (b *ViewDefinitionBuilder) resolveWithChildren(lookup *models.LookupTable, 
 	result = append(result, snippet.Select...)
 	result = append(result, childSelects...)
 	return result
+}
+
+// siblingItem is an element with its resolved select clauses.
+type siblingItem struct {
+	id      string
+	selects []models.SelectClause
+}
+
+// sliceBase returns the element ID of the slice without its slice name, for
+// example "Condition.code.coding" for "Condition.code.coding:icd10-gm". It
+// returns "" when the last path segment is not a slice.
+func sliceBase(id string) string {
+	i := strings.LastIndex(id, ":")
+	if i <= strings.LastIndex(id, ".") {
+		return ""
+	}
+	return id[:i]
+}
+
+// unionSlices combines sibling slices of one element into one unionAll clause,
+// so that each slice gives its own rows. Without it, the forEach clauses of
+// the slices are cross-joined and write every combination of their rows.
+// The clause takes the position of the first slice. All other items stay as they are.
+func unionSlices(items []siblingItem) []models.SelectClause {
+	bases, groups, first := groupSlices(items)
+	var result []models.SelectClause
+	for i, item := range items {
+		group := groups[bases[i]]
+		switch {
+		case len(group) < 2:
+			result = append(result, item.selects...)
+		case first[bases[i]] == i:
+			result = append(result, buildSliceUnion(group))
+		}
+	}
+	return result
+}
+
+// groupSlices returns the union base of each item, the clauses of the items
+// per base, and the index of the first item per base. Items without a base
+// are in no group.
+func groupSlices(items []siblingItem) ([]string, map[string][]models.SelectClause, map[string]int) {
+	bases := make([]string, len(items))
+	groups := make(map[string][]models.SelectClause)
+	first := make(map[string]int)
+	for i, item := range items {
+		bases[i] = unionBase(item)
+		if bases[i] == "" {
+			continue
+		}
+		if _, ok := groups[bases[i]]; !ok {
+			first[bases[i]] = i
+		}
+		groups[bases[i]] = append(groups[bases[i]], item.selects[0])
+	}
+	return bases, groups, first
+}
+
+// unionBase returns the slice base of an item that can join a union, or "".
+// Only an item that resolves to exactly one forEach clause can join.
+func unionBase(item siblingItem) string {
+	if len(item.selects) != 1 || !item.selects[0].HasForEach() {
+		return ""
+	}
+	return sliceBase(item.id)
+}
+
+// buildSliceUnion builds a unionAll clause from slice clauses. Each branch
+// has the columns of all slices. A branch fills the columns of the other
+// slices with empty values. The first branch gives one empty row when all
+// slices are empty. It comes first, because the flattener takes the column
+// types from the first branch.
+func buildSliceUnion(members []models.SelectClause) models.SelectClause {
+	exprs := make([]string, len(members))
+	emptyConditions := make([]string, len(members))
+	empty := make([][]models.ColumnDefinition, len(members))
+	fallback := make([]models.SelectClause, len(members))
+	for i, m := range members {
+		exprs[i] = m.ForEachExpression()
+		emptyConditions[i] = "(" + exprs[i] + ").empty()"
+		empty[i] = emptyColumns(m)
+		m.ForEach, m.ForEachOrNull = "", exprs[i]
+		fallback[i] = m
+	}
+
+	branches := []models.SelectClause{{
+		ForEach: "$this.where(" + strings.Join(emptyConditions, " and ") + ")",
+		Select:  fallback,
+	}}
+	for i, m := range members {
+		parts := make([]models.SelectClause, len(members))
+		for j := range members {
+			parts[j] = models.SelectClause{Column: empty[j]}
+		}
+		parts[i] = models.SelectClause{Column: m.Column, Select: m.Select}
+		branches = append(branches, models.SelectClause{ForEach: exprs[i], Select: parts})
+	}
+	return models.SelectClause{UnionAll: branches}
+}
+
+// emptyColumns returns the columns of a clause with a path that has no value.
+func emptyColumns(sel models.SelectClause) []models.ColumnDefinition {
+	columns := collectColumns(sel)
+	for i := range columns {
+		columns[i].Path = "{}"
+	}
+	return columns
+}
+
+// collectColumns returns the columns of a clause in the order of its output:
+// its own columns, then those of its nested selects, then those of its unionAll.
+// All branches of a unionAll have the same columns, so the first branch gives them.
+func collectColumns(sel models.SelectClause) []models.ColumnDefinition {
+	columns := slices.Clone(sel.Column)
+	for _, nested := range sel.Select {
+		columns = append(columns, collectColumns(nested)...)
+	}
+	if len(sel.UnionAll) > 0 {
+		columns = append(columns, collectColumns(sel.UnionAll[0])...)
+	}
+	return columns
 }
 
 // leafSelects converts the snippet of an element without children to select clauses.
@@ -137,30 +260,32 @@ type ancestorNode struct {
 	children []*ancestorNode
 }
 
-// insert adds selects below the node that chain describes. A chain node with
+// insert adds leaf below the node that chain describes. A chain node with
 // an element ID that is already a child of n is merged into that child.
-func (n *ancestorNode) insert(chain []*ancestorNode, selects []models.SelectClause) {
+func (n *ancestorNode) insert(chain []*ancestorNode, leaf *ancestorNode) {
 	if len(chain) == 0 {
-		n.children = append(n.children, &ancestorNode{selects: selects})
+		n.children = append(n.children, leaf)
 		return
 	}
 	for _, c := range n.children {
 		if c.id == chain[0].id {
-			c.insert(chain[1:], selects)
+			c.insert(chain[1:], leaf)
 			return
 		}
 	}
 	n.children = append(n.children, chain[0])
-	chain[0].insert(chain[1:], selects)
+	chain[0].insert(chain[1:], leaf)
 }
 
 // render concatenates the selects of the node and its rendered children and
-// wraps them once in the context of the node element.
+// wraps them once in the context of the node element. Children that are slices
+// of one element go into one unionAll clause.
 func (n *ancestorNode) render() []models.SelectClause {
-	selects := n.selects
-	for _, c := range n.children {
-		selects = append(selects, c.render()...)
+	items := make([]siblingItem, len(n.children))
+	for i, c := range n.children {
+		items[i] = siblingItem{id: c.id, selects: c.render()}
 	}
+	selects := append(n.selects, unionSlices(items)...)
 	if n.element == nil {
 		return selects
 	}
@@ -208,25 +333,10 @@ func viewDefSnippetToSelectClause(snippet models.ViewDefSnippet) models.SelectCl
 func ExtractColumnNames(viewDef models.ViewDefinition) []string {
 	var names []string
 	for _, sel := range viewDef.Select {
-		names = append(names, extractColumnNamesFromSelect(sel)...)
+		for _, col := range collectColumns(sel) {
+			names = append(names, col.Name)
+		}
 	}
-	return names
-}
-
-// extractColumnNamesFromSelect recursively extracts column names from a select clause
-func extractColumnNamesFromSelect(sel models.SelectClause) []string {
-	var names []string
-
-	// Add column names from this select
-	for _, col := range sel.Column {
-		names = append(names, col.Name)
-	}
-
-	// Recursively extract from nested selects
-	for _, nested := range sel.Select {
-		names = append(names, extractColumnNamesFromSelect(nested)...)
-	}
-
 	return names
 }
 

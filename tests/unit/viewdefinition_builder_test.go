@@ -175,6 +175,30 @@ func TestExtractColumnNames(t *testing.T) {
 		assert.Equal(t, []string{"id", "family", "given"}, services.ExtractColumnNames(viewDef))
 	})
 
+	t.Run("unionAll columns appear once at the position of the clause", func(t *testing.T) {
+		viewDef := models.ViewDefinition{
+			Select: []models.SelectClause{
+				{Column: []models.ColumnDefinition{{Name: "id"}}},
+				{
+					Column: []models.ColumnDefinition{{Name: "own"}},
+					Select: []models.SelectClause{{Column: []models.ColumnDefinition{{Name: "nested"}}}},
+					UnionAll: []models.SelectClause{
+						{Select: []models.SelectClause{
+							{Column: []models.ColumnDefinition{{Name: "a"}}},
+							{Column: []models.ColumnDefinition{{Name: "b"}}},
+						}},
+						{Select: []models.SelectClause{
+							{Column: []models.ColumnDefinition{{Name: "a"}}},
+							{Column: []models.ColumnDefinition{{Name: "b"}}},
+						}},
+					},
+				},
+				{Column: []models.ColumnDefinition{{Name: "last"}}},
+			},
+		}
+		assert.Equal(t, []string{"id", "own", "nested", "a", "b", "last"}, services.ExtractColumnNames(viewDef))
+	})
+
 	t.Run("empty viewDefinition", func(t *testing.T) {
 		viewDef := models.ViewDefinition{Select: []models.SelectClause{}}
 		assert.Empty(t, services.ExtractColumnNames(viewDef))
@@ -956,11 +980,12 @@ func TestBuildViewDefinitionWithOverlappingAttributes(t *testing.T) {
 		require.NotNil(t, codeSelectClause, "Should have forEachOrNull: 'code'")
 
 		// All 4 children should be inside the code wrapper (from downward traversal of parent)
+		// The slices are the branches of one unionAll, after the fallback branch.
+		require.Len(t, codeSelectClause.Select, 1)
+		require.Len(t, codeSelectClause.Select[0].UnionAll, 5)
 		childForEachPaths := make(map[string]bool)
-		for _, childSel := range codeSelectClause.Select {
-			if childSel.ForEachOrNull != "" {
-				childForEachPaths[childSel.ForEachOrNull] = true
-			}
+		for _, branch := range codeSelectClause.Select[0].UnionAll[1:] {
+			childForEachPaths[branch.ForEach] = true
 		}
 
 		assert.True(t, childForEachPaths["coding.where(system = 'http://snomed.info/sct')"], "Should have sct child")
@@ -1619,22 +1644,12 @@ func TestBuildViewDefinitionWithRealLookupStructure(t *testing.T) {
 		// The code select clause should have nested select clauses (children)
 		require.NotEmpty(t, codeSelectClause.Select, "code select clause should have nested selects for children")
 
-		// Check that children have their forEachOrNull preserved
-		var foundSct, foundIcd10 bool
-		for _, childSel := range codeSelectClause.Select {
-			if childSel.ForEachOrNull == "coding.where(system = 'http://snomed.info/sct')" {
-				foundSct = true
-				// Verify the child has the correct column
-				require.NotEmpty(t, childSel.Select, "sct child should have select with columns")
-			}
-			if childSel.ForEachOrNull == "coding.where(system = 'http://fhir.de/CodeSystem/bfarm/icd-10-gm')" {
-				foundIcd10 = true
-				require.NotEmpty(t, childSel.Select, "icd10 child should have select with columns")
-			}
-		}
-
-		assert.True(t, foundSct, "Should have child with forEachOrNull for SNOMED CT")
-		assert.True(t, foundIcd10, "Should have child with forEachOrNull for ICD-10-GM")
+		// The coding slices go into one unionAll: a fallback branch, then one branch for each slice
+		require.Len(t, codeSelectClause.Select, 1)
+		union := codeSelectClause.Select[0].UnionAll
+		require.Len(t, union, 3, "the code select clause should hold one unionAll with a fallback and two slice branches")
+		assert.Equal(t, "coding.where(system = 'http://snomed.info/sct')", union[1].ForEach)
+		assert.Equal(t, "coding.where(system = 'http://fhir.de/CodeSystem/bfarm/icd-10-gm')", union[2].ForEach)
 
 		// Verify all column names are extractable
 		columnNames := services.ExtractColumnNames(*viewDef)
@@ -1858,13 +1873,13 @@ func TestSiblingsUnderPlaceholderParent(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, viewDef)
 
+		// The extension slices are the branches of one unionAll, after the fallback branch.
+		require.Len(t, viewDef.Select, 2)
+		require.Len(t, viewDef.Select[1].UnionAll, 3)
 		assertedDateCount := 0
 		relatedCount := 0
-		for _, sel := range viewDef.Select {
-			fe := sel.ForEach
-			if fe == "" {
-				fe = sel.ForEachOrNull
-			}
+		for _, branch := range viewDef.Select[1].UnionAll[1:] {
+			fe := branch.ForEach
 			switch fe {
 			case "extension.where(url = 'http://hl7.org/fhir/StructureDefinition/condition-assertedDate')":
 				assertedDateCount++
@@ -2250,5 +2265,451 @@ func TestSharedAncestorsMergeIntoOneClause(t *testing.T) {
 			]},
 			{"column": [{"name": "e", "path": "e"}]}
 		]`, "Observation.p.c", "Observation.e", "Observation.p.d")
+	})
+}
+
+// codingSliceElement returns a lookup element for a coding slice that iterates with forEachOrNull.
+func codingSliceElement(parent, filter, columnName string) models.LookupElement {
+	return models.LookupElement{
+		Parent: parent,
+		ViewDefinition: models.ViewDefSnippet{
+			ForEachOrNull: "coding.where(" + filter + ")",
+			Column:        []models.ColumnDefinition{{Name: columnName, Path: "code", Type: "string"}},
+		},
+	}
+}
+
+func TestSlicesOfOneElementGoIntoUnionAll(t *testing.T) {
+	t.Run("two slices of one element become one unionAll with a fallback branch first", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Condition", "Condition", map[string]models.LookupElement{
+			"Condition.code": {
+				Children:       []string{"Condition.code.coding:icd10-gm", "Condition.code.coding:alpha-id"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "code"},
+			},
+			"Condition.code.coding:icd10-gm": codingSliceElement("Condition.code", "system='icd'", "icd10"),
+			"Condition.code.coding:alpha-id": codingSliceElement("Condition.code", "system='alpha'", "alpha"),
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[{
+			"forEachOrNull": "code",
+			"select": [{"unionAll": [
+				{
+					"forEach": "$this.where((coding.where(system='icd')).empty() and (coding.where(system='alpha')).empty())",
+					"select": [
+						{"forEachOrNull": "coding.where(system='icd')", "column": [{"name": "icd10", "path": "code", "type": "string"}]},
+						{"forEachOrNull": "coding.where(system='alpha')", "column": [{"name": "alpha", "path": "code", "type": "string"}]}
+					]
+				},
+				{
+					"forEach": "coding.where(system='icd')",
+					"select": [
+						{"column": [{"name": "icd10", "path": "code", "type": "string"}]},
+						{"column": [{"name": "alpha", "path": "{}", "type": "string"}]}
+					]
+				},
+				{
+					"forEach": "coding.where(system='alpha')",
+					"select": [
+						{"column": [{"name": "icd10", "path": "{}", "type": "string"}]},
+						{"column": [{"name": "alpha", "path": "code", "type": "string"}]}
+					]
+				}
+			]}]
+		}]`, "Condition.code")
+	})
+
+	t.Run("slices selected as separate attributes under a common parent share one unionAll", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Condition", "Condition", map[string]models.LookupElement{
+			"Condition.code": {
+				Children:       []string{"Condition.code.coding:icd10-gm", "Condition.code.coding:alpha-id"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "code"},
+			},
+			"Condition.code.coding:icd10-gm": codingSliceElement("Condition.code", "system='icd'", "icd10"),
+			"Condition.code.coding:alpha-id": codingSliceElement("Condition.code", "system='alpha'", "alpha"),
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[{
+			"forEachOrNull": "code",
+			"select": [{"unionAll": [
+				{
+					"forEach": "$this.where((coding.where(system='icd')).empty() and (coding.where(system='alpha')).empty())",
+					"select": [
+						{"forEachOrNull": "coding.where(system='icd')", "column": [{"name": "icd10", "path": "code", "type": "string"}]},
+						{"forEachOrNull": "coding.where(system='alpha')", "column": [{"name": "alpha", "path": "code", "type": "string"}]}
+					]
+				},
+				{
+					"forEach": "coding.where(system='icd')",
+					"select": [
+						{"column": [{"name": "icd10", "path": "code", "type": "string"}]},
+						{"column": [{"name": "alpha", "path": "{}", "type": "string"}]}
+					]
+				},
+				{
+					"forEach": "coding.where(system='alpha')",
+					"select": [
+						{"column": [{"name": "icd10", "path": "{}", "type": "string"}]},
+						{"column": [{"name": "alpha", "path": "code", "type": "string"}]}
+					]
+				}
+			]}]
+		}]`, "Condition.code.coding:icd10-gm", "Condition.code.coding:alpha-id")
+	})
+
+	t.Run("three slices join all expressions in the fallback and pad around the middle slice", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Condition", "Condition", map[string]models.LookupElement{
+			"Condition.code": {
+				Children:       []string{"Condition.code.coding:a", "Condition.code.coding:b", "Condition.code.coding:c"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "code"},
+			},
+			"Condition.code.coding:a": codingSliceElement("Condition.code", "s='a'", "col_a"),
+			"Condition.code.coding:b": codingSliceElement("Condition.code", "s='b'", "col_b"),
+			"Condition.code.coding:c": codingSliceElement("Condition.code", "s='c'", "col_c"),
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[{
+			"forEachOrNull": "code",
+			"select": [{"unionAll": [
+				{
+					"forEach": "$this.where((coding.where(s='a')).empty() and (coding.where(s='b')).empty() and (coding.where(s='c')).empty())",
+					"select": [
+						{"forEachOrNull": "coding.where(s='a')", "column": [{"name": "col_a", "path": "code", "type": "string"}]},
+						{"forEachOrNull": "coding.where(s='b')", "column": [{"name": "col_b", "path": "code", "type": "string"}]},
+						{"forEachOrNull": "coding.where(s='c')", "column": [{"name": "col_c", "path": "code", "type": "string"}]}
+					]
+				},
+				{"forEach": "coding.where(s='a')", "select": [
+					{"column": [{"name": "col_a", "path": "code", "type": "string"}]},
+					{"column": [{"name": "col_b", "path": "{}", "type": "string"}]},
+					{"column": [{"name": "col_c", "path": "{}", "type": "string"}]}
+				]},
+				{"forEach": "coding.where(s='b')", "select": [
+					{"column": [{"name": "col_a", "path": "{}", "type": "string"}]},
+					{"column": [{"name": "col_b", "path": "code", "type": "string"}]},
+					{"column": [{"name": "col_c", "path": "{}", "type": "string"}]}
+				]},
+				{"forEach": "coding.where(s='c')", "select": [
+					{"column": [{"name": "col_a", "path": "{}", "type": "string"}]},
+					{"column": [{"name": "col_b", "path": "{}", "type": "string"}]},
+					{"column": [{"name": "col_c", "path": "code", "type": "string"}]}
+				]}
+			]}]
+		}]`, "Condition.code")
+	})
+
+	t.Run("a single slice stays as it is", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Condition", "Condition", map[string]models.LookupElement{
+			"Condition.code": {
+				Children:       []string{"Condition.code.coding:icd10-gm"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "code"},
+			},
+			"Condition.code.coding:icd10-gm": codingSliceElement("Condition.code", "system='icd'", "icd10"),
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[{
+			"forEachOrNull": "code",
+			"select": [
+				{"forEachOrNull": "coding.where(system='icd')", "column": [{"name": "icd10", "path": "code", "type": "string"}]}
+			]
+		}]`, "Condition.code")
+	})
+
+	t.Run("forEach siblings that are not slices of one element stay cross-joined", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Condition", "Condition", map[string]models.LookupElement{
+			"Condition.clinicalStatus": {
+				ViewDefinition: models.ViewDefSnippet{
+					ForEachOrNull: "clinicalStatus.coding",
+					Column:        []models.ColumnDefinition{{Name: "status", Path: "code"}},
+				},
+			},
+			"Condition.code": {
+				ViewDefinition: models.ViewDefSnippet{
+					ForEachOrNull: "code.coding",
+					Column:        []models.ColumnDefinition{{Name: "code", Path: "code"}},
+				},
+			},
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[
+			{"forEachOrNull": "clinicalStatus.coding", "column": [{"name": "status", "path": "code"}]},
+			{"forEachOrNull": "code.coding", "column": [{"name": "code", "path": "code"}]}
+		]`, "Condition.clinicalStatus", "Condition.code")
+	})
+
+	t.Run("a slice with forEach becomes forEachOrNull in the fallback branch", func(t *testing.T) {
+		sliceA := codingSliceElement("Condition.code", "s='a'", "col_a")
+		sliceA.ViewDefinition.ForEach, sliceA.ViewDefinition.ForEachOrNull = sliceA.ViewDefinition.ForEachOrNull, ""
+		lookup := newLookupTable("https://example.com/Condition", "Condition", map[string]models.LookupElement{
+			"Condition.code": {
+				Children:       []string{"Condition.code.coding:a", "Condition.code.coding:b"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "code"},
+			},
+			"Condition.code.coding:a": sliceA,
+			"Condition.code.coding:b": codingSliceElement("Condition.code", "s='b'", "col_b"),
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[{
+			"forEachOrNull": "code",
+			"select": [{"unionAll": [
+				{
+					"forEach": "$this.where((coding.where(s='a')).empty() and (coding.where(s='b')).empty())",
+					"select": [
+						{"forEachOrNull": "coding.where(s='a')", "column": [{"name": "col_a", "path": "code", "type": "string"}]},
+						{"forEachOrNull": "coding.where(s='b')", "column": [{"name": "col_b", "path": "code", "type": "string"}]}
+					]
+				},
+				{"forEach": "coding.where(s='a')", "select": [
+					{"column": [{"name": "col_a", "path": "code", "type": "string"}]},
+					{"column": [{"name": "col_b", "path": "{}", "type": "string"}]}
+				]},
+				{"forEach": "coding.where(s='b')", "select": [
+					{"column": [{"name": "col_a", "path": "{}", "type": "string"}]},
+					{"column": [{"name": "col_b", "path": "code", "type": "string"}]}
+				]}
+			]}]
+		}]`, "Condition.code")
+	})
+
+	t.Run("the union takes the position of the first slice before a sibling that is not a slice", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Condition", "Condition", map[string]models.LookupElement{
+			"Condition.code": {
+				Children:       []string{"Condition.code.coding:a", "Condition.code.text", "Condition.code.coding:b"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "code"},
+			},
+			"Condition.code.coding:a": codingSliceElement("Condition.code", "s='a'", "col_a"),
+			"Condition.code.text": {
+				Parent:         "Condition.code",
+				ViewDefinition: models.ViewDefSnippet{Column: []models.ColumnDefinition{{Name: "text", Path: "text"}}},
+			},
+			"Condition.code.coding:b": codingSliceElement("Condition.code", "s='b'", "col_b"),
+		})
+
+		viewDef, err := services.NewViewDefinitionBuilder([]models.LookupTable{lookup}).BuildViewDefinition(models.AttributeGroup{
+			Name:           "g",
+			GroupReference: lookup.URL,
+			Attributes:     []models.Attribute{{AttributeRef: "Condition.code"}},
+		})
+		require.NoError(t, err)
+		code := viewDef.Select[1].Select
+		require.Len(t, code, 2)
+		assert.Len(t, code[0].UnionAll, 3)
+		assert.Equal(t, []models.ColumnDefinition{{Name: "text", Path: "text"}}, code[1].Column)
+		assert.Equal(t, []string{"id", "patient", "col_a", "col_b", "text"}, services.ExtractColumnNames(*viewDef))
+	})
+
+	t.Run("a slice that is an ancestor of a selected attribute joins the union", func(t *testing.T) {
+		sliceA := models.LookupElement{
+			Parent:         "Condition.code",
+			Children:       []string{"Condition.code.coding:a.display"},
+			ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "coding.where(s='a')"},
+		}
+		lookup := newLookupTable("https://example.com/Condition", "Condition", map[string]models.LookupElement{
+			"Condition.code": {
+				Children:       []string{"Condition.code.coding:a", "Condition.code.coding:b"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "code"},
+			},
+			"Condition.code.coding:a": sliceA,
+			"Condition.code.coding:a.display": {
+				Parent:         "Condition.code.coding:a",
+				ViewDefinition: models.ViewDefSnippet{Column: []models.ColumnDefinition{{Name: "display", Path: "display"}}},
+			},
+			"Condition.code.coding:b": codingSliceElement("Condition.code", "s='b'", "col_b"),
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[{
+			"forEachOrNull": "code",
+			"select": [{"unionAll": [
+				{
+					"forEach": "$this.where((coding.where(s='a')).empty() and (coding.where(s='b')).empty())",
+					"select": [
+						{"forEachOrNull": "coding.where(s='a')", "select": [{"column": [{"name": "display", "path": "display"}]}]},
+						{"forEachOrNull": "coding.where(s='b')", "column": [{"name": "col_b", "path": "code", "type": "string"}]}
+					]
+				},
+				{"forEach": "coding.where(s='a')", "select": [
+					{"select": [{"column": [{"name": "display", "path": "display"}]}]},
+					{"column": [{"name": "col_b", "path": "{}", "type": "string"}]}
+				]},
+				{"forEach": "coding.where(s='b')", "select": [
+					{"column": [{"name": "display", "path": "{}"}]},
+					{"column": [{"name": "col_b", "path": "code", "type": "string"}]}
+				]}
+			]}]
+		}]`, "Condition.code.coding:a.display", "Condition.code.coding:b")
+	})
+
+	t.Run("forEach siblings with ids without path or slice separator stay cross-joined", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Condition", "Condition", map[string]models.LookupElement{
+			"code": {
+				ViewDefinition: models.ViewDefSnippet{
+					ForEachOrNull: "code.coding",
+					Column:        []models.ColumnDefinition{{Name: "code", Path: "code"}},
+				},
+			},
+			"category": {
+				ViewDefinition: models.ViewDefSnippet{
+					ForEachOrNull: "category.coding",
+					Column:        []models.ColumnDefinition{{Name: "category", Path: "code"}},
+				},
+			},
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[
+			{"forEachOrNull": "code.coding", "column": [{"name": "code", "path": "code"}]},
+			{"forEachOrNull": "category.coding", "column": [{"name": "category", "path": "code"}]}
+		]`, "code", "category")
+	})
+
+	t.Run("slices of different elements form separate unions and keep their order", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Condition", "Condition", map[string]models.LookupElement{
+			"Condition.code.coding:a":     codingSliceElement("", "s='a'", "col_a"),
+			"Condition.category.coding:x": codingSliceElement("", "s='x'", "col_x"),
+			"Condition.code.coding:b":     codingSliceElement("", "s='b'", "col_b"),
+			"Condition.category.coding:y": codingSliceElement("", "s='y'", "col_y"),
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[
+			{"unionAll": [
+				{
+					"forEach": "$this.where((coding.where(s='a')).empty() and (coding.where(s='b')).empty())",
+					"select": [
+						{"forEachOrNull": "coding.where(s='a')", "column": [{"name": "col_a", "path": "code", "type": "string"}]},
+						{"forEachOrNull": "coding.where(s='b')", "column": [{"name": "col_b", "path": "code", "type": "string"}]}
+					]
+				},
+				{"forEach": "coding.where(s='a')", "select": [
+					{"column": [{"name": "col_a", "path": "code", "type": "string"}]},
+					{"column": [{"name": "col_b", "path": "{}", "type": "string"}]}
+				]},
+				{"forEach": "coding.where(s='b')", "select": [
+					{"column": [{"name": "col_a", "path": "{}", "type": "string"}]},
+					{"column": [{"name": "col_b", "path": "code", "type": "string"}]}
+				]}
+			]},
+			{"unionAll": [
+				{
+					"forEach": "$this.where((coding.where(s='x')).empty() and (coding.where(s='y')).empty())",
+					"select": [
+						{"forEachOrNull": "coding.where(s='x')", "column": [{"name": "col_x", "path": "code", "type": "string"}]},
+						{"forEachOrNull": "coding.where(s='y')", "column": [{"name": "col_y", "path": "code", "type": "string"}]}
+					]
+				},
+				{"forEach": "coding.where(s='x')", "select": [
+					{"column": [{"name": "col_x", "path": "code", "type": "string"}]},
+					{"column": [{"name": "col_y", "path": "{}", "type": "string"}]}
+				]},
+				{"forEach": "coding.where(s='y')", "select": [
+					{"column": [{"name": "col_x", "path": "{}", "type": "string"}]},
+					{"column": [{"name": "col_y", "path": "code", "type": "string"}]}
+				]}
+			]}
+		]`, "Condition.code.coding:a", "Condition.category.coding:x", "Condition.code.coding:b", "Condition.category.coding:y")
+	})
+
+	t.Run("a slice without forEach passes through and one forEach slice is not combined", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Condition", "Condition", map[string]models.LookupElement{
+			"Condition.code": {
+				Children:       []string{"Condition.code.coding:a", "Condition.code.coding:b"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "code"},
+			},
+			"Condition.code.coding:a": {
+				Parent:         "Condition.code",
+				ViewDefinition: newViewDefSnippet(newSelectClause("col_a", "coding.code")),
+			},
+			"Condition.code.coding:b": codingSliceElement("Condition.code", "s='b'", "col_b"),
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[{
+			"forEachOrNull": "code",
+			"select": [
+				{"column": [{"name": "col_a", "path": "coding.code"}]},
+				{"forEachOrNull": "coding.where(s='b')", "column": [{"name": "col_b", "path": "code", "type": "string"}]}
+			]
+		}]`, "Condition.code")
+	})
+
+	t.Run("padding of a slice with nested selects lists all its nested columns", func(t *testing.T) {
+		lookup := newLookupTable("https://example.com/Condition", "Condition", map[string]models.LookupElement{
+			"Condition.code": {
+				Children:       []string{"Condition.code.coding:a", "Condition.code.coding:b"},
+				ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "code"},
+			},
+			"Condition.code.coding:a": {
+				Parent:   "Condition.code",
+				Children: []string{"Condition.code.coding:a.ext"},
+				ViewDefinition: models.ViewDefSnippet{
+					ForEachOrNull: "coding.where(s='a')",
+					Column:        []models.ColumnDefinition{{Name: "col_a", Path: "code", Type: "string"}},
+				},
+			},
+			"Condition.code.coding:a.ext": {
+				Parent: "Condition.code.coding:a",
+				ViewDefinition: models.ViewDefSnippet{
+					ForEach: "extension",
+					Column:  []models.ColumnDefinition{{Name: "col_ext", Path: "url", Type: "uri"}},
+				},
+			},
+			"Condition.code.coding:b": codingSliceElement("Condition.code", "s='b'", "col_b"),
+		})
+
+		assertGroupSelectsJSON(t, lookup, `[{
+			"forEachOrNull": "code",
+			"select": [{"unionAll": [
+				{
+					"forEach": "$this.where((coding.where(s='a')).empty() and (coding.where(s='b')).empty())",
+					"select": [
+						{
+							"forEachOrNull": "coding.where(s='a')",
+							"column": [{"name": "col_a", "path": "code", "type": "string"}],
+							"select": [{"forEach": "extension", "column": [{"name": "col_ext", "path": "url", "type": "uri"}]}]
+						},
+						{"forEachOrNull": "coding.where(s='b')", "column": [{"name": "col_b", "path": "code", "type": "string"}]}
+					]
+				},
+				{"forEach": "coding.where(s='a')", "select": [
+					{
+						"column": [{"name": "col_a", "path": "code", "type": "string"}],
+						"select": [{"forEach": "extension", "column": [{"name": "col_ext", "path": "url", "type": "uri"}]}]
+					},
+					{"column": [{"name": "col_b", "path": "{}", "type": "string"}]}
+				]},
+				{"forEach": "coding.where(s='b')", "select": [
+					{"column": [{"name": "col_a", "path": "{}", "type": "string"}, {"name": "col_ext", "path": "{}", "type": "uri"}]},
+					{"column": [{"name": "col_b", "path": "code", "type": "string"}]}
+				]}
+			]}]
+		}]`, "Condition.code")
+	})
+
+	t.Run("the build does not write into the lookup elements", func(t *testing.T) {
+		a := codingSliceElement("Condition.code", "s='a'", "col_a")
+		b := codingSliceElement("Condition.code", "s='b'", "col_b")
+		lookup := newLookupTable("https://example.com/Condition", "Condition", map[string]models.LookupElement{
+			"Condition.code":          {Children: []string{"Condition.code.coding:a", "Condition.code.coding:b"}, ViewDefinition: models.ViewDefSnippet{ForEachOrNull: "code"}},
+			"Condition.code.coding:a": a,
+			"Condition.code.coding:b": b,
+		})
+
+		viewDef := buildAndAssertViewDef(t, []models.LookupTable{lookup}, newAttributeGroup("G", lookup.URL, "Condition.code"))
+		require.NotEmpty(t, viewDef.Select)
+
+		assert.Equal(t, "coding.where(s='a')", a.ViewDefinition.ForEachOrNull)
+		assert.Empty(t, a.ViewDefinition.ForEach)
+		assert.Equal(t, "coding.where(s='b')", b.ViewDefinition.ForEachOrNull)
+		assert.Empty(t, b.ViewDefinition.ForEach)
+	})
+}
+
+func TestSelectClauseUnionAllJSON(t *testing.T) {
+	t.Run("a clause with UnionAll marshals to the key unionAll", func(t *testing.T) {
+		data, err := json.Marshal(models.SelectClause{UnionAll: []models.SelectClause{newSelectClause("a", "a")}})
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"unionAll": [{"column": [{"name": "a", "path": "a"}]}]}`, string(data))
+	})
+
+	t.Run("a clause without UnionAll has no unionAll key", func(t *testing.T) {
+		data, err := json.Marshal(newSelectClause("a", "a"))
+		require.NoError(t, err)
+		assert.NotContains(t, string(data), "unionAll")
 	})
 }

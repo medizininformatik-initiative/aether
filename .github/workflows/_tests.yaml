@@ -193,7 +193,7 @@ jobs:
 
       - name: Upload E2E job outputs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: e2e-job-outputs-${{ github.run_id }}
           path: .github/test/jobs/
@@ -207,7 +207,7 @@ jobs:
 
       - name: Upload service logs
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: docker-logs-e2e-${{ github.run_id }}
           path: docker-logs-e2e.txt
@@ -298,7 +298,7 @@ jobs:
 
       - name: Upload E2E job outputs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: e2e-direct-load-outputs-${{ github.run_id }}
           path: .github/test/jobs/
@@ -312,7 +312,7 @@ jobs:
 
       - name: Upload service logs
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: docker-logs-direct-load-${{ github.run_id }}
           path: docker-logs-direct-load.txt
@@ -371,7 +371,7 @@ jobs:
 
       - name: Upload flattening job outputs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: e2e-flattening-outputs-${{ github.run_id }}
           path: .github/test/jobs/
@@ -385,7 +385,7 @@ jobs:
 
       - name: Upload service logs
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: docker-logs-flattening-${{ github.run_id }}
           path: docker-logs-flattening.txt
@@ -444,7 +444,7 @@ jobs:
 
       - name: Upload validation job outputs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: e2e-validation-outputs-${{ github.run_id }}
           path: .github/test/jobs/
@@ -458,7 +458,7 @@ jobs:
 
       - name: Upload service logs
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: docker-logs-validation-${{ github.run_id }}
           path: docker-logs-validation.txt
@@ -517,7 +517,7 @@ jobs:
 
       - name: Upload DIMP job outputs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: e2e-dimp-anonymization-config-outputs-${{ github.run_id }}
           path: .github/test/jobs/
@@ -531,7 +531,7 @@ jobs:
 
       - name: Upload service logs
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: docker-logs-dimp-anonymization-config-${{ github.run_id }}
           path: docker-logs-dimp-anonymization-config.txt

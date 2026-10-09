@@ -2,9 +2,11 @@ package unit
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -147,6 +149,79 @@ func TestImportFromLocalDirectory_RecursiveScan(t *testing.T) {
 	// Verify all files are found recursively
 	assert.NoError(t, err, "Import should succeed")
 	assert.Len(t, importedFiles, 3, "Should find all 3 NDJSON files recursively")
+}
+
+func TestImportFromLocalDirectory_IgnoresTorchConsentFilesFlat(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	logger := lib.NewLogger(lib.LogLevelInfo)
+
+	require.NoError(t, os.MkdirAll(sourceDir, 0755))
+	for _, name := range []string{"Patient.ndjson", "job_consent.ndjson", "job_consent.ndjson.zst"} {
+		require.NoError(t, os.WriteFile(filepath.Join(sourceDir, name), []byte(`{"resourceType":"Patient"}`), 0644))
+	}
+
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
+
+	require.NoError(t, err)
+	require.Len(t, importedFiles, 1)
+	assert.Equal(t, "Patient.ndjson", importedFiles[0].FileName)
+}
+
+func TestImportFromLocalDirectory_IgnoresTorchConsentFilesRecursive(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	logger := lib.NewLogger(lib.LogLevelInfo)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(sourceDir, "sub"), 0755))
+	for _, rel := range []string{"Patient.ndjson", "sub/job_consent.ndjson"} {
+		require.NoError(t, os.WriteFile(filepath.Join(sourceDir, rel), []byte(`{"resourceType":"Patient"}`), 0644))
+	}
+
+	importedFiles, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", true)
+
+	require.NoError(t, err)
+	require.Len(t, importedFiles, 1)
+	assert.Equal(t, "Patient.ndjson", importedFiles[0].FileName)
+}
+
+func TestImportFromLocalDirectory_LogsSkippedTorchConsentFiles(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	var buf bytes.Buffer
+	logger := lib.NewLoggerWithWriter(lib.LogLevelDebug, &buf)
+
+	require.NoError(t, os.MkdirAll(sourceDir, 0755))
+	for _, name := range []string{"Patient.ndjson", "a_consent.ndjson", "b_consent.ndjson.zst"} {
+		require.NoError(t, os.WriteFile(filepath.Join(sourceDir, name), []byte(`{"resourceType":"Patient"}`), 0644))
+	}
+
+	_, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
+
+	require.NoError(t, err)
+	out := buf.String()
+	assert.Equal(t, 2, strings.Count(out, "Skipping TORCH consent file"), out)
+	assert.Contains(t, out, "a_consent.ndjson]")
+	assert.Contains(t, out, "b_consent.ndjson.zst]")
+}
+
+func TestLocalImport_OnlyTorchConsentFilesIsError(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	destDir := filepath.Join(tempDir, "dest")
+	logger := lib.NewLogger(lib.LogLevelInfo)
+
+	require.NoError(t, os.MkdirAll(sourceDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "job_consent.ndjson"), []byte(`{}`), 0644))
+
+	_, err := services.ImportFromLocalDirectory(sourceDir, destDir, logger, false, "", false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no FHIR NDJSON files found")
+
+	assert.Error(t, services.ValidateImportSource(sourceDir, models.InputTypeLocal, false))
 }
 
 // TestImportFromLocalDirectory_NonRecursiveByDefault verifies that, without
@@ -453,6 +528,24 @@ func TestValidateImportSource_UnknownType(t *testing.T) {
 	err := services.ValidateImportSource("/some/path", "unknown-input-type", false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown input type")
+}
+
+func TestValidateImportSource_UnreadableDirectory(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("Cannot test permission errors as root")
+	}
+
+	for _, recursive := range []bool{false, true} {
+		t.Run(fmt.Sprintf("recursive=%t", recursive), func(t *testing.T) {
+			sourceDir := t.TempDir()
+			require.NoError(t, os.Chmod(sourceDir, 0000))
+			t.Cleanup(func() { _ = os.Chmod(sourceDir, 0755) })
+
+			err := services.ValidateImportSource(sourceDir, models.InputTypeLocal, recursive)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "failed to scan directory")
+		})
+	}
 }
 
 // TestImportFromLocalDirectory_JSONFile tests error handling when .json file is passed instead of directory (line 29-30)

@@ -24,6 +24,12 @@ func IsValidFHIRFile(filename string) bool {
 	return strings.HasSuffix(lower, ".ndjson") || strings.HasSuffix(lower, ".ndjson.zst")
 }
 
+// IsTorchConsentFile reports whether filename is a TORCH consent diagnosis file.
+func IsTorchConsentFile(filename string) bool {
+	lower := strings.ToLower(filename)
+	return strings.HasSuffix(lower, "_consent.ndjson") || strings.HasSuffix(lower, "_consent.ndjson.zst")
+}
+
 // IsSafePath checks if a file path is within job directory boundaries
 // Prevents path traversal attacks (e.g., ../../etc/passwd)
 func IsSafePath(path string) bool {

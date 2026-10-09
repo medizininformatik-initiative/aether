@@ -38,9 +38,13 @@ func ImportFromLocalDirectory(sourcePath string, destinationDir string, logger *
 		return nil, fmt.Errorf("failed to create destination directory: %w", err)
 	}
 
-	ndjsonFiles, err := findNDJSONFiles(sourcePath, recursive)
+	ndjsonFiles, skipped, err := findNDJSONFiles(sourcePath, recursive)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan source directory: %w", err)
+	}
+
+	for _, path := range skipped {
+		logger.Debug("Skipping TORCH consent file", "file", path)
 	}
 
 	if len(ndjsonFiles) == 0 {
@@ -71,52 +75,57 @@ func ImportFromLocalDirectory(sourcePath string, destinationDir string, logger *
 // flattens matches into a single destination directory keyed by basename
 // (see copyFile) and that's only safe when the whole tree's basenames are
 // unique. Pass recursive=true for sources deliberately organized across
-// subdirectories.
-func findNDJSONFiles(rootPath string, recursive bool) ([]string, error) {
+// subdirectories. TORCH consent diagnosis files are not FHIR result data, so
+// it returns them in skipped and not in files.
+func findNDJSONFiles(rootPath string, recursive bool) (files []string, skipped []string, err error) {
 	if !recursive {
 		return findNDJSONFilesFlat(rootPath)
 	}
 
-	var files []string
-
-	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
+	err = filepath.Walk(rootPath, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
 
 		if info.IsDir() {
 			return nil
 		}
 
-		if models.IsValidFHIRFile(info.Name()) {
+		switch {
+		case models.IsTorchConsentFile(info.Name()):
+			skipped = append(skipped, path)
+		case models.IsValidFHIRFile(info.Name()):
 			files = append(files, path)
 		}
 
 		return nil
 	})
 
-	return files, err
+	return files, skipped, err
 }
 
 // findNDJSONFilesFlat lists NDJSON files directly under rootPath, ignoring
 // subdirectories entirely.
-func findNDJSONFilesFlat(rootPath string) ([]string, error) {
+func findNDJSONFilesFlat(rootPath string) (files []string, skipped []string, err error) {
 	entries, err := os.ReadDir(rootPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	var files []string
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
-		if models.IsValidFHIRFile(entry.Name()) {
-			files = append(files, filepath.Join(rootPath, entry.Name()))
+		path := filepath.Join(rootPath, entry.Name())
+		switch {
+		case models.IsTorchConsentFile(entry.Name()):
+			skipped = append(skipped, path)
+		case models.IsValidFHIRFile(entry.Name()):
+			files = append(files, path)
 		}
 	}
 
-	return files, nil
+	return files, skipped, nil
 }
 
 // recursiveHint points users at services.local_import.recursive when a
@@ -239,7 +248,7 @@ func ValidateImportSource(sourcePath string, inputType models.InputType, recursi
 			return fmt.Errorf("expected directory but got file: %s%s", sourcePath, hint)
 		}
 
-		files, err := findNDJSONFiles(sourcePath, recursive)
+		files, _, err := findNDJSONFiles(sourcePath, recursive)
 		if err != nil {
 			return fmt.Errorf("failed to scan directory: %w", err)
 		}

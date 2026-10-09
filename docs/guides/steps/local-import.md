@@ -1,6 +1,6 @@
 # Local Import
 
-Imports FHIR NDJSON files from a local directory.
+Imports FHIR NDJSON files from a local directory. The step is made for the output directory of a TORCH extraction: you can set `dir` to that directory directly.
 
 ## Configuration
 
@@ -34,6 +34,18 @@ aether pipeline start aether.yaml crtdl.json /other/path
 |--------|------|-------------|
 | `dir` | string | Default import directory (overridable with `--dir` flag or as the third positional argument) |
 | `recursive` | bool | Scan subdirectories of `dir` for NDJSON files. Default `false` — only the top-level directory is scanned. |
+
+## TORCH Output
+
+`local_import` selects the files to import by filename:
+
+| Filename | Result |
+|----------|--------|
+| `*.ndjson`, `*.ndjson.zst` | Imported |
+| `*_consent.ndjson`, `*_consent.ndjson.zst` | Ignored. TORCH writes these consent diagnosis files. They are not FHIR result data. |
+| All other files | Ignored |
+
+The match ignores case. For each ignored consent file, the step writes a debug log entry. If the directory contains only consent files, the step stops with the error `no FHIR NDJSON files found`.
 
 ## Notes
 

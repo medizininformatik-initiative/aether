@@ -4,7 +4,7 @@
 
 services:
   fhir-validator:
-    image: ghcr.io/medizininformatik-initiative/mii-fhir-validator:0.0.1-alpha.8@sha256:4a60074f0f780c9d497b68f67b7c62da886554fc156e19bb035f77962c363f26
+    image: ghcr.io/medizininformatik-initiative/mii-fhir-validator:0.0.1-alpha.9@sha256:2d98e86f5cefc618ed99723e4ab3a3f298d0992cf51dedec06f49f6a944f0845
     ports: [ ":8080" ]
     networks: [ "aether" ]
     volumes:

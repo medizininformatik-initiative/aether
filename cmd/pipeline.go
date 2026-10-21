@@ -484,31 +484,35 @@ func runPipelineStatus(cmd *cobra.Command, args []string) error {
 	// Report the status the user sees elsewhere: an in_progress job that no
 	// process holds is stopped, and the text names the cause. This is display
 	// only; the state file keeps its value.
-	fmt.Println(pipeline.GetJobSummary(job, services.EffectiveJobStatusText(config.JobsDir, *job)))
+	status := services.EffectiveJobStatus(config.JobsDir, *job)
+	fmt.Println(pipeline.GetJobSummary(job, status, services.EffectiveJobStatusText(config.JobsDir, *job)))
 
 	fmt.Println("Steps:")
 	for _, step := range job.Steps {
-		status := getStatusSymbol(step.Status)
-		fmt.Printf("  %s %-20s - %s", status, step.Name, step.Status)
-
-		if step.Status == models.StepStatusCompleted || step.Status == models.StepStatusInProgress {
-			fmt.Printf(" (%d files", step.FilesProcessed)
-			if step.BytesProcessed > 0 {
-				fmt.Printf(", %s", formatBytes(step.BytesProcessed))
-			}
-			fmt.Printf(")")
-		}
-
-		fmt.Print(stepProgressSuffix(step))
-
-		if step.LastError != nil {
-			fmt.Printf("\n    Error: %s", step.LastError.Message)
-		}
-
-		fmt.Println()
+		fmt.Println(formatStepLine(step))
 	}
 
 	return nil
+}
+
+// formatStepLine returns the status line of one step.
+func formatStepLine(step models.PipelineStep) string {
+	line := fmt.Sprintf("  %s %-20s - %s", getStatusSymbol(step.Status), step.Name, step.Status)
+
+	if step.Status == models.StepStatusCompleted || step.Status == models.StepStatusInProgress {
+		line += fmt.Sprintf(" (%d files", step.FilesProcessed)
+		if step.BytesProcessed > 0 {
+			line += ", " + formatBytes(step.BytesProcessed)
+		}
+		line += ")"
+	}
+
+	line += stepProgressSuffix(step)
+
+	if step.LastError != nil {
+		line += "\n    Error: " + step.LastError.Message
+	}
+	return line
 }
 
 // stepProgressSuffix returns the in-step progress for the status line, or ""

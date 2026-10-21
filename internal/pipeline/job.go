@@ -231,9 +231,10 @@ func IsJobComplete(job *models.PipelineJob) bool {
 }
 
 // GetJobSummary returns a human-readable summary of the job. The caller gives
-// the status text, because the shown status can differ from the persisted one.
-func GetJobSummary(job *models.PipelineJob, statusText string) string {
-	duration := time.Since(job.CreatedAt)
+// the effective status and its text, because the shown status can differ from
+// the persisted one.
+func GetJobSummary(job *models.PipelineJob, status models.JobStatus, statusText string) string {
+	duration := models.JobDuration(*job, status, time.Now())
 
 	summary := fmt.Sprintf("Job %s\n", job.JobID)
 	summary += fmt.Sprintf("Status: %s\n", statusText)

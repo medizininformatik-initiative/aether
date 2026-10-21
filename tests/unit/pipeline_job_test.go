@@ -165,7 +165,7 @@ func TestGetJobSummary(t *testing.T) {
 	job.TotalFiles = 42
 	job.TotalBytes = 12345
 
-	summary := pipeline.GetJobSummary(&job, string(job.Status))
+	summary := pipeline.GetJobSummary(&job, job.Status, string(job.Status))
 
 	assert.Contains(t, summary, job.JobID)
 	assert.Contains(t, summary, string(job.Status))
@@ -178,9 +178,22 @@ func TestGetJobSummary(t *testing.T) {
 func TestGetJobSummary_ShowsStatusText(t *testing.T) {
 	job := createJobForPipelineTests([]models.StepName{models.StepLocalImport})
 
-	summary := pipeline.GetJobSummary(&job, "stopped (process died)")
+	summary := pipeline.GetJobSummary(&job, models.JobStatusStopped, "stopped (process died)")
 
 	assert.Contains(t, summary, "Status: stopped (process died)")
+}
+
+// TestGetJobSummary_FinishedJobShowsFixedDuration proves the duration of a
+// finished job does not grow with the wall clock.
+func TestGetJobSummary_FinishedJobShowsFixedDuration(t *testing.T) {
+	job := createJobForPipelineTests([]models.StepName{models.StepLocalImport})
+	job.Status = models.JobStatusCompleted
+	job.UpdatedAt = time.Now().Add(-3 * time.Hour)
+	job.CreatedAt = job.UpdatedAt.Add(-30 * time.Minute)
+
+	summary := pipeline.GetJobSummary(&job, job.Status, string(job.Status))
+
+	assert.Contains(t, summary, "Duration: 30m0s")
 }
 
 // TestGetJobSummary_WithError tests summary with error message
@@ -189,7 +202,7 @@ func TestGetJobSummary_WithError(t *testing.T) {
 	errorMsg := "test error occurred"
 	job = *pipeline.FailJob(&job, errorMsg)
 
-	summary := pipeline.GetJobSummary(&job, string(job.Status))
+	summary := pipeline.GetJobSummary(&job, job.Status, string(job.Status))
 
 	assert.Contains(t, summary, errorMsg)
 	assert.Contains(t, summary, string(models.JobStatusFailed))

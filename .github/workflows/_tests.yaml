@@ -125,10 +125,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: .github/scripts/install-blazectl.sh
 
-      - name: Download test data
-        working-directory: .github/test
-        run: ../scripts/download-testdata.sh
-
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
@@ -239,10 +235,6 @@ jobs:
           BLAZECTL_CHECKSUM: 716fd5cba59ccceeb34b90be66465de05da28de92ccd55d793ab1e8c68d6ac54
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: .github/scripts/install-blazectl.sh
-
-      - name: Download test data
-        working-directory: .github/test
-        run: ../scripts/download-testdata.sh
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4

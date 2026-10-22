@@ -43,9 +43,6 @@ coverage.html
 *.tmp
 *.log
 
-# Downloaded test data (downloaded in CI, not committed)
-.github/test/torch/testdata/
-
 # Node.js dependencies (installed via npm install)
 node_modules/
 package-lock.json

@@ -1,7 +1,7 @@
 # Makefile for Aether Test Infrastructure
 # Located in .github/test/
 
-.PHONY: help services build start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test flattener-up flattener-down flattener-logs blaze-up blaze-down blaze-logs validator-up validator-down validator-logs seaweedfs-up seaweedfs-down seaweedfs-logs test-with-services download-testdata upload-testdata e2e-test e2e-test-flattening e2e-test-validation e2e-test-dimp-anonymization-config e2e-test-direct-load e2e-test-s3-upload clean-test-data
+.PHONY: help services build start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test flattener-up flattener-down flattener-logs blaze-up blaze-down blaze-logs validator-up validator-down validator-logs seaweedfs-up seaweedfs-down seaweedfs-logs test-with-services upload-testdata e2e-test e2e-test-flattening e2e-test-validation e2e-test-dimp-anonymization-config e2e-test-direct-load e2e-test-s3-upload clean-test-data
 
 # Default target
 .DEFAULT_GOAL := help
@@ -43,9 +43,8 @@ help:
 	@echo "  seaweedfs-down    Stop SeaweedFS"
 	@echo "  seaweedfs-logs    Show SeaweedFS logs"
 	@echo "  test-with-services Run all tests with required services"
-	@echo "  download-testdata Download test data (only if not present)"
 	@echo "  upload-testdata   Upload test data to TORCH (requires services)"
-	@echo "  e2e-test          Run end-to-end test (downloads, uploads, runs pipeline)"
+	@echo "  e2e-test          Run end-to-end test (uploads test data, runs pipeline)"
 	@echo "  e2e-test-flattening Run flattening E2E test with pre-staged example data"
 	@echo "  e2e-test-validation Run validation E2E test with pre-staged example data"
 	@echo "  e2e-test-dimp-anonymization-config  Run DIMP anonymization config E2E test with pre-staged example data"
@@ -208,19 +207,8 @@ test-with-services: dimp-up
 	@$(MAKE) dimp-down
 	@echo "✓ All tests complete"
 
-## download-testdata: Download test data (only if not present)
-download-testdata:
-	@if [ -d "torch/testdata" ] && [ -n "$$(ls -A torch/testdata 2>/dev/null)" ]; then \
-		echo "Test data already exists in torch/testdata, skipping download"; \
-		echo "To force re-download, run: rm -rf torch/testdata && make download-testdata"; \
-	else \
-		echo "Downloading test data..."; \
-		../scripts/download-testdata.sh; \
-		echo "✓ Test data downloaded to torch/testdata"; \
-	fi
-
 ## upload-testdata: Upload test data to TORCH (requires services)
-upload-testdata: download-testdata
+upload-testdata:
 	@echo "Uploading test data to TORCH..."
 	@if ! docker compose ps torch-hds | grep -q "Up"; then \
 		echo "Error: TORCH services are not running. Start them with 'make start'"; \
@@ -229,8 +217,8 @@ upload-testdata: download-testdata
 	../scripts/upload-testdata.sh
 	@echo "✓ Test data uploaded to TORCH"
 
-## e2e-test: Run end-to-end test (downloads, uploads, runs pipeline)
-e2e-test: start download-testdata upload-testdata
+## e2e-test: Run end-to-end test (uploads test data, runs pipeline)
+e2e-test: start upload-testdata
 	@echo "Running E2E test script..."
 	../scripts/run-e2e-test.sh
 	@echo "✓ End-to-end test complete"
@@ -283,13 +271,13 @@ seaweedfs-logs:
 	cd seaweedfs && docker compose logs -f
 
 ## e2e-test-direct-load: Run direct resource load E2E test (torch → send)
-e2e-test-direct-load: start download-testdata upload-testdata
+e2e-test-direct-load: start upload-testdata
 	@echo "Running direct load E2E test script..."
 	../scripts/run-direct-load-e2e-test.sh
 	@echo "✓ Direct resource load E2E test complete"
 
 ## e2e-test-s3-upload: Run S3 upload E2E test (torch → send via SeaweedFS)
-e2e-test-s3-upload: start download-testdata upload-testdata
+e2e-test-s3-upload: start upload-testdata
 	@echo "Running S3 upload E2E test script..."
 	../scripts/run-s3-upload-e2e-test.sh
 	@echo "✓ S3 upload E2E test complete"
@@ -298,5 +286,4 @@ e2e-test-s3-upload: start download-testdata upload-testdata
 clean-test-data:
 	@echo "Cleaning test data..."
 	@rm -rf ../../jobs/*
-	@rm -rf torch/testdata
 	@echo "✓ Test data cleaned"

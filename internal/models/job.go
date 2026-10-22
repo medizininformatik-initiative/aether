@@ -64,3 +64,13 @@ func IsValidJobStatus(s JobStatus) bool {
 		return false
 	}
 }
+
+// JobDuration returns how long the job ran. Only a running job's time grows;
+// a job that no process runs ends at its last state write. The status is the
+// effective status, which can differ from job.Status.
+func JobDuration(job PipelineJob, status JobStatus, now time.Time) time.Duration {
+	if status == JobStatusPending || status == JobStatusInProgress {
+		return now.Sub(job.CreatedAt)
+	}
+	return job.UpdatedAt.Sub(job.CreatedAt)
+}

@@ -138,8 +138,11 @@ aether job list <config>
 A job becomes `stopped` when its process ends before the pipeline is complete.
 Aether finds this in two ways:
 
-1. If you press Ctrl+C, or the process receives SIGTERM, Aether writes the
-   `stopped` status to the state file before it exits.
+1. If you press Ctrl+C two times, or the process receives SIGTERM, Aether
+   writes the `stopped` status to the state file before it exits. The first
+   Ctrl+C only shows `Press Ctrl+C again to quit`, and the pipeline continues.
+   The stop does not cancel the work on the services: a TORCH extraction
+   continues on the TORCH server, and `pipeline continue` re-attaches to it.
 2. If the process dies without a chance to write, for example from SIGKILL, a
    crash, or a power loss, the state file keeps `in_progress`. `job list` and
    `pipeline status` then test the job lock. If no process holds the lock, they

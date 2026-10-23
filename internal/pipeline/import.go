@@ -149,16 +149,7 @@ func executeTORCHExtraction(job *models.PipelineJob, importDir string, httpClien
 		return nil, err
 	}
 
-	fileURLs, err := torchClient.PollExtractionStatus(job.TORCHExtractionURL, showProgress)
-	if errors.Is(err, services.ErrHandleDead) {
-		logger.Warn("TORCH job handle is gone; clearing handle and re-submitting a fresh extraction", "stale_job_id", job.TORCHJobID)
-		job.TORCHJobID = ""
-		job.TORCHExtractionURL = ""
-		if err := submitAndPersistTORCHHandle(job, torchClient, logger); err != nil {
-			return nil, err
-		}
-		fileURLs, err = torchClient.PollExtractionStatus(job.TORCHExtractionURL, showProgress)
-	}
+	fileURLs, err := pollWithResubmit(job, torchClient, logger, showProgress)
 	if err != nil {
 		return nil, fmt.Errorf("TORCH extraction failed: %w", err)
 	}
@@ -173,6 +164,22 @@ func executeTORCHExtraction(job *models.PipelineJob, importDir string, httpClien
 		return nil, fmt.Errorf("failed to download TORCH files: %w", err)
 	}
 	return files, nil
+}
+
+// pollWithResubmit polls the extraction. When TORCH has dropped the handle, it
+// clears the handle, submits a fresh extraction and polls again.
+func pollWithResubmit(job *models.PipelineJob, torchClient services.Extractor, logger *lib.Logger, showProgress bool) ([]string, error) {
+	fileURLs, err := torchClient.PollExtractionStatus(job.TORCHExtractionURL, showProgress)
+	if !errors.Is(err, services.ErrHandleDead) {
+		return fileURLs, err
+	}
+	logger.Warn("TORCH job handle is gone; clearing handle and re-submitting a fresh extraction", "stale_job_id", job.TORCHJobID)
+	job.TORCHJobID = ""
+	job.TORCHExtractionURL = ""
+	if err := submitAndPersistTORCHHandle(job, torchClient, logger); err != nil {
+		return nil, err
+	}
+	return torchClient.PollExtractionStatus(job.TORCHExtractionURL, showProgress)
 }
 
 // attachTORCHProgressPersistence registers a progress handler on the TORCH
@@ -217,15 +224,29 @@ func attachTORCHProgressPersistence(job *models.PipelineJob, torchClient service
 // the resulting job handle (TORCHJobID + URL) to disk before any long poll, so
 // a crash mid-extraction leaves a recoverable handle to re-attach to.
 func submitAndPersistTORCHHandle(job *models.PipelineJob, torchClient services.Extractor, logger *lib.Logger) error {
+	// The process of a stopped job exits soon, so a new TORCH job would run
+	// without a collector.
+	done, err := beginSubmit(job.Config.JobsDir, job.JobID)
+	if err != nil {
+		return err
+	}
 	extractionURL, err := torchClient.SubmitExtraction(job.CRTDLPath)
 	if err != nil {
+		done("")
 		return fmt.Errorf("failed to submit TORCH extraction: %w", err)
 	}
 
 	job.TORCHExtractionURL = extractionURL
 	job.TORCHJobID = services.JobIDFromStatusURL(extractionURL)
-	if err := UpdateJob(job.Config.JobsDir, job); err != nil {
+	err = UpdateJob(job.Config.JobsDir, job)
+	// A stop that came during the submit waits for this ID to cancel the
+	// TORCH job. A later stop finds the handle in the state file.
+	done(job.TORCHJobID)
+	if err != nil {
 		return fmt.Errorf("failed to persist TORCH job handle: %w", err)
+	}
+	if jobStopped(job.Config.JobsDir, job.JobID) {
+		return ErrJobStopped
 	}
 
 	logger.Info("TORCH extraction submitted; handle persisted for resume", "job_id", job.TORCHJobID, "url", extractionURL)

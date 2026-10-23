@@ -1390,6 +1390,113 @@ func TestPipeline_TORCHExtraction_DeadHandleResubmitsViaImportStep(t *testing.T)
 	assert.Greater(t, updatedJob.TotalFiles, 0)
 }
 
+// TestPipeline_TORCHExtraction_StoppedJobDoesNotResubmit verifies that a job
+// that the user stopped does not submit a new extraction when the status
+// endpoint returns 410 Gone. TORCH returns 410 for a job that the stop handler
+// cancelled, and the process exits a moment later, so a new TORCH job would run
+// without a collector.
+func TestPipeline_TORCHExtraction_StoppedJobDoesNotResubmit(t *testing.T) {
+	tempDir := t.TempDir()
+	jobsDir := filepath.Join(tempDir, "jobs")
+	require.NoError(t, os.MkdirAll(jobsDir, 0755))
+
+	crtdlPath := filepath.Join(tempDir, "cancelled.json")
+	crtdlJSON, _ := json.Marshal(map[string]any{
+		"cohortDefinition": map[string]any{"version": "1.0.0", "inclusionCriteria": []any{}},
+		"dataExtraction":   map[string]any{"attributeGroups": []any{}},
+	})
+	require.NoError(t, os.WriteFile(crtdlPath, crtdlJSON, 0644))
+
+	submitCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/fhir/$extract-data" {
+			submitCount++
+		}
+		w.WriteHeader(http.StatusGone)
+	}))
+	defer server.Close()
+
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			TORCH: models.TORCHConfig{
+				BaseURL:            server.URL,
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 1 * time.Second,
+			},
+		},
+		Pipeline: models.PipelineConfig{EnabledSteps: []models.StepName{models.StepTorchImport}},
+		Retry:    models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000},
+		JobsDir:  jobsDir,
+	}
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", crtdlPath, config, logger)
+	require.NoError(t, err)
+	job = pipeline.StartJob(job)
+	job.TORCHJobID = "cancelled-job"
+	job.TORCHExtractionURL = server.URL + "/fhir/__status/cancelled-job"
+	require.NoError(t, pipeline.UpdateJob(jobsDir, job))
+	require.NoError(t, pipeline.MarkJobStopped(jobsDir, job.JobID))
+
+	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
+	_, err = runImportStep(job, logger, httpClient, false)
+
+	require.ErrorIs(t, err, pipeline.ErrJobStopped)
+	assert.Zero(t, submitCount, "a stopped job must not submit a new extraction")
+}
+
+// TestPipeline_TORCHExtraction_StoppedJobDoesNotSubmit verifies that the torch
+// step of a stopped job does not submit its first extraction.
+func TestPipeline_TORCHExtraction_StoppedJobDoesNotSubmit(t *testing.T) {
+	tempDir := t.TempDir()
+	jobsDir := filepath.Join(tempDir, "jobs")
+	require.NoError(t, os.MkdirAll(jobsDir, 0755))
+
+	crtdlPath := filepath.Join(tempDir, "stopped.json")
+	crtdlJSON, _ := json.Marshal(map[string]any{
+		"cohortDefinition": map[string]any{"version": "1.0.0", "inclusionCriteria": []any{}},
+		"dataExtraction":   map[string]any{"attributeGroups": []any{}},
+	})
+	require.NoError(t, os.WriteFile(crtdlPath, crtdlJSON, 0644))
+
+	submitCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/fhir/$extract-data" {
+			submitCount++
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	config := models.ProjectConfig{
+		Services: models.ServiceConfig{
+			TORCH: models.TORCHConfig{
+				BaseURL:            server.URL,
+				ExtractionTimeout:  1 * time.Minute,
+				PollingInterval:    1 * time.Second,
+				MaxPollingInterval: 1 * time.Second,
+			},
+		},
+		Pipeline: models.PipelineConfig{EnabledSteps: []models.StepName{models.StepTorchImport}},
+		Retry:    models.RetryConfig{MaxAttempts: 3, InitialBackoffMs: 100, MaxBackoffMs: 1000},
+		JobsDir:  jobsDir,
+	}
+
+	logger := lib.NewLogger(lib.LogLevelError)
+	job, err := pipeline.CreateJob(models.GenerateJobID(), "", crtdlPath, config, logger)
+	require.NoError(t, err)
+	job = pipeline.StartJob(job)
+	require.NoError(t, pipeline.UpdateJob(jobsDir, job))
+	require.NoError(t, pipeline.MarkJobStopped(jobsDir, job.JobID))
+
+	httpClient := services.NewHTTPClient(2*time.Second, config.Retry, models.TLSConfig{}, logger)
+	_, err = runImportStep(job, logger, httpClient, false)
+
+	require.ErrorIs(t, err, pipeline.ErrJobStopped)
+	assert.Zero(t, submitCount, "a stopped job must not submit an extraction")
+}
+
 // Integration test - verify error handling when CRTDL preprocessing fails
 // Covers error paths in internal/pipeline/import.go (preprocessCRTDL function)
 

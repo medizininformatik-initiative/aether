@@ -26,7 +26,8 @@ type Config struct {
 }
 
 type jobState struct {
-	polls int
+	polls     int
+	cancelled bool
 }
 
 // Server simulates TORCH for one or more extraction jobs.
@@ -95,6 +96,11 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
+	if job.cancelled {
+		s.mu.Unlock()
+		w.WriteHeader(http.StatusGone)
+		return
+	}
 	job.polls++
 	done := job.polls/s.cfg.PollsPerBatch >= s.batchesTotal()
 	s.mu.Unlock()
@@ -116,6 +122,10 @@ func (s *Server) handleTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jobID := strings.TrimPrefix(r.URL.Path, "/fhir/Task/")
+	if cancelled, found := strings.CutSuffix(jobID, "/$cancel"); found && r.Method == http.MethodPost {
+		s.cancelJob(w, cancelled)
+		return
+	}
 
 	s.mu.Lock()
 	job, ok := s.jobs[jobID]
@@ -171,4 +181,22 @@ func buildOutput(cohortSize int) string {
 		fmt.Fprintf(&body, `{"resourceType":"Patient","id":"mock-patient-%d"}`+"\n", i+1)
 	}
 	return body.String()
+}
+
+// cancelJob marks the job as cancelled. As in TORCH, its status endpoint then
+// answers 410 Gone.
+func (s *Server) cancelJob(w http.ResponseWriter, jobID string) {
+	s.mu.Lock()
+	job, ok := s.jobs[jobID]
+	if ok {
+		job.cancelled = true
+	}
+	s.mu.Unlock()
+
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/fhir+json")
+	_, _ = fmt.Fprintf(w, `{"resourceType":"Task","id":%q,"status":"cancelled"}`, jobID)
 }

@@ -308,3 +308,18 @@ func TestMockTORCH_PassesCapabilityStatementCheck(t *testing.T) {
 	require.NoError(t, client.CheckCapabilityStatement())
 	assert.NotContains(t, logs.String(), "WARN")
 }
+
+func TestMockTORCH_CancelledJobIsGone(t *testing.T) {
+	srv := newMock(t, mocktorch.Config{})
+	jobID := submitJob(t, srv)
+
+	cancel, err := http.Post(srv.URL+"/fhir/Task/"+jobID+"/$cancel", "application/fhir+json", nil)
+	require.NoError(t, err)
+	_ = cancel.Body.Close()
+	status, err := http.Get(srv.URL + "/fhir/__status/" + jobID)
+	require.NoError(t, err)
+	_ = status.Body.Close()
+
+	assert.Equal(t, http.StatusOK, cancel.StatusCode)
+	assert.Equal(t, http.StatusGone, status.StatusCode)
+}

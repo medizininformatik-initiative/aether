@@ -134,7 +134,7 @@ func LoadJob(jobsDir string, jobID string) (*models.PipelineJob, error) {
 func UpdateJob(jobsDir string, job *models.PipelineJob) error {
 	stopMu.Lock()
 	defer stopMu.Unlock()
-	if stoppedJobs[stopKey(jobsDir, job.JobID)] {
+	if isStopped(jobsDir, job.JobID) {
 		return nil
 	}
 	return saveJob(jobsDir, job)

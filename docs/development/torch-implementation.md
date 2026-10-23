@@ -21,10 +21,11 @@ reads one endpoint of the second:
   status/manifest endpoint. 
 - **[Task API](https://medizininformatik-initiative.github.io/torch/api/api.html#task-controller)**
   (task-controller) — controls extraction jobs *in execution* (inspect, pause,
-  resume, cancel), exposing each job as a FHIR `Task`. Aether reads exactly one
-  endpoint of it: `GET /fhir/Task/{jobId}`, for the batch progress extension
-  during polling (see *Batch progress* below). Job control (`$cancel`, `$pause`,
-  `$resume`) and `Task` search stay out of scope
+  resume, cancel), exposing each job as a FHIR `Task`. Aether uses two
+  endpoints of it: `GET /fhir/Task/{jobId}`, for the batch progress extension
+  during polling (see *Batch progress* below), and `POST /fhir/Task/{jobId}/$cancel`,
+  when the user stops the job with Ctrl+C. `$pause`, `$resume` and `Task` search
+  stay out of scope
   (see [PR #474](https://github.com/medizininformatik-initiative/aether/pull/474)).
 
 ### The asynchronous bulk extraction flow
@@ -167,7 +168,17 @@ new one.
 
 If polling later reports the handle is dead (`ErrHandleDead`, from a `404`/`410`),
 the orchestrator clears both fields, re-submits a fresh extraction, and resumes
-polling.
+polling. `submitAndPersistTORCHHandle` does not submit for a job that the user
+stopped in this process, and returns `pipeline.ErrJobStopped`.
+
+A confirmed Ctrl+C calls `pipeline.StopJobAndCancelExtraction`. It records the
+stop, cancels the TORCH job with `POST /fhir/Task/{jobId}/$cancel`
+(`TORCHClient.CancelExtraction`). It keeps both fields: TORCH answers `410` for
+the cancelled job, and the next `continue` re-submits as for any dead handle. The
+stop comes first, so that the poll loop of the ending process does not re-submit.
+If the stop comes while a submit is in progress, the state file has no handle
+yet. The stop then waits, within its time limit, for the submit to end, and
+cancels the new TORCH job.
 
 ### 4. Polling
 

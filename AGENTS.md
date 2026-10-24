@@ -80,9 +80,19 @@ CI runs `make mutation-diff` on each pull request that changes a Go source file
 in `internal/`. `MUTATION_REF` is the base branch of the pull request.
 
 The settings are in `.gremlins.yaml`. Integration mode is necessary, because the
-tests are in `tests/`, outside the package under test. It runs the complete test
-suite for each mutant, so a run of one package takes many minutes. Give the run
-a directory with `PKG` and let it complete in the background.
+tests are in `tests/`, outside the package under test. In integration mode,
+gremlins runs the complete test suite for each mutant. To make this faster,
+`scripts/mutation.sh` puts a `go` wrapper (`scripts/mutationgo`) first on the
+`PATH` of gremlins:
+
+- For the coverage step, the wrapper runs each test alone and records which
+  lines each test covers.
+- For each mutant, the wrapper runs only the tests that cover the mutated line.
+- If the wrapper cannot find these tests, the mutant runs the complete suite.
+  If a test fails when it runs alone, every mutant runs the complete suite.
+
+A run of one package can still take minutes. Give the run a directory with
+`PKG` and let it complete in the background.
 
 gremlins copies the full module for each worker. The copies go to
 `~/.cache/mutants-tmp`, because `/tmp` is a small tmpfs on some machines.

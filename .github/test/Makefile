@@ -221,6 +221,7 @@ upload-testdata:
 e2e-test: start upload-testdata
 	@echo "Running E2E test script..."
 	../scripts/run-e2e-test.sh
+	../scripts/run-job-stop-e2e-test.sh
 	@echo "✓ End-to-end test complete"
 
 ## e2e-test-flattening: Run flattening E2E test with pre-staged example data

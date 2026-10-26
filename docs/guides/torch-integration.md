@@ -68,6 +68,10 @@ During status polling, transient HTTP errors (timeouts, connection resets) and t
 
 When Aether submits an extraction it persists the TORCH **job handle** (job ID + status URL) to disk *before* the long poll. If Aether is interrupted (process killed, connection lost, timeout), `aether pipeline continue <job-id>` **re-attaches** to the same in-flight TORCH job and resumes polling — it does not re-submit the CRTDL, so the source FHIR server is not extracted twice. If the handle is no longer valid on TORCH (`404`/`410`, that is, the job was cancelled or deleted), Aether logs a warning, clears the stale handle, and submits a fresh extraction.
 
+### Cancelling an Extraction
+
+`aether job stop <config> <job-id>` stops the job and cancels the TORCH job with `POST /fhir/Task/{id}/$cancel`. The TORCH handle stays in the job state. TORCH answers `410 Gone` for the cancelled job, thus `aether pipeline continue` submits a new extraction. If the cancel fails, the job stays stopped and the TORCH job runs until it ends. The handle stays in the job state, also when the stop comes while Aether submits the extraction. If the command does the cancel itself, it exits with a non-zero code.
+
 ### Direct TORCH URL Import
 
 If you already have a TORCH extraction or result URL, you can pass it directly to skip the CRTDL submission step:

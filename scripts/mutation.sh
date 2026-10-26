@@ -47,6 +47,29 @@ TMPDIR="${MUTATION_TMPDIR:-$HOME/.cache/mutants-tmp}"
 export TMPDIR
 mkdir -p "$TMPDIR"
 
+# gremlins runs the complete test suite for every mutant, but only a few tests
+# cover the mutated line. gremlins has no option for another test command, so it
+# gets a wrapper named go first on the PATH. The wrapper runs only the tests that
+# cover the mutated line.
+if ! MUTATION_REAL_GO="$(command -v go)"; then
+	echo "go is not installed. The mutation test needs it." >&2
+	exit 1
+fi
+export MUTATION_REAL_GO
+MUTATION_SOURCE_DIR="$(pwd -P)"
+export MUTATION_SOURCE_DIR
+# Each run has its own directory, so that runs at the same time do not use the
+# wrapper or the test map of another run.
+wrapper_dir="$(mktemp -d "$TMPDIR/mutation-run.XXXXXX")"
+trap 'rm -rf "$wrapper_dir"' EXIT
+MUTATION_TEST_MAP="$wrapper_dir/mutation-test-map.json"
+export MUTATION_TEST_MAP
+
+if ! "$MUTATION_REAL_GO" build -o "$wrapper_dir/go" ./scripts/mutationgo; then
+	echo "Cannot build the go wrapper from ./scripts/mutationgo." >&2
+	exit 1
+fi
+
 args=(unleash --output "$MUTATION_OUTPUT")
 target="$PKG"
 if [ "$MODE" = "diff" ]; then
@@ -69,7 +92,13 @@ fi
 # Remove an old report, so that its absence shows this case.
 rm -f "$MUTATION_OUTPUT"
 status=0
-gremlins "${args[@]}" "$target" || status=$?
+PATH="$wrapper_dir:$PATH" gremlins "${args[@]}" "$target" || status=$?
+
+# The wrapper knows the coverage call of gremlins only from its arguments. If
+# a new gremlins version changes them, the wrapper writes no test map.
+if [ -f "$MUTATION_OUTPUT" ] && [ ! -f "$MUTATION_TEST_MAP" ]; then
+	echo "Warning: the go wrapper wrote no test map, so every mutant ran all tests." >&2
+fi
 
 if [ "$status" -ne 0 ] && [ ! -f "$MUTATION_OUTPUT" ]; then
 	exit "$status"

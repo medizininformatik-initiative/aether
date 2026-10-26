@@ -84,12 +84,21 @@ func newDiffRepo(t *testing.T, files map[string]string) string {
 }
 
 // gremlinsStub is a fake gremlins on the PATH. It records what the script gives
-// it.
+// it. The directory also holds a fake go, because the script builds the go
+// wrapper with it.
 type gremlinsStub struct {
 	binDir   string
 	argsFile string
 	tempFile string
+	// envFile holds the go that gremlins finds on the PATH and the variables
+	// for the go wrapper, one per line.
+	envFile string
+	// goArgsFile holds the arguments of the calls to the fake go.
+	goArgsFile string
 }
+
+// fakeGoBuildOutput is the content of the go wrapper that the fake go builds.
+const fakeGoBuildOutput = "#!/bin/sh\necho wrapper\n"
 
 // stubGremlins puts a fake gremlins in a new directory and returns it. The fake
 // writes a report to the file of the --output flag.
@@ -129,12 +138,26 @@ func writeGremlinsStub(t *testing.T, body string) gremlinsStub {
 	stub := gremlinsStub{binDir: t.TempDir()}
 	stub.argsFile = filepath.Join(stub.binDir, "args.txt")
 	stub.tempFile = filepath.Join(stub.binDir, "tmpdir.txt")
+	stub.envFile = filepath.Join(stub.binDir, "env.txt")
+	stub.goArgsFile = filepath.Join(stub.binDir, "go-args.txt")
 
 	script := "#!/bin/bash\n" +
 		"printf '%s\\n' \"$@\" > " + stub.argsFile + "\n" +
 		"printf '%s' \"$TMPDIR\" > " + stub.tempFile + "\n" +
+		"printf '%s\\n' \"$(command -v go)\" \"$MUTATION_REAL_GO\" \"$MUTATION_SOURCE_DIR\" \"$MUTATION_TEST_MAP\" > " +
+		stub.envFile + "\n" +
 		body
 	require.NoError(t, os.WriteFile(filepath.Join(stub.binDir, "gremlins"), []byte(script), 0o700))
+
+	// The fake go answers "build -o <file> ..." like the real go: it writes the
+	// executable file.
+	fakeGo := "#!/bin/bash\n" +
+		"printf '%s\\n' \"$@\" >> " + stub.goArgsFile + "\n" +
+		"[ \"$1\" = build ] && [ \"$2\" = -o ] || exit 64\n" +
+		"mkdir -p \"$(dirname \"$3\")\"\n" +
+		"printf '%s' '" + fakeGoBuildOutput + "' > \"$3\"\n" +
+		"chmod +x \"$3\"\n"
+	require.NoError(t, os.WriteFile(filepath.Join(stub.binDir, "go"), []byte(fakeGo), 0o700))
 
 	return stub
 }
@@ -481,4 +504,139 @@ func TestMutationReportsHowToInstallGremlins(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, string(out), "go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0")
+}
+
+// gremlins runs the complete test suite for every mutant. The wrapper limits
+// each run to the tests that cover the mutated line, so gremlins must find the
+// wrapper as go.
+func TestMutationPutsTheGoWrapperFirstOnThePathOfGremlins(t *testing.T) {
+	repo := newDiffRepo(t, map[string]string{"internal/lib/add.go": "package lib\n"})
+	stub := stubGremlins(t)
+	tempDir := t.TempDir()
+
+	cmd := exec.Command(mutationScript(t))
+	cmd.Dir = repo
+	cmd.Env = mutationEnv(t, stub.binDir, "MUTATION_TMPDIR="+tempDir)
+
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	env := strings.Split(strings.TrimSuffix(stub.read(t, stub.envFile), "\n"), "\n")
+	require.Len(t, env, 4)
+	wrapper, realGo, sourceDir, testMap := env[0], env[1], env[2], env[3]
+
+	runDir := filepath.Dir(wrapper)
+	require.Equal(t, tempDir, filepath.Dir(runDir))
+	require.Equal(t, "go", filepath.Base(wrapper))
+	require.Equal(t, "build\n-o\n"+wrapper+"\n./scripts/mutationgo\n", stub.read(t, stub.goArgsFile))
+	require.Equal(t, filepath.Join(stub.binDir, "go"), realGo)
+	repoDir, err := filepath.EvalSymlinks(repo)
+	require.NoError(t, err)
+	require.Equal(t, repoDir, sourceDir)
+	require.Equal(t, filepath.Join(runDir, "mutation-test-map.json"), testMap)
+	require.NoDirExists(t, runDir)
+}
+
+// Two runs at the same time must not use the test map of the other run.
+func TestMutationGivesEachRunItsOwnTestMap(t *testing.T) {
+	repo := newDiffRepo(t, map[string]string{"internal/lib/add.go": "package lib\n"})
+	tempDir := t.TempDir()
+
+	var maps []string
+	for range 2 {
+		stub := stubGremlins(t)
+		cmd := exec.Command(mutationScript(t))
+		cmd.Dir = repo
+		cmd.Env = mutationEnv(t, stub.binDir, "MUTATION_TMPDIR="+tempDir)
+
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+
+		env := strings.Split(strings.TrimSuffix(stub.read(t, stub.envFile), "\n"), "\n")
+		maps = append(maps, env[3])
+	}
+
+	require.NotEqual(t, maps[0], maps[1])
+}
+
+const testMapWarning = "every mutant ran all tests"
+
+func TestMutationWarnsWhenTheGoWrapperWroteNoTestMap(t *testing.T) {
+	repo := newDiffRepo(t, map[string]string{"internal/lib/add.go": "package lib\n"})
+	stub := stubGremlins(t)
+	tempDir := t.TempDir()
+
+	cmd := exec.Command(mutationScript(t))
+	cmd.Dir = repo
+	cmd.Env = mutationEnv(t, stub.binDir, "MUTATION_TMPDIR="+tempDir)
+
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+	require.Contains(t, string(out), testMapWarning)
+}
+
+func TestMutationDoesNotWarnWhenTheGoWrapperWroteATestMap(t *testing.T) {
+	repo := newDiffRepo(t, map[string]string{"internal/lib/add.go": "package lib\n"})
+	stub := writeGremlinsStub(t,
+		"out=''; prev=''\n"+
+			"for arg in \"$@\"; do [ \"$prev\" = --output ] && out=\"$arg\"; prev=\"$arg\"; done\n"+
+			"echo '{\"mutants_total\":1}' > \"$out\"\n"+
+			"echo '{\"tests\":[]}' > \"$MUTATION_TEST_MAP\"\n")
+	tempDir := t.TempDir()
+
+	cmd := exec.Command(mutationScript(t))
+	cmd.Dir = repo
+	cmd.Env = mutationEnv(t, stub.binDir, "MUTATION_TMPDIR="+tempDir)
+
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+	require.NotContains(t, string(out), testMapWarning)
+}
+
+// toolDir returns a directory that holds links to the given tools only.
+func toolDir(t *testing.T, tools ...string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+
+	for _, tool := range tools {
+		path, err := exec.LookPath(tool)
+		require.NoError(t, err)
+		require.NoError(t, os.Symlink(path, filepath.Join(dir, tool)))
+	}
+
+	return dir
+}
+
+func TestMutationReportsThatGoIsMissing(t *testing.T) {
+	repo := newDiffRepo(t, map[string]string{"internal/lib/add.go": "package lib\n"})
+	stub := stubGremlins(t)
+	tools := toolDir(t, "git", "mkdir", "rm", "sed", "grep", "dirname")
+	require.NoError(t, os.Symlink(filepath.Join(stub.binDir, "gremlins"), filepath.Join(tools, "gremlins")))
+
+	cmd := exec.Command(mutationScript(t))
+	cmd.Dir = repo
+	cmd.Env = mutationEnv(t, "", "PATH="+tools, "MUTATION_TMPDIR="+t.TempDir())
+
+	out, err := cmd.CombinedOutput()
+
+	require.Error(t, err, string(out))
+	require.Contains(t, string(out), "go is not installed")
+	require.NoFileExists(t, stub.argsFile)
+}
+
+func TestMutationReportsThatTheGoWrapperDoesNotBuild(t *testing.T) {
+	repo := newDiffRepo(t, map[string]string{"internal/lib/add.go": "package lib\n"})
+	stub := stubGremlins(t)
+	require.NoError(t, os.WriteFile(filepath.Join(stub.binDir, "go"), []byte("#!/bin/bash\nexit 1\n"), 0o700))
+
+	cmd := exec.Command(mutationScript(t))
+	cmd.Dir = repo
+	cmd.Env = mutationEnv(t, stub.binDir, "MUTATION_TMPDIR="+t.TempDir())
+
+	out, err := cmd.CombinedOutput()
+
+	require.Error(t, err, string(out))
+	require.Contains(t, string(out), "Cannot build the go wrapper")
+	require.NoFileExists(t, stub.argsFile)
 }

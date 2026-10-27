@@ -2,6 +2,8 @@ package ui_test
 
 import (
 	"bytes"
+	"io"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -200,4 +202,48 @@ func TestProgressBar_OperationName(t *testing.T) {
 			assert.NotNil(t, bar)
 		})
 	}
+}
+
+func TestProgressBar_ConcurrentAdd(t *testing.T) {
+	const goroutines, calls = 50, 100
+	bar := ui.NewProgressBarWithWriter(goroutines*calls, "Test", io.Discard)
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < calls; j++ {
+				assert.NoError(t, bar.Add(1))
+			}
+		}()
+	}
+	wg.Wait()
+
+	assert.Equal(t, 100.0, bar.GetPercentage())
+}
+
+func TestProgressBar_ConcurrentSetAddAndRead(t *testing.T) {
+	bar := ui.NewProgressBarWithWriter(1000, "Test", io.Discard)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			assert.NoError(t, bar.Set(int64(i)))
+		}()
+		go func() {
+			defer wg.Done()
+			assert.NoError(t, bar.Add(1))
+		}()
+		go func() {
+			defer wg.Done()
+			_ = bar.GetPercentage()
+		}()
+	}
+	wg.Wait()
+
+	require.NoError(t, bar.Set(500))
+	assert.Equal(t, 50.0, bar.GetPercentage())
 }

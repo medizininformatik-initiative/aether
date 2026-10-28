@@ -192,9 +192,9 @@ func TestNewFlatteningRequest(t *testing.T) {
 		Select:       []models.SelectClause{},
 	}
 
-	resources := []map[string]any{
-		{"resourceType": "Patient", "id": "1"},
-		{"resourceType": "Patient", "id": "2"},
+	resources := []json.RawMessage{
+		json.RawMessage(`{"resourceType":"Patient","id":"1"}`),
+		json.RawMessage(`{"resourceType":"Patient","id":"2"}`),
 	}
 
 	request := models.NewFlatteningRequest(viewDef, resources)

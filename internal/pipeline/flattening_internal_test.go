@@ -1,9 +1,11 @@
 package pipeline
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/medizininformatik-initiative/aether/internal/models"
 )
@@ -34,69 +36,63 @@ func makeProv(targetRefs []string, groupID string) map[string]any {
 	}
 }
 
-func TestExtractBundleResources(t *testing.T) {
-	t.Run("separates clinical resources from Provenance and builds index", func(t *testing.T) {
-		patient := map[string]any{"resourceType": "Patient", "id": "p1"}
-		condition := map[string]any{"resourceType": "Condition", "id": "c1"}
-		prov := makeProv([]string{"Patient/p1", "Condition/c1"}, "group-x")
+func splitBundleMap(t *testing.T, bundle map[string]any) ([]bundleEntry, models.ProvenanceIndex) {
+	t.Helper()
+	raw, err := json.Marshal(bundle)
+	require.NoError(t, err)
+	return splitBundle(raw)
+}
 
+func TestSplitBundle(t *testing.T) {
+	t.Run("indexes the targets of the Provenance entries", func(t *testing.T) {
+		patient := map[string]any{"resourceType": "Patient", "id": "p1"}
+		prov := makeProv([]string{"Patient/p1", "Condition/c1"}, "group-x")
 		bundle := map[string]any{
 			"resourceType": "Bundle",
-			"entry": []any{
-				makeBundleEntry(patient),
-				makeBundleEntry(condition),
-				makeBundleEntry(prov),
-			},
+			"entry":        []any{makeBundleEntry(patient), makeBundleEntry(prov)},
 		}
 
-		resources, index := extractBundleResources(bundle)
-		assert.Len(t, resources, 2)
-		assert.Equal(t, "Patient", resources[0]["resourceType"])
-		assert.Equal(t, "Condition", resources[1]["resourceType"])
+		entries, index := splitBundleMap(t, bundle)
 		assert.Equal(t, []string{"group-x"}, index["Patient/p1"])
 		assert.Equal(t, []string{"group-x"}, index["Condition/c1"])
+		assert.Len(t, index, 2)
+		require.Len(t, entries, 1)
+		assert.Equal(t, "Patient/p1", entries[0].ref)
+		assert.JSONEq(t, `{"resourceType":"Patient","id":"p1"}`, string(entries[0].raw))
 	})
 
-	t.Run("returns nil for non-array entry", func(t *testing.T) {
-		bundle := map[string]any{
-			"resourceType": "Bundle",
-			"entry":        "not an array",
-		}
-		resources, index := extractBundleResources(bundle)
-		assert.Nil(t, resources)
+	t.Run("returns nothing for non-array entry", func(t *testing.T) {
+		entries, index := splitBundleMap(t, map[string]any{"resourceType": "Bundle", "entry": "not an array"})
+		assert.Empty(t, entries)
 		assert.Empty(t, index)
 	})
 
-	t.Run("returns nil for missing entry", func(t *testing.T) {
-		resources, index := extractBundleResources(map[string]any{"resourceType": "Bundle"})
-		assert.Nil(t, resources)
+	t.Run("returns nothing for missing entry", func(t *testing.T) {
+		entries, index := splitBundleMap(t, map[string]any{"resourceType": "Bundle"})
+		assert.Empty(t, entries)
 		assert.Empty(t, index)
 	})
 
-	t.Run("skips non-map entries and entries without resource", func(t *testing.T) {
-		patient := map[string]any{"resourceType": "Patient", "id": "p1"}
+	t.Run("skips malformed entries", func(t *testing.T) {
 		bundle := map[string]any{
 			"resourceType": "Bundle",
 			"entry": []any{
 				"not a map",
 				map[string]any{"fullUrl": "urn:uuid:no-resource"},
 				map[string]any{"resource": "not a map"},
-				makeBundleEntry(patient),
+				map[string]any{"resource": map[string]any{"id": "no-type"}},
+				makeBundleEntry(makeProv([]string{"Patient/p1"}, "group-x")),
 			},
 		}
-		resources, _ := extractBundleResources(bundle)
-		assert.Len(t, resources, 1)
-		assert.Equal(t, "p1", resources[0]["id"])
+		entries, index := splitBundleMap(t, bundle)
+		assert.Empty(t, entries)
+		assert.Equal(t, models.ProvenanceIndex{"Patient/p1": {"group-x"}}, index)
 	})
 
-	t.Run("handles bundle without Provenance", func(t *testing.T) {
+	t.Run("returns empty index for bundle without Provenance", func(t *testing.T) {
 		patient := map[string]any{"resourceType": "Patient", "id": "p1"}
-		bundle := map[string]any{
-			"resourceType": "Bundle",
-			"entry":        []any{makeBundleEntry(patient)},
-		}
-		resources, index := extractBundleResources(bundle)
-		assert.Len(t, resources, 1)
+		entries, index := splitBundleMap(t, map[string]any{"resourceType": "Bundle", "entry": []any{makeBundleEntry(patient)}})
+		assert.Len(t, entries, 1)
 		assert.Empty(t, index)
 	})
 }

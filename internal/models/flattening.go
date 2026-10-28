@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -20,7 +21,7 @@ type FlatteningConfig struct {
 	LookupPath  string        `yaml:"lookup_path" json:"lookup_path" mapstructure:"lookup_path"`       // Path to flatten-lookup.json file
 	Formats     []string      `yaml:"formats" json:"formats" mapstructure:"formats"`                   // Output formats: ["csv"] for now
 	Timeout     time.Duration `yaml:"timeout" json:"timeout" mapstructure:"timeout"`                   // Request timeout
-	BatchSizeMB int           `yaml:"batch_size_mb" json:"batch_size_mb" mapstructure:"batch_size_mb"` // Total memory budget in MB for batched streaming (default 500)
+	BatchSizeMB int           `yaml:"batch_size_mb" json:"batch_size_mb" mapstructure:"batch_size_mb"` // Limit in MB for the JSON bytes of pending batches (default 500)
 	MaxAttempts int           `yaml:"max_attempts" json:"max_attempts" mapstructure:"max_attempts"`    // Attempts per flattener request; 0 uses retry.max_attempts
 }
 
@@ -35,7 +36,7 @@ func DefaultFlatteningConfig() FlatteningConfig {
 	}
 }
 
-// GetBatchSizeBytes returns the total memory budget in bytes, defaulting to 500MB if not set
+// GetBatchSizeBytes returns the batch limit in bytes, defaulting to 500MB if not set
 func (c *FlatteningConfig) GetBatchSizeBytes() int {
 	if c.BatchSizeMB <= 0 {
 		return 500 * 1024 * 1024
@@ -91,7 +92,7 @@ type FlatteningParameter struct {
 }
 
 // NewFlatteningRequest creates a new FlatteningRequest with the given ViewDefinition and resources
-func NewFlatteningRequest(viewDef ViewDefinition, resources []map[string]any) FlatteningRequest {
+func NewFlatteningRequest(viewDef ViewDefinition, resources []json.RawMessage) FlatteningRequest {
 	params := make([]FlatteningParameter, 0, len(resources)+1)
 
 	// Add ViewDefinition as first parameter

@@ -35,7 +35,7 @@ pipeline:
 | `lookup_path` | string | - | Path to lookup table file |
 | `formats` | []string | ["csv"] | Output formats |
 | `timeout` | duration | 30m | Request timeout |
-| `batch_size_mb` | int | 500 | Total memory budget in MB, divided across groups (0 = default) |
+| `batch_size_mb` | int | 500 | Limit in MB for the JSON bytes held in pending batches, divided across groups (0 = default). See [Memory use](#memory-use) |
 | `max_attempts` | int | 0 | Attempts per flattener request, 0-10. `0` uses `retry.max_attempts` |
 
 ## Retries and Timeouts
@@ -93,11 +93,23 @@ for each group from the lookup tables, then streams each input file once:
    the same Bundle. **A resource with no matching entry in the index of its own
    Bundle is dropped** — it is not written to any group. A resource outside a
    Bundle has no Provenance, so it is also dropped.
-3. When a group's batch exceeds its share of `batch_size_mb`, the batch is flushed
+3. When a group's batch reaches its share of `batch_size_mb`, the batch is flushed
    to fhir-flattener and its CSV output is appended (one header, multiple data
    batches).
 
-Memory usage is bounded by `batch_size_mb` regardless of total dataset size — the budget is divided equally across attribute groups.
+### Memory use
+
+`batch_size_mb` limits the JSON bytes that pending batches hold. The limit is
+divided equally across attribute groups. During a flush, the encoding of the
+request holds up to two more copies of the batch of that group: one in the
+encoder buffer and one in the request body.
+
+`batch_size_mb` does not limit these items:
+
+- The Bundle that the step reads. The step holds the JSON of one Bundle while
+  it routes the entries of that Bundle.
+- The Provenance index of that Bundle. The step decodes only the Provenance
+  entries of the Bundle into maps, and discards the index after the Bundle.
 
 ## Output
 

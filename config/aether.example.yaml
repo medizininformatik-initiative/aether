@@ -153,10 +153,11 @@ services:
     # Default: PT30M (30 minutes)
     timeout: PT30M
 
-    # Total memory budget in megabytes (MB) for streaming processing.
-    # This budget is divided equally across attribute groups — each group flushes
-    # to the flattener when its share is exceeded. For example, with batch_size_mb: 150
-    # and 3 groups, each group flushes at ~50 MB, keeping total memory near 150 MB.
+    # Limit in megabytes (MB) for the JSON bytes that pending batches hold.
+    # The limit is divided equally across attribute groups — each group flushes
+    # to the flattener when its share is reached. For example, with batch_size_mb: 150
+    # and 3 groups, each group flushes at ~50 MB of JSON. Some memory use is
+    # outside this limit; see "Memory use" in the flattening step guide.
     # Default: 500 MB (0 means "use default")
     batch_size_mb: 500
 

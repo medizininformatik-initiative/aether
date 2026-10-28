@@ -72,6 +72,21 @@ func TestHTTPClient_DoFHIRJSON_HTTPErrorReturnsServiceError(t *testing.T) {
 	assert.Contains(t, svcErr.Body, "bad")
 }
 
+func TestHTTPClient_DoFHIRJSON_NilOutSkipsDecode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`not json`))
+	}))
+	defer server.Close()
+
+	client := fhirTestClient(models.RetryConfig{MaxAttempts: 1, InitialBackoffMs: 1, MaxBackoffMs: 1})
+
+	err := client.DoFHIRJSON(services.FHIRRequest{
+		Method: "POST", URL: server.URL, Body: map[string]any{}, Service: "DIMP",
+	}, nil)
+
+	require.NoError(t, err)
+}
+
 // AC5: retry is wired — a transient 503 then 200 succeeds after one retry.
 func TestHTTPClient_DoFHIRJSON_RetriesTransient(t *testing.T) {
 	var hits int32

@@ -210,6 +210,7 @@ func readNDJSONResources(inputFile string) ([]map[string]any, error) {
 	defer func() { _ = inFile.Close() }()
 
 	dec := json.NewDecoder(inFile)
+	dec.UseNumber()
 	var resources []map[string]any
 
 	for {

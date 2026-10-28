@@ -479,11 +479,10 @@ func TestExecuteFlatteningStep_FlattenerServiceError(t *testing.T) {
 	assert.Contains(t, err.Error(), "flattener failed")
 }
 
-// TestExecuteFlatteningStep_NonBundleStreamRouting exercises the streaming path
-// where clinical resources arrive in NDJSON as top-level (non-Bundle) objects
-// and are routed via a provenance index sourced from a separate Bundle file.
-// Covers the non-Bundle branch in streamAndFlattenResources.
-func TestExecuteFlatteningStep_NonBundleStreamRouting(t *testing.T) {
+// TestExecuteFlatteningStep_ProvenanceOfOtherBundleDoesNotRoute verifies that a
+// Provenance routes only the resources in its own Bundle. Top-level resources
+// go to no group, even when a Bundle in another file has a Provenance for them.
+func TestExecuteFlatteningStep_ProvenanceOfOtherBundleDoesNotRoute(t *testing.T) {
 	flushed := false
 	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
@@ -531,7 +530,7 @@ func TestExecuteFlatteningStep_NonBundleStreamRouting(t *testing.T) {
 	}]`
 	require.NoError(t, os.WriteFile(lookupPath, []byte(lookupContent), 0644))
 
-	// File A: Bundle containing only Provenance entries (builds provenance index in pass 1).
+	// File A: Bundle containing only Provenance entries (a Provenance of another Bundle).
 	provBundle := makeBundle("prov-bundle",
 		makeProvenance("prov-a", "Patient/1", groupID),
 		makeProvenance("prov-b", "Patient/2", groupID),
@@ -540,7 +539,7 @@ func TestExecuteFlatteningStep_NonBundleStreamRouting(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "01-prov.ndjson"), append(provData, '\n'), 0644))
 
-	// File B: NDJSON of raw, top-level Patient resources (exercises non-Bundle pass 2 routing).
+	// File B: NDJSON of raw, top-level Patient resources (no Provenance in their own Bundle).
 	patientFile, err := os.Create(filepath.Join(inputDir, "02-patients.ndjson"))
 	require.NoError(t, err)
 	for _, p := range []map[string]any{
@@ -575,9 +574,6 @@ func TestExecuteFlatteningStep_NonBundleStreamRouting(t *testing.T) {
 					LookupPath: lookupPath,
 					Formats:    []string{"csv"},
 					Timeout:    30 * time.Second,
-					// Tiny memory budget forces a flush inside the non-Bundle branch
-					// after each resource is appended.
-					BatchSizeMB: 1,
 				},
 			},
 			Pipeline: models.PipelineConfig{
@@ -590,9 +586,9 @@ func TestExecuteFlatteningStep_NonBundleStreamRouting(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelDebug)
 	err = runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.NoError(t, err)
-	assert.True(t, flushed, "flattener service should have been called")
+	assert.False(t, flushed, "flattener service must not be called")
 
 	csvFiles, err := filepath.Glob(filepath.Join(outputDir, "*.csv"))
 	require.NoError(t, err)
-	require.Len(t, csvFiles, 1)
+	assert.Empty(t, csvFiles)
 }

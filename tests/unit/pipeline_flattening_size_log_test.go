@@ -22,14 +22,9 @@ func logEntry(t *testing.T, logs, message string) string {
 }
 
 func TestFlatteningStep_LogsGroupSummary(t *testing.T) {
-	bundle := makeBundle("b1",
-		paddedPatient(t, "1", 1500), makeProvenance("prov-1", "Patient/1", batchingGroupID),
-		makeProvenance("prov-2", "Patient/2", batchingGroupID),
-	)
-
 	_, logs, err := runFlatteningWithOptions(t, map[string][]map[string]any{
-		"a_bundle.ndjson":   {bundle},
-		"b_patients.ndjson": {paddedPatient(t, "2", 3000)},
+		"a_bundle.ndjson": {linkedBundle(paddedPatient(t, "1", 1500))},
+		"b_bundle.ndjson": {linkedBundle(paddedPatient(t, "2", 3000))},
 	}, lib.LogLevelInfo, nil)
 	require.NoError(t, err)
 
@@ -40,31 +35,17 @@ func TestFlatteningStep_LogsGroupSummary(t *testing.T) {
 
 func TestFlatteningStep_LogsLargestBatchWhenItIsNotTheLast(t *testing.T) {
 	_, logs, err := runFlatteningWithOptions(t, map[string][]map[string]any{
-		"provenance.ndjson": {provenanceOnlyBundle("1", "2", "3")},
-		// Each line after the first also counts the newline before it.
-		"patients.ndjson": {
+		"bundle.ndjson": {linkedBundle(
 			paddedPatient(t, "1", 600_000),
-			paddedPatient(t, "2", 600_000),
+			paddedPatient(t, "2", 600_001),
 			paddedPatient(t, "3", 100_000),
-		},
+		)},
 	}, lib.LogLevelInfo, nil)
 	require.NoError(t, err)
 
-	assert.Equal(t, "[INFO] Flattening group summary | [group_name Patient resource_count 3 total_bytes 1300002"+
+	assert.Equal(t, "[INFO] Flattening group summary | [group_name Patient resource_count 3 total_bytes 1300001"+
 		" batch_count 2 largest_batch_bytes 1200001 largest_resource Patient/2 largest_resource_bytes 600001]",
 		logEntry(t, logs, "Flattening group summary"))
-}
-
-func TestFlatteningStep_WarnsAboutResourceLargerThanBudget(t *testing.T) {
-	_, logs, err := runFlatteningWithOptions(t, map[string][]map[string]any{
-		"provenance.ndjson": {provenanceOnlyBundle("big")},
-		"patients.ndjson":   {paddedPatient(t, "big", oneMiB+1)},
-	}, lib.LogLevelInfo, nil)
-	require.NoError(t, err)
-
-	assert.Equal(t, "[WARN] "+oversizedWarning+
-		" | [group_name Patient resource Patient/big resource_bytes 1048577 budget_bytes 1048576]",
-		logEntry(t, logs, oversizedWarning))
 }
 
 func TestFlatteningStep_WarnsAboutBundleEntryLargerThanBudget(t *testing.T) {
@@ -82,8 +63,7 @@ func TestFlatteningStep_WarnsAboutBundleEntryLargerThanBudget(t *testing.T) {
 
 func TestFlatteningStep_LogsGroupSummaryWhenFlattenerFails(t *testing.T) {
 	_, logs, err := runFlatteningWithOptions(t, map[string][]map[string]any{
-		"provenance.ndjson": {provenanceOnlyBundle("1")},
-		"patients.ndjson":   {paddedPatient(t, "1", 2000)},
+		"bundle.ndjson": {linkedBundle(paddedPatient(t, "1", 2000))},
 	}, lib.LogLevelInfo, errors.New("out of memory"))
 
 	require.Error(t, err)
@@ -95,14 +75,13 @@ func TestFlatteningStep_LogsGroupSummaryWhenFlattenerFails(t *testing.T) {
 func histogramInputs(t *testing.T) map[string][]map[string]any {
 	t.Helper()
 	return map[string][]map[string]any{
-		"provenance.ndjson": {provenanceOnlyBundle("a", "b", "c", "d", "e")},
-		"patients.ndjson": {
+		"bundle.ndjson": {linkedBundle(
 			paddedPatient(t, "a", 999),
 			paddedPatient(t, "b", 1000),
-			paddedPatient(t, "c", 9998), // plus the newline before the line: 9999
+			paddedPatient(t, "c", 9999),
 			paddedPatient(t, "d", 100000),
 			paddedPatient(t, "e", 1000000),
-		},
+		)},
 	}
 }
 
@@ -123,8 +102,7 @@ func TestFlatteningStep_OmitsSizeHistogramAtInfoLevel(t *testing.T) {
 
 func TestFlatteningStep_NoWarningForResourceEqualToBudget(t *testing.T) {
 	_, logs, err := runFlatteningWithOptions(t, map[string][]map[string]any{
-		"provenance.ndjson": {provenanceOnlyBundle("edge")},
-		"patients.ndjson":   {paddedPatient(t, "edge", oneMiB)},
+		"bundle.ndjson": {linkedBundle(paddedPatient(t, "edge", oneMiB))},
 	}, lib.LogLevelInfo, nil)
 	require.NoError(t, err)
 
@@ -133,11 +111,10 @@ func TestFlatteningStep_NoWarningForResourceEqualToBudget(t *testing.T) {
 
 func TestFlatteningStep_LogsFirstOfEqualLargestResources(t *testing.T) {
 	_, logs, err := runFlatteningWithOptions(t, map[string][]map[string]any{
-		"provenance.ndjson": {provenanceOnlyBundle("1", "2")},
-		"patients.ndjson": {
+		"bundle.ndjson": {linkedBundle(
 			paddedPatient(t, "1", 2000),
-			paddedPatient(t, "2", 1999), // plus the newline before the line: 2000
-		},
+			paddedPatient(t, "2", 2000),
+		)},
 	}, lib.LogLevelInfo, nil)
 	require.NoError(t, err)
 
@@ -147,14 +124,12 @@ func TestFlatteningStep_LogsFirstOfEqualLargestResources(t *testing.T) {
 
 func TestFlatteningStep_SizeHistogramPutsBucketLimitInNextBucket(t *testing.T) {
 	_, logs, err := runFlatteningWithOptions(t, map[string][]map[string]any{
-		"provenance.ndjson": {provenanceOnlyBundle("a", "b", "c", "d")},
-		// Each line after the first also counts the newline before it.
-		"patients.ndjson": {
+		"bundle.ndjson": {linkedBundle(
 			paddedPatient(t, "a", 1000),
-			paddedPatient(t, "b", 9999),
-			paddedPatient(t, "c", 99999),
-			paddedPatient(t, "d", 999999),
-		},
+			paddedPatient(t, "b", 10000),
+			paddedPatient(t, "c", 100000),
+			paddedPatient(t, "d", 1000000),
+		)},
 	}, lib.LogLevelDebug, nil)
 	require.NoError(t, err)
 
@@ -163,11 +138,10 @@ func TestFlatteningStep_SizeHistogramPutsBucketLimitInNextBucket(t *testing.T) {
 
 func TestFlatteningStep_StopsAtFirstFailedFlushOfFullBatch(t *testing.T) {
 	run, _, err := runFlatteningWithOptions(t, map[string][]map[string]any{
-		"provenance.ndjson": {provenanceOnlyBundle("1", "2")},
-		"patients.ndjson": {
+		"bundle.ndjson": {linkedBundle(
 			paddedPatient(t, "1", oneMiB),
 			paddedPatient(t, "2", oneMiB),
-		},
+		)},
 	}, lib.LogLevelInfo, errors.New("out of memory"))
 
 	require.ErrorContains(t, err, "out of memory")

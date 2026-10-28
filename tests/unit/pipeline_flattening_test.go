@@ -541,9 +541,9 @@ func TestExecuteFlatteningStep_NoMatchingResources(t *testing.T) {
 	assert.Empty(t, csvFiles)
 }
 
-// TestExecuteFlatteningStep_ScanProvenanceError verifies the step surfaces an
-// error when input files cannot be opened during the provenance scan pass.
-func TestExecuteFlatteningStep_ScanProvenanceError(t *testing.T) {
+// TestExecuteFlatteningStep_UnreadableInputError verifies the step surfaces an
+// error when an input file cannot be read during the stream.
+func TestExecuteFlatteningStep_UnreadableInputError(t *testing.T) {
 	tempDir := t.TempDir()
 	jobID := "test-load-error"
 	jobDir := filepath.Join(tempDir, "jobs", jobID)
@@ -565,7 +565,7 @@ func TestExecuteFlatteningStep_ScanProvenanceError(t *testing.T) {
 
 	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to load resources")
+	assert.Contains(t, err.Error(), "failed to load fake.ndjson")
 }
 
 // TestExecuteFlatteningStep_OutputDirCreationError tests line 84-88
@@ -1597,13 +1597,12 @@ func TestExecuteFlatteningStep_OpenFileError(t *testing.T) {
 
 	err := runPipelineStep(models.StepFlattening, job, jobDir, logger)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to load resources")
+	assert.Contains(t, err.Error(), "failed to load unreadable.ndjson")
 }
 
-// TestExecuteFlatteningStep_UnknownProfile verifies resources with unknown profiles
-// are silently skipped during streaming
-// TestExecuteFlatteningStep_ProvenanceInPseudonymizedDir verifies that provenance is scanned
-// from the input directory (pseudonymized/) when DIMP preserves Provenance.entity.
+// TestExecuteFlatteningStep_ProvenanceInPseudonymizedDir verifies that a
+// Provenance in the pseudonymized/ input routes the resources of its Bundle
+// when DIMP preserves Provenance.entity.
 func TestExecuteFlatteningStep_ProvenanceInPseudonymizedDir(t *testing.T) {
 	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fhir/ViewDefinition/$run" {
@@ -1673,6 +1672,8 @@ func TestExecuteFlatteningStep_ProvenanceInPseudonymizedDir(t *testing.T) {
 	assert.NotEmpty(t, csvFiles, "expected CSV output when provenance is in pseudonymized/")
 }
 
+// TestExecuteFlatteningStep_UnknownProfile verifies resources with unknown profiles
+// are silently skipped during streaming
 func TestExecuteFlatteningStep_UnknownProfile(t *testing.T) {
 	server := servicestest.NewFlattenerServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Should never be called if all resources have unknown profiles

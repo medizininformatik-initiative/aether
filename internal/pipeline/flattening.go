@@ -65,15 +65,14 @@ func (flatteningStep) Run(ctx *StepContext) (StepResult, error) {
 		return StepResult{}, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	// The provenance scan can take long, so a flattener that does not answer
-	// must fail the step first.
+	// A flattener that does not answer must fail the step before the stream.
 	flattenerTransport, _ := services.BuildTLSTransport(job.Config.TLS, logger)
 	flattenerClient := flattenerFactory(job.Config.Services.Flattening, job.Config.Retry, flattenerTransport, logger)
 	if err := flattenerClient.HealthCheck(); err != nil {
 		return StepResult{}, fmt.Errorf("flattener check failed: %w", err)
 	}
 
-	files, provenanceIndex, err := scanFlatteningInput(inputDir, job.JobID, logger)
+	files, err := scanFlatteningInput(inputDir, job.JobID, logger)
 	if err != nil {
 		return StepResult{}, err
 	}
@@ -93,11 +92,10 @@ func (flatteningStep) Run(ctx *StepContext) (StepResult, error) {
 
 	views := buildGroupViews(attributeGroups, viewDefBuilder, viewDefWriter, logger)
 
-	// Pass 2: stream resources and flatten in batches using provenance routing
+	// Stream resources and flatten in batches, routed by the Provenance of each Bundle
 	totals, err := streamAndFlattenResources(
 		files,
 		attributeGroups,
-		provenanceIndex,
 		views.groupIDToIndex,
 		views.viewDefs,
 		views.headers,
@@ -149,16 +147,15 @@ func loadFlatteningDefinitions(job *models.PipelineJob, logger *lib.Logger) (*mo
 	return crtdl, lookupTables, nil
 }
 
-// scanFlatteningInput finds the FHIR NDJSON files in inputDir and builds the
-// provenance index from them (pass 1).
-func scanFlatteningInput(inputDir, jobID string, logger *lib.Logger) ([]string, models.ProvenanceIndex, error) {
+// scanFlatteningInput finds the FHIR NDJSON files in inputDir.
+func scanFlatteningInput(inputDir, jobID string, logger *lib.Logger) ([]string, error) {
 	files, err := findFHIRFiles(inputDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list input files: %w", err)
+		return nil, fmt.Errorf("failed to list input files: %w", err)
 	}
 
 	if len(files) == 0 {
-		return nil, nil, fmt.Errorf("no FHIR NDJSON files found in %s", inputDir)
+		return nil, fmt.Errorf("no FHIR NDJSON files found in %s", inputDir)
 	}
 
 	logger.Info("Streaming FHIR resources from input files",
@@ -166,17 +163,7 @@ func scanFlatteningInput(inputDir, jobID string, logger *lib.Logger) ([]string, 
 		"file_count", len(files),
 		"job_id", jobID)
 
-	provenanceIndex, err := scanProvenanceIndex(files)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load resources: %w", err)
-	}
-
-	logger.Info("Built provenance index",
-		"provenance_entries", len(provenanceIndex),
-		"provenance_source", inputDir,
-		"job_id", jobID)
-
-	return files, provenanceIndex, nil
+	return files, nil
 }
 
 // groupViews holds the ViewDefinition, CSV header, and CSV filename of each
@@ -244,30 +231,6 @@ func printGroupTotals(groups []models.AttributeGroup, views groupViews, totals [
 	return filesWritten
 }
 
-// scanProvenanceIndex performs a lightweight first pass over all input files,
-// extracting only Provenance resources from Bundles to build the provenance index.
-// Clinical resources are discarded to keep memory usage minimal.
-func scanProvenanceIndex(files []string) (models.ProvenanceIndex, error) {
-	mergedIndex := make(models.ProvenanceIndex)
-
-	for _, filePath := range files {
-		_, err := lib.ReadNDJSONFile(filePath, func(resource lib.FHIRResource) error {
-			if lib.IsBundle(resource) {
-				_, bundleIndex := extractBundleResources(resource)
-				for k, v := range bundleIndex {
-					mergedIndex[k] = append(mergedIndex[k], v...)
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), err)
-		}
-	}
-
-	return mergedIndex, nil
-}
-
 // perGroupBudget splits the total batch byte budget evenly across attribute groups,
 // clamping to one byte so a tiny budget spread over many groups never yields a
 // zero threshold that would flush after every single resource.
@@ -276,12 +239,12 @@ func perGroupBudget(batchSizeBytes, numGroups int) int {
 }
 
 // streamAndFlattenResources performs single-pass streaming over all input files,
-// routing each resource to per-group batches via provenance index and flushing
-// when the byte threshold is exceeded. Returns per-group resource totals.
+// routing each Bundle entry to per-group batches via the Provenance resources
+// of its own Bundle and flushing when the byte threshold is exceeded. Returns
+// per-group resource totals.
 func streamAndFlattenResources(
 	files []string,
 	groups []models.AttributeGroup,
-	provenanceIndex models.ProvenanceIndex,
 	groupIDToIndex map[string]int,
 	viewDefs []*models.ViewDefinition,
 	headers [][]string,
@@ -293,7 +256,6 @@ func streamAndFlattenResources(
 ) ([]int, error) {
 	s := &groupStreamer{
 		groups:          groups,
-		provenanceIndex: provenanceIndex,
 		groupIDToIndex:  groupIDToIndex,
 		viewDefs:        viewDefs,
 		headers:         headers,
@@ -325,7 +287,6 @@ func streamAndFlattenResources(
 // one streaming pass.
 type groupStreamer struct {
 	groups          []models.AttributeGroup
-	provenanceIndex models.ProvenanceIndex
 	groupIDToIndex  map[string]int
 	viewDefs        []*models.ViewDefinition
 	headers         [][]string
@@ -368,7 +329,6 @@ func (s *groupStreamer) streamFile(filePath string) error {
 
 	dec := json.NewDecoder(reader)
 	for {
-		startOffset := dec.InputOffset()
 		var resource map[string]any
 		if err := dec.Decode(&resource); err != nil {
 			if errors.Is(err, io.EOF) {
@@ -376,36 +336,37 @@ func (s *groupStreamer) streamFile(filePath string) error {
 			}
 			return fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), err)
 		}
-		if err := s.addDecoded(resource, int(dec.InputOffset()-startOffset)); err != nil {
+		if err := s.addDecoded(resource); err != nil {
 			return err
 		}
 	}
 }
 
-// addDecoded adds a decoded resource. A Bundle adds its clinical entries and
-// skips its Provenance entries.
-func (s *groupStreamer) addDecoded(resource map[string]any, size int) error {
+// addDecoded routes the clinical entries of a Bundle via the index of its own
+// Provenance entries. A resource outside a Bundle has no Provenance and goes
+// to no group.
+func (s *groupStreamer) addDecoded(resource map[string]any) error {
 	if !lib.IsBundle(resource) {
-		return s.add(resource, size)
+		return nil
 	}
-	clinicalResources, _ := extractBundleResources(resource)
+	clinicalResources, index := extractBundleResources(resource)
 	for _, entry := range clinicalResources {
 		entryBytes, err := json.Marshal(entry)
 		if err != nil {
 			continue
 		}
-		if err := s.add(entry, len(entryBytes)); err != nil {
+		if err := s.add(entry, len(entryBytes), index); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// add routes the resource to its groups via the provenance index and flushes
-// each group batch that reaches the byte threshold.
-func (s *groupStreamer) add(resource map[string]any, size int) error {
+// add routes the resource to its groups via the provenance index of its Bundle
+// and flushes each group batch that reaches the byte threshold.
+func (s *groupStreamer) add(resource map[string]any, size int, index models.ProvenanceIndex) error {
 	ref := lib.ResourceReference(resource)
-	for _, i := range routeResourceToGroups(resource, s.provenanceIndex, s.groupIDToIndex, s.viewDefs) {
+	for _, i := range routeResourceToGroups(resource, index, s.groupIDToIndex, s.viewDefs) {
 		s.batches[i].resources = append(s.batches[i].resources, resource)
 		s.batches[i].byteSize += size
 		s.stats[i].addResource(ref, size)

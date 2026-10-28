@@ -82,18 +82,17 @@ pipeline continues.
 ## How it Works
 
 Flattening parses the CRTDL to extract attribute groups, builds a ViewDefinition
-for each group from the lookup tables, then runs **two passes** over the input
-files:
+for each group from the lookup tables, then streams each input file once:
 
-1. **Pass 1 — build the Provenance index:** scans every input file for
-   `Provenance` resources only (clinical resources are discarded to keep memory
-   low). Each Provenance maps its `target[].reference`s to an attribute-group ID,
-   taken from the `entity[].what.identifier` entry whose system is the
-   attribute-group naming system.
-2. **Pass 2 — stream, route, and flatten:** streams the clinical resources and
-   routes each one to attribute groups by looking up its `ResourceType/id`
-   reference in the Provenance index. **A resource with no matching entry in the
-   index is dropped** — it is not written to any group.
+1. **Build the Provenance index of each Bundle:** for each Bundle, the step
+   reads its `Provenance` entries. Each Provenance maps its `target[].reference`s
+   to an attribute-group ID, taken from the `entity[].what.identifier` entry
+   whose system is the attribute-group naming system.
+2. **Route and flatten:** the step routes each clinical entry of the Bundle to
+   attribute groups by looking up its `ResourceType/id` reference in the index of
+   the same Bundle. **A resource with no matching entry in the index of its own
+   Bundle is dropped** — it is not written to any group. A resource outside a
+   Bundle has no Provenance, so it is also dropped.
 3. When a group's batch exceeds its share of `batch_size_mb`, the batch is flushed
    to fhir-flattener and its CSV output is appended (one header, multiple data
    batches).

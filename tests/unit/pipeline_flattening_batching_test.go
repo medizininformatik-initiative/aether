@@ -114,14 +114,15 @@ func paddedPatient(t *testing.T, id string, size int) map[string]any {
 	return p
 }
 
-// provenanceOnlyBundle links Patient/<id> to the test group for each id. The
-// Patients themselves come as single resources in another file.
-func provenanceOnlyBundle(ids ...string) map[string]any {
-	provenances := make([]map[string]any, len(ids))
-	for i, id := range ids {
-		provenances[i] = makeProvenance("prov-"+id, "Patient/"+id, batchingGroupID)
+// linkedBundle puts each Patient in one Bundle, together with a Provenance
+// that links it to the test group.
+func linkedBundle(patients ...map[string]any) map[string]any {
+	entries := make([]map[string]any, 0, 2*len(patients))
+	for _, p := range patients {
+		id := p["id"].(string)
+		entries = append(entries, p, makeProvenance("prov-"+id, "Patient/"+id, batchingGroupID))
 	}
-	return makeBundle("provenances", provenances...)
+	return makeBundle("linked", entries...)
 }
 
 func TestFlatteningStep_CountsFilesWritten(t *testing.T) {
@@ -135,7 +136,7 @@ func TestFlatteningStep_CountsFilesWritten(t *testing.T) {
 	assert.Equal(t, 1, run.step.FilesProcessed)
 }
 
-func TestFlatteningStep_ReportsResourceCountOfBundleAndSingleResources(t *testing.T) {
+func TestFlatteningStep_SkipsResourcesOutsideBundles(t *testing.T) {
 	bundle := makeBundle("b1",
 		batchingPatient("1"), makeProvenance("prov-1", "Patient/1", batchingGroupID),
 		makeProvenance("prov-2", "Patient/2", batchingGroupID),
@@ -143,7 +144,7 @@ func TestFlatteningStep_ReportsResourceCountOfBundleAndSingleResources(t *testin
 
 	run := runFlatteningWithFake(t, map[string][]map[string]any{"input.ndjson": {bundle, batchingPatient("2")}})
 
-	assert.Contains(t, run.stdout, "✓ Patient (2 resources →")
+	assert.Contains(t, run.stdout, "✓ Patient (1 resources →")
 }
 
 func TestFlatteningStep_BundleEntriesFlushWhenBatchReachesBudget(t *testing.T) {
@@ -158,29 +159,13 @@ func TestFlatteningStep_BundleEntriesFlushWhenBatchReachesBudget(t *testing.T) {
 	assert.Equal(t, []int{2, 1}, run.batches)
 }
 
-// The size of a single resource is its line length. From the second line on,
-// the size includes the newline that comes before the line.
-func TestFlatteningStep_SingleResourcesFlushWhenBatchReachesBudget(t *testing.T) {
+func TestFlatteningStep_BundleEntriesBelowBudgetStayInOneBatch(t *testing.T) {
 	run := runFlatteningWithFake(t, map[string][]map[string]any{
-		"provenance.ndjson": {provenanceOnlyBundle("1", "2", "3")},
-		"patients.ndjson": {
+		"bundle.ndjson": {linkedBundle(
 			paddedPatient(t, "1", oneMiB/2),
 			paddedPatient(t, "2", oneMiB/2-1),
 			batchingPatient("3"),
-		},
-	})
-
-	assert.Equal(t, []int{2, 1}, run.batches)
-}
-
-func TestFlatteningStep_SingleResourcesUnderBudgetGoInOneBatch(t *testing.T) {
-	run := runFlatteningWithFake(t, map[string][]map[string]any{
-		"provenance.ndjson": {provenanceOnlyBundle("1", "2", "3")},
-		"patients.ndjson": {
-			paddedPatient(t, "1", oneMiB/2),
-			batchingPatient("2"),
-			batchingPatient("3"),
-		},
+		)},
 	})
 
 	assert.Equal(t, []int{3}, run.batches)

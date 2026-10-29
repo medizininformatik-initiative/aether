@@ -450,7 +450,7 @@ func runStartJob(config *models.ProjectConfig, job *models.PipelineJob, logger *
 		return fmt.Errorf("failed to update job state: %w", err)
 	}
 
-	defer installStopHandler(config.JobsDir, job.JobID, logger)()
+	defer installStopTriggers(config.JobsDir, job.JobID, logger)()
 
 	fmt.Printf("Starting %s step...\n", startedJob.CurrentStep)
 
@@ -536,86 +536,115 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 	logger := lib.NewLogger(commandLogLevel())
 	defer func() { _ = logger.Close() }()
 
-	fmt.Printf("Loading job %s...\n", jobID)
-	job, err := pipeline.LoadJob(config.JobsDir, jobID)
-	if err != nil {
-		return fmt.Errorf("failed to load job: %w", err)
-	}
-
-	// Append this run's logs to the job's existing job.log.
-	if err := logger.AttachJobLogFile(services.GetJobLogFilePath(config.JobsDir, jobID)); err != nil {
-		return fmt.Errorf("failed to attach job log file: %w", err)
-	}
-
-	if err := verifyFlatteningLookupForJob(job, logger); err != nil {
+	job, done, err := loadJobToContinue(config, jobID, logger)
+	if err != nil || done {
 		return err
 	}
-
-	if job.Status == models.JobStatusCompleted {
-		fmt.Println("✓ Job already completed")
-		return nil
-	}
-
-	fmt.Printf("Current status: %s\n", services.EffectiveJobStatusText(config.JobsDir, *job))
-	fmt.Printf("Current step: %s\n", job.CurrentStep)
 
 	lock, err := services.AcquireJobLock(config.JobsDir, jobID, logger)
 	if err != nil {
 		return fmt.Errorf("cannot continue pipeline: %w\n\nAnother process may be working on this job. Wait for it to complete or check its status with 'pipeline status'", err)
 	}
-	defer func() {
-		if err := lock.Release(); err != nil {
-			logger.Error("Failed to release job lock", "error", err)
-		}
-	}()
+	defer releaseJobLock(lock, logger)
 
+	job, done, err = resumeJobStep(config, job, logger)
+	if err != nil || done {
+		return err
+	}
+
+	fmt.Printf("\nResuming pipeline execution...\n")
+
+	defer installStopTriggers(config.JobsDir, jobID, logger)()
+
+	return runLoopAndReport(job, logger)
+}
+
+func releaseJobLock(lock *services.JobLock, logger *lib.Logger) {
+	if err := lock.Release(); err != nil {
+		logger.Error("Failed to release job lock", "error", err)
+	}
+}
+
+// loadJobToContinue loads the job and checks that it can continue. done is true
+// when the job is already completed.
+func loadJobToContinue(config *models.ProjectConfig, jobID string, logger *lib.Logger) (job *models.PipelineJob, done bool, err error) {
+	fmt.Printf("Loading job %s...\n", jobID)
+	job, err = pipeline.LoadJob(config.JobsDir, jobID)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to load job: %w", err)
+	}
+
+	// Append this run's logs to the job's existing job.log.
+	if err := logger.AttachJobLogFile(services.GetJobLogFilePath(config.JobsDir, jobID)); err != nil {
+		return nil, false, fmt.Errorf("failed to attach job log file: %w", err)
+	}
+
+	if err := verifyFlatteningLookupForJob(job, logger); err != nil {
+		return nil, false, err
+	}
+
+	if job.Status == models.JobStatusCompleted {
+		fmt.Println("✓ Job already completed")
+		return job, true, nil
+	}
+
+	fmt.Printf("Current status: %s\n", services.EffectiveJobStatusText(config.JobsDir, *job))
+	fmt.Printf("Current step: %s\n", job.CurrentStep)
+	return job, false, nil
+}
+
+// resumeJobStep prepares the job for RunLoop. With the lock held it repairs the
+// CRTDL state and, if the current step is completed, advances to the next step.
+// done is true when no step is left and the job is complete.
+func resumeJobStep(config *models.ProjectConfig, job *models.PipelineJob, logger *lib.Logger) (resumed *models.PipelineJob, done bool, err error) {
 	// Idempotent — reconciles state if the original `pipeline start` crashed
 	// between writing the prepared CRTDL and persisting the new CRTDLPath.
 	if err := pipeline.PrepareCRTDL(job, logger); err != nil {
-		return fmt.Errorf("failed to prepare CRTDL: %w", err)
+		return nil, false, fmt.Errorf("failed to prepare CRTDL: %w", err)
 	}
 	if err := pipeline.UpdateJob(config.JobsDir, job); err != nil {
-		return fmt.Errorf("failed to save job state: %w", err)
+		return nil, false, fmt.Errorf("failed to save job state: %w", err)
 	}
 
 	currentStepName := models.StepName(job.CurrentStep)
 	currentStep, found := models.GetStepByName(*job, currentStepName)
 	if !found {
-		return fmt.Errorf("current step %s not found in job", currentStepName)
+		return nil, false, fmt.Errorf("current step %s not found in job", currentStepName)
 	}
 
-	// If the current step already completed, advance to the next before running.
-	// Every other status (pending/in_progress/failed/waiting) resumes in place —
-	// RunLoop's transition guard and the idempotent wait step handle each.
-	if currentStep.Status == models.StepStatusCompleted {
-		nextStepName := job.Config.Pipeline.GetNextStep(currentStepName)
-		if nextStepName == "" {
-			fmt.Println("All steps completed, marking job as complete...")
-			completedJob := pipeline.CompleteJob(job)
-			if err := pipeline.UpdateJob(config.JobsDir, completedJob); err != nil {
-				return fmt.Errorf("failed to update job: %w", err)
-			}
-			fmt.Println("✓ Job completed successfully")
-			return nil
-		}
-
-		fmt.Printf("Current step '%s' is completed, advancing to next step: %s\n", currentStepName, nextStepName)
-		advancedJob, err := pipeline.AdvanceToNextStep(job)
-		if err != nil {
-			return fmt.Errorf("failed to advance to next step: %w", err)
-		}
-		if err := pipeline.UpdateJob(config.JobsDir, advancedJob); err != nil {
-			return fmt.Errorf("failed to save job state: %w", err)
-		}
-		job = advancedJob
-	} else {
+	// Every status except completed (pending/in_progress/failed/waiting) resumes
+	// in place — RunLoop's transition guard and the idempotent wait step handle each.
+	if currentStep.Status != models.StepStatusCompleted {
 		fmt.Printf("Resuming incomplete step: %s (status: %s)\n", currentStepName, currentStep.Status)
+		return job, false, nil
+	}
+	return advanceCompletedStep(config, job, currentStepName)
+}
+
+func advanceCompletedStep(config *models.ProjectConfig, job *models.PipelineJob, currentStepName models.StepName) (*models.PipelineJob, bool, error) {
+	nextStepName := job.Config.Pipeline.GetNextStep(currentStepName)
+	if nextStepName == "" {
+		fmt.Println("All steps completed, marking job as complete...")
+		completedJob := pipeline.CompleteJob(job)
+		if err := pipeline.UpdateJob(config.JobsDir, completedJob); err != nil {
+			return nil, false, fmt.Errorf("failed to update job: %w", err)
+		}
+		fmt.Println("✓ Job completed successfully")
+		return completedJob, true, nil
 	}
 
-	fmt.Printf("\nResuming pipeline execution...\n")
+	fmt.Printf("Current step '%s' is completed, advancing to next step: %s\n", currentStepName, nextStepName)
+	advancedJob, err := pipeline.AdvanceToNextStep(job)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to advance to next step: %w", err)
+	}
+	if err := pipeline.UpdateJob(config.JobsDir, advancedJob); err != nil {
+		return nil, false, fmt.Errorf("failed to save job state: %w", err)
+	}
+	return advancedJob, false, nil
+}
 
-	defer installStopHandler(config.JobsDir, jobID, logger)()
-
+func runLoopAndReport(job *models.PipelineJob, logger *lib.Logger) error {
 	final, err := pipeline.RunLoop(job, logger, pipeline.RunOptions{NoProgress: noProgress})
 	if err != nil {
 		if errors.Is(err, pipeline.ErrPaused) {

@@ -217,15 +217,29 @@ func attachTORCHProgressPersistence(job *models.PipelineJob, torchClient service
 // the resulting job handle (TORCHJobID + URL) to disk before any long poll, so
 // a crash mid-extraction leaves a recoverable handle to re-attach to.
 func submitAndPersistTORCHHandle(job *models.PipelineJob, torchClient services.Extractor, logger *lib.Logger) error {
+	// The process of a stopped job exits soon, so a new TORCH job would run
+	// without a collector.
+	done, err := beginSubmit(job.Config.JobsDir, job.JobID)
+	if err != nil {
+		return err
+	}
 	extractionURL, err := torchClient.SubmitExtraction(job.CRTDLPath)
 	if err != nil {
+		done("")
 		return fmt.Errorf("failed to submit TORCH extraction: %w", err)
 	}
 
 	job.TORCHExtractionURL = extractionURL
 	job.TORCHJobID = services.JobIDFromStatusURL(extractionURL)
-	if err := UpdateJob(job.Config.JobsDir, job); err != nil {
+	err = persistSubmittedHandle(job.Config.JobsDir, job)
+	// A stop that came during the submit waits for this ID to cancel the
+	// TORCH job. A later stop finds the handle in the state file.
+	done(job.TORCHJobID)
+	if err != nil {
 		return fmt.Errorf("failed to persist TORCH job handle: %w", err)
+	}
+	if jobStopped(job.Config.JobsDir, job.JobID) {
+		return ErrJobStopped
 	}
 
 	logger.Info("TORCH extraction submitted; handle persisted for resume", "job_id", job.TORCHJobID, "url", extractionURL)

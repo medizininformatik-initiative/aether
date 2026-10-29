@@ -322,28 +322,9 @@ type FHIRRequest struct {
 // *ServiceError, and JSON-decode a success response into out (skipped when
 // out is nil). This is the deep entry point DIMP and validation share.
 func (c *HTTPClient) DoFHIRJSON(fhirReq FHIRRequest, out any) error {
-	var bodyReader io.Reader
-	if fhirReq.Body != nil {
-		jsonBody, err := json.Marshal(fhirReq.Body)
-		if err != nil {
-			return fmt.Errorf("failed to marshal request: %w", err)
-		}
-		bodyReader = bytes.NewReader(jsonBody)
-	}
-
-	req, err := http.NewRequest(fhirReq.Method, fhirReq.URL, bodyReader)
+	req, err := c.buildFHIRRequest(fhirReq)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	contentType := fhirReq.ContentType
-	if contentType == "" {
-		contentType = "application/fhir+json"
-	}
-	req.Header.Set("Content-Type", contentType)
-
-	if err := c.ApplyAuth(req, fhirReq.Auth); err != nil {
-		return fmt.Errorf("failed to add auth header: %w", err)
+		return err
 	}
 
 	resp, err := c.Do(req)
@@ -356,12 +337,47 @@ func (c *HTTPClient) DoFHIRJSON(fhirReq FHIRRequest, out any) error {
 		return classifyHTTPResponse(fhirReq.Service, resp)
 	}
 
-	if out != nil {
-		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-			return fmt.Errorf("failed to decode response: %w", err)
+	if out == nil {
+		return nil
+	}
+	return decodeFHIRJSON(resp.Body, out)
+}
+
+// buildFHIRRequest marshals the body, sets the content type and applies auth.
+func (c *HTTPClient) buildFHIRRequest(fhirReq FHIRRequest) (*http.Request, error) {
+	var bodyReader io.Reader
+	if fhirReq.Body != nil {
+		jsonBody, err := json.Marshal(fhirReq.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request: %w", err)
 		}
+		bodyReader = bytes.NewReader(jsonBody)
 	}
 
+	req, err := http.NewRequest(fhirReq.Method, fhirReq.URL, bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	contentType := fhirReq.ContentType
+	if contentType == "" {
+		contentType = "application/fhir+json"
+	}
+	req.Header.Set("Content-Type", contentType)
+
+	if err := c.ApplyAuth(req, fhirReq.Auth); err != nil {
+		return nil, fmt.Errorf("failed to add auth header: %w", err)
+	}
+	return req, nil
+}
+
+// decodeFHIRJSON decodes JSON from r into out and keeps the precision of numbers.
+func decodeFHIRJSON(r io.Reader, out any) error {
+	dec := json.NewDecoder(r)
+	dec.UseNumber()
+	if err := dec.Decode(out); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
 	return nil
 }
 

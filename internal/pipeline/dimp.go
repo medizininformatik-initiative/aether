@@ -167,21 +167,12 @@ func processDIMPFile(inputFile, outputFile string, dimpClient services.DIMPProce
 
 	totalResources := countResourcesInFile(inputFile)
 
-	var progressBar *ui.ProgressBar
-	if totalResources > 0 {
-		progressBar = ui.NewProgressBar(int64(totalResources), fmt.Sprintf("Pseudonymizing %s", filepath.Base(inputFile)))
-	} else {
-		logger.Info("Processing FHIR resources (unknown count)", "file", filepath.Base(inputFile))
-	}
-
-	thresholdMB := job.Config.Services.DIMP.BundleSplitThresholdMB
-	if thresholdMB <= 0 {
-		thresholdMB = 10 // Default to 10MB if not configured
-	}
-	thresholdBytes := thresholdMB * 1024 * 1024
+	progressBar := newDIMPProgressBar(inputFile, totalResources, logger)
+	thresholdBytes := bundleSplitThresholdBytes(job)
 
 	processor := NewResourceProcessor(dimpClient, logger, thresholdBytes, inputFile)
 	dec := json.NewDecoder(fileCtx.InFile)
+	dec.UseNumber()
 
 	for {
 		var resource map[string]any
@@ -189,14 +180,8 @@ func processDIMPFile(inputFile, outputFile string, dimpClient services.DIMPProce
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			if progressBar != nil {
-				_ = progressBar.Clear()
-			}
-			logger.Error("Failed to parse FHIR resource",
-				"file", filepath.Base(inputFile),
-				"resource_number", processor.GetResourceCount()+1,
-				"error", err)
-			return processor.GetResourceCount(), fmt.Errorf("failed to parse resource %d: %w", processor.GetResourceCount()+1, err)
+			clearProgressBar(progressBar)
+			return processor.GetResourceCount(), logResourceParseError(logger, inputFile, processor.GetResourceCount()+1, err)
 		}
 
 		resourceType := lib.ResourceType(resource)
@@ -208,25 +193,10 @@ func processDIMPFile(inputFile, outputFile string, dimpClient services.DIMPProce
 			"resourceType", resourceType,
 			"id", resourceID)
 
-		var pseudonymized map[string]any
-		var err error
-
-		if resourceType == "Bundle" {
-			pseudonymized, err = processor.ProcessBundle(resource, resourceID)
-		} else {
-			pseudonymized, err = processor.ProcessNonBundle(resource, resourceType, resourceID)
-		}
-
+		pseudonymized, err := pseudonymizeResource(processor, resource, resourceType, resourceID)
 		if err != nil {
-			if progressBar != nil {
-				_ = progressBar.Clear()
-			}
-
-			fmt.Printf("\n✗ DIMP pseudonymization failed\n")
-			fmt.Printf("  File: %s (resource %d)\n", filepath.Base(inputFile), processor.GetResourceCount()+1)
-			fmt.Printf("  Resource: %s/%s\n", resourceType, resourceID)
-			fmt.Printf("  Error: %v\n\n", err)
-
+			clearProgressBar(progressBar)
+			reportDIMPFailure(inputFile, processor.GetResourceCount()+1, resourceType, resourceID, err)
 			return processor.GetResourceCount(), err
 		}
 
@@ -236,20 +206,70 @@ func processDIMPFile(inputFile, outputFile string, dimpClient services.DIMPProce
 
 		processor.IncrementResourceCount()
 
-		if progressBar != nil {
-			_ = progressBar.Add(1)
-		}
+		advanceProgressBar(progressBar)
 	}
 
+	finishProgressBar(progressBar)
+
+	return processor.GetResourceCount(), FinalizeFileProcessing(fileCtx, outputFile, true)
+}
+
+func newDIMPProgressBar(inputFile string, totalResources int, logger *lib.Logger) *ui.ProgressBar {
+	if totalResources > 0 {
+		return ui.NewProgressBar(int64(totalResources), fmt.Sprintf("Pseudonymizing %s", filepath.Base(inputFile)))
+	}
+	logger.Info("Processing FHIR resources (unknown count)", "file", filepath.Base(inputFile))
+	return nil
+}
+
+// bundleSplitThresholdBytes returns the configured split threshold, 10 MB when unset.
+func bundleSplitThresholdBytes(job *models.PipelineJob) int {
+	thresholdMB := job.Config.Services.DIMP.BundleSplitThresholdMB
+	if thresholdMB <= 0 {
+		thresholdMB = 10
+	}
+	return thresholdMB * 1024 * 1024
+}
+
+func logResourceParseError(logger *lib.Logger, inputFile string, resourceNumber int, err error) error {
+	logger.Error("Failed to parse FHIR resource",
+		"file", filepath.Base(inputFile),
+		"resource_number", resourceNumber,
+		"error", err)
+	return fmt.Errorf("failed to parse resource %d: %w", resourceNumber, err)
+}
+
+// pseudonymizeResource routes a resource to the Bundle or non-Bundle path.
+func pseudonymizeResource(processor *ResourceProcessor, resource map[string]any, resourceType, resourceID string) (map[string]any, error) {
+	if resourceType == "Bundle" {
+		return processor.ProcessBundle(resource, resourceID)
+	}
+	return processor.ProcessNonBundle(resource, resourceType, resourceID)
+}
+
+func advanceProgressBar(progressBar *ui.ProgressBar) {
+	if progressBar != nil {
+		_ = progressBar.Add(1)
+	}
+}
+
+func finishProgressBar(progressBar *ui.ProgressBar) {
 	if progressBar != nil {
 		_ = progressBar.Finish()
 	}
+}
 
-	if err := FinalizeFileProcessing(fileCtx, outputFile, true); err != nil {
-		return processor.GetResourceCount(), err
+func clearProgressBar(progressBar *ui.ProgressBar) {
+	if progressBar != nil {
+		_ = progressBar.Clear()
 	}
+}
 
-	return processor.GetResourceCount(), nil
+func reportDIMPFailure(inputFile string, resourceNumber int, resourceType, resourceID string, err error) {
+	fmt.Printf("\n✗ DIMP pseudonymization failed\n")
+	fmt.Printf("  File: %s (resource %d)\n", filepath.Base(inputFile), resourceNumber)
+	fmt.Printf("  Resource: %s/%s\n", resourceType, resourceID)
+	fmt.Printf("  Error: %v\n\n", err)
 }
 
 // countResourcesInFile counts the number of non-empty lines in an NDJSON file

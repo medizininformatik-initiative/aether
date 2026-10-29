@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/schollz/progressbar/v3"
@@ -16,7 +17,7 @@ type ProgressBar struct {
 	bar         *progressbar.ProgressBar
 	description string
 	total       int64
-	current     int64
+	current     atomic.Int64
 	startTime   time.Time
 }
 
@@ -50,7 +51,6 @@ func newProgressBar(total int64, description string, writer io.Writer, extra ...
 		bar:         progressbar.NewOptions64(total, append(options, extra...)...),
 		description: description,
 		total:       total,
-		current:     0,
 		startTime:   time.Now(),
 	}
 }
@@ -58,13 +58,13 @@ func newProgressBar(total int64, description string, writer io.Writer, extra ...
 // Add increments the progress bar by the given amount
 // Throughput (items/sec) is calculated and displayed automatically
 func (p *ProgressBar) Add(amount int64) error {
-	p.current += amount
+	p.current.Add(amount)
 	return p.bar.Add64(amount)
 }
 
 // Set sets the progress bar to a specific value
 func (p *ProgressBar) Set(value int64) error {
-	p.current = value
+	p.current.Store(value)
 	return p.bar.Set64(value)
 }
 
@@ -83,7 +83,7 @@ func (p *ProgressBar) GetPercentage() float64 {
 	if p.total == 0 {
 		return 0
 	}
-	return (float64(p.current) / float64(p.total)) * 100
+	return (float64(p.current.Load()) / float64(p.total)) * 100
 }
 
 // GetElapsedTime returns time elapsed since progress bar was created

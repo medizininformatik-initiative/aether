@@ -216,7 +216,7 @@ services:
 | `lookup_path` | string | - | Path to lookup table file |
 | `formats` | []string | ["csv"] | Output formats |
 | `timeout` | duration | 30m | Request timeout |
-| `batch_size_mb` | int | 500 | Total memory budget in MB, divided across attribute groups (0 = use default) |
+| `batch_size_mb` | int | 500 | Limit in MB for the JSON bytes of pending batches, divided across attribute groups (0 = use default) |
 | `max_attempts` | int | 0 | Attempts per flattener request, 0-10. `0` uses `retry.max_attempts`. A request that exceeds `timeout` is not sent again |
 
 ### Send

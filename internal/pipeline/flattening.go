@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,7 +37,7 @@ func ResetFlattenerFactory() {
 // groupBatch accumulates resources for a single attribute group until the batch
 // size threshold is reached, at which point it is flushed to the flattener service.
 type groupBatch struct {
-	resources    []map[string]any
+	resources    []json.RawMessage
 	byteSize     int
 	isFirstBatch bool // true until first flush
 }
@@ -263,7 +264,7 @@ func streamAndFlattenResources(
 		flattenerClient: flattenerClient,
 		csvWriter:       csvWriter,
 		logger:          logger,
-		// Divide total memory budget across groups so peak usage stays within batchSizeBytes
+		// Divide the byte budget across groups so pending batches stay within batchSizeBytes
 		perGroupBytes: perGroupBudget(batchSizeBytes, len(groups)),
 	}
 	s.init()
@@ -298,6 +299,7 @@ type groupStreamer struct {
 	batches         []groupBatch
 	totals          []int
 	stats           []*groupSizeStats
+	compactBuf      bytes.Buffer
 }
 
 func (s *groupStreamer) init() {
@@ -329,45 +331,107 @@ func (s *groupStreamer) streamFile(filePath string) error {
 
 	dec := json.NewDecoder(reader)
 	for {
-		var resource map[string]any
-		if err := dec.Decode(&resource); err != nil {
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), err)
 		}
-		if err := s.addDecoded(resource); err != nil {
+		if raw[0] != '{' {
+			return fmt.Errorf("failed to load %s: %w", filepath.Base(filePath), errNotJSONObject)
+		}
+		if err := s.addTopLevel(raw); err != nil {
 			return err
 		}
 	}
 }
 
-// addDecoded routes the clinical entries of a Bundle via the index of its own
+var errNotJSONObject = errors.New("value is not a JSON object")
+
+// resourceHeader holds the fields that routing needs. The rest of the
+// resource stays undecoded.
+type resourceHeader struct {
+	ResourceType string `json:"resourceType"`
+	ID           string `json:"id"`
+}
+
+func (h resourceHeader) reference() string {
+	if h.ResourceType == "" || h.ID == "" {
+		return ""
+	}
+	return h.ResourceType + "/" + h.ID
+}
+
+// bundleEntry is a clinical entry of a Bundle, with its JSON undecoded.
+type bundleEntry struct {
+	raw json.RawMessage
+	ref string
+}
+
+// addTopLevel routes the clinical entries of a Bundle via the index of its own
 // Provenance entries. A resource outside a Bundle has no Provenance and goes
 // to no group.
-func (s *groupStreamer) addDecoded(resource map[string]any) error {
-	if !lib.IsBundle(resource) {
+func (s *groupStreamer) addTopLevel(raw json.RawMessage) error {
+	var header resourceHeader
+	if json.Unmarshal(raw, &header) != nil || header.ResourceType != "Bundle" {
 		return nil
 	}
-	clinicalResources, index := extractBundleResources(resource)
-	for _, entry := range clinicalResources {
-		entryBytes, err := json.Marshal(entry)
-		if err != nil {
-			continue
-		}
-		if err := s.add(entry, len(entryBytes), index); err != nil {
+	entries, index := splitBundle(raw)
+	for _, entry := range entries {
+		if err := s.add(entry.raw, entry.ref, index); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// splitBundle returns the clinical entries of a Bundle and the provenance index
+// of its Provenance entries. Only the Provenance entries are fully decoded.
+func splitBundle(raw json.RawMessage) ([]bundleEntry, models.ProvenanceIndex) {
+	var bundle struct {
+		Entry []struct {
+			Resource json.RawMessage `json:"resource"`
+		} `json:"entry"`
+	}
+	// On a type mismatch, Unmarshal still fills the other entries.
+	_ = json.Unmarshal(raw, &bundle)
+
+	var entries []bundleEntry
+	var provenances []map[string]any
+	for _, entry := range bundle.Entry {
+		var header resourceHeader
+		if json.Unmarshal(entry.Resource, &header) != nil || header.ResourceType == "" {
+			continue
+		}
+		if header.ResourceType != "Provenance" {
+			entries = append(entries, bundleEntry{raw: entry.Resource, ref: header.reference()})
+			continue
+		}
+		var provenance map[string]any
+		if json.Unmarshal(entry.Resource, &provenance) == nil {
+			provenances = append(provenances, provenance)
+		}
+	}
+	return entries, buildProvenanceIndex(provenances)
+}
+
 // add routes the resource to its groups via the provenance index of its Bundle
-// and flushes each group batch that reaches the byte threshold.
-func (s *groupStreamer) add(resource map[string]any, size int, index models.ProvenanceIndex) error {
-	ref := lib.ResourceReference(resource)
-	for _, i := range routeResourceToGroups(resource, index, s.groupIDToIndex, s.viewDefs) {
-		s.batches[i].resources = append(s.batches[i].resources, resource)
+// and flushes each group batch that reaches the byte threshold. A batch keeps
+// the compact JSON of the resource in a slice of exactly that size, so the byte
+// count equals the memory that the batch holds.
+func (s *groupStreamer) add(raw json.RawMessage, ref string, index models.ProvenanceIndex) error {
+	indices := routeResourceToGroups(ref, index, s.groupIDToIndex, s.viewDefs)
+	if len(indices) == 0 {
+		return nil
+	}
+	s.compactBuf.Reset()
+	// raw comes from a JSON decoder, so it is valid and Compact cannot fail.
+	_ = json.Compact(&s.compactBuf, raw)
+	compact := json.RawMessage(bytes.Clone(s.compactBuf.Bytes()))
+	size := len(compact)
+	for _, i := range indices {
+		s.batches[i].resources = append(s.batches[i].resources, compact)
 		s.batches[i].byteSize += size
 		s.stats[i].addResource(ref, size)
 		s.totals[i]++
@@ -422,10 +486,9 @@ func annotateWithPartialFiles(err error, csvWriter *services.CSVWriter) error {
 	return fmt.Errorf("%w (incomplete output kept as: %s)", err, strings.Join(partials, ", "))
 }
 
-// routeResourceToGroups determines which groups a resource belongs to based on
+// routeResourceToGroups determines which groups the resource reference belongs to based on
 // the provenance index. Returns the group indices for all matching groups.
-func routeResourceToGroups(resource map[string]any, provenanceIndex models.ProvenanceIndex, groupIDToIndex map[string]int, viewDefs []*models.ViewDefinition) []int {
-	ref := lib.ResourceReference(resource)
+func routeResourceToGroups(ref string, provenanceIndex models.ProvenanceIndex, groupIDToIndex map[string]int, viewDefs []*models.ViewDefinition) []int {
 	if ref == "" {
 		return nil
 	}
@@ -483,24 +546,6 @@ func flushGroupBatch(
 	batch.isFirstBatch = false
 
 	return nil
-}
-
-// extractBundleResources separates Bundle entries into clinical resources and a provenance index.
-// Provenance resources are used to build the index and excluded from the returned resources.
-func extractBundleResources(bundle map[string]any) ([]map[string]any, models.ProvenanceIndex) {
-	var resources []map[string]any
-	var provenances []map[string]any
-
-	for _, entryResource := range lib.BundleResources(bundle) {
-		if lib.IsProvenance(entryResource) {
-			provenances = append(provenances, entryResource)
-		} else {
-			resources = append(resources, entryResource)
-		}
-	}
-
-	index := buildProvenanceIndex(provenances)
-	return resources, index
 }
 
 // buildProvenanceIndex creates a mapping from resource references to CRTDL attribute group IDs.

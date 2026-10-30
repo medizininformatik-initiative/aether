@@ -78,8 +78,8 @@ func livenessTestViewDefinition() models.ViewDefinition {
 	}
 }
 
-func livenessTestResources() []map[string]any {
-	return []map[string]any{{"resourceType": "Patient", "id": "1"}}
+func livenessTestResources() []json.RawMessage {
+	return []json.RawMessage{json.RawMessage(`{"resourceType":"Patient","id":"1"}`)}
 }
 
 // livenessServer answers the run route with runHandler and the metadata route

@@ -94,7 +94,7 @@ func NewFlattenerClient(config models.FlatteningConfig, retryConfig models.Retry
 // a change of column order upstream cannot mislabel columns. Transient errors
 // (network + HTTP 5xx) are retried by the shared HTTPClient. A request that
 // exceeds the timeout is not retried.
-func (c *FlattenerClient) Flatten(viewDef models.ViewDefinition, resources []map[string]any) ([][]string, error) {
+func (c *FlattenerClient) Flatten(viewDef models.ViewDefinition, resources []json.RawMessage) ([][]string, error) {
 	if len(resources) == 0 {
 		c.logger.Debug("No resources to flatten", "viewDefinition", viewDef.Name)
 		return nil, nil
@@ -370,7 +370,7 @@ func (c *FlattenerClient) HealthCheck() error {
 // answering while a request waits.
 type Flattener interface {
 	HealthCheck() error
-	Flatten(viewDef models.ViewDefinition, resources []map[string]any) ([][]string, error)
+	Flatten(viewDef models.ViewDefinition, resources []json.RawMessage) ([][]string, error)
 }
 
 var _ Flattener = (*FlattenerClient)(nil)

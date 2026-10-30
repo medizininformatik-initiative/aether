@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -233,7 +234,8 @@ func TestImportStep_TorchExtraction_UsesFakeExtractor(t *testing.T) {
 // newFlatteningStepFixture installs fake as the flattener of the flattening
 // step and writes one provenance-linked Patient into the import directory of a
 // job. It returns the job and its directory.
-func newFlatteningStepFixture(t *testing.T, fake services.Flattener) (*models.PipelineJob, string) {
+// installFakeFlattener makes the flattening step use fake until the test ends.
+func installFakeFlattener(t *testing.T, fake services.Flattener) {
 	t.Helper()
 	pipeline.SetFlattenerFactoryForTesting(
 		func(models.FlatteningConfig, models.RetryConfig, *http.Transport, *lib.Logger) services.Flattener {
@@ -241,6 +243,11 @@ func newFlatteningStepFixture(t *testing.T, fake services.Flattener) (*models.Pi
 		},
 	)
 	t.Cleanup(pipeline.ResetFlattenerFactory)
+}
+
+func newFlatteningStepFixture(t *testing.T, fake services.Flattener) (*models.PipelineJob, string) {
+	t.Helper()
+	installFakeFlattener(t, fake)
 
 	tempDir := t.TempDir()
 	jobDir := filepath.Join(tempDir, "jobs", "flatten-seam-job")
@@ -278,7 +285,7 @@ func TestFlatteningStep_UsesFakeFlattener(t *testing.T) {
 		gotCount   int
 	)
 	fake := &servicestest.MockFlattener{
-		FlattenFunc: func(vd models.ViewDefinition, resources []map[string]any) ([][]string, error) {
+		FlattenFunc: func(vd models.ViewDefinition, resources []json.RawMessage) ([][]string, error) {
 			gotViewDef = vd
 			gotCount = len(resources)
 			return [][]string{{"flattened-patient"}}, nil
@@ -340,7 +347,7 @@ func TestMockFlattener_WithoutFlattenFuncReturnsNoRows(t *testing.T) {
 
 	rows, err := mock.Flatten(
 		models.ViewDefinition{Name: "patients", Resource: "Patient"},
-		[]map[string]any{{"resourceType": "Patient", "id": "1"}},
+		[]json.RawMessage{json.RawMessage(`{"resourceType":"Patient","id":"1"}`)},
 	)
 
 	require.NoError(t, err)

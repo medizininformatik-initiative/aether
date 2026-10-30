@@ -1,7 +1,9 @@
 package unit
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -66,12 +68,45 @@ func newTestViewDefinitionWithColumns(name, resource string, columns ...string) 
 	return viewDef
 }
 
-func newTestResources(ids ...string) []map[string]any {
-	resources := make([]map[string]any, len(ids))
+func newTestResources(ids ...string) []json.RawMessage {
+	resources := make([]json.RawMessage, len(ids))
 	for i, id := range ids {
-		resources[i] = map[string]any{"resourceType": "Patient", "id": id}
+		resources[i] = json.RawMessage(`{"resourceType":"Patient","id":"` + id + `"}`)
 	}
 	return resources
+}
+
+func TestFlattenerClient_Flatten_SendsRawResourcesVerbatim(t *testing.T) {
+	var body []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := services.NewFlattenerClient(newTestFlatteningConfig(server.URL), noRetryConfig(), nil, lib.DefaultLogger)
+	resources := []json.RawMessage{
+		json.RawMessage(`{"resourceType":"Patient","id":"1","note":"a b"}`),
+		json.RawMessage(`{"id":"2","resourceType":"Patient","n":1.50}`),
+	}
+
+	_, err := client.Flatten(newTestViewDefinition("TestView", "Patient"), resources)
+	require.NoError(t, err)
+
+	var params struct {
+		Parameter []struct {
+			Name     string          `json:"name"`
+			Resource json.RawMessage `json:"resource"`
+		} `json:"parameter"`
+	}
+	require.NoError(t, json.Unmarshal(body, &params))
+	require.Len(t, params.Parameter, 3)
+	assert.Equal(t, "viewDefinition", params.Parameter[0].Name)
+	for i, r := range resources {
+		assert.Equal(t, "resources", params.Parameter[i+1].Name)
+		assert.Equal(t, string(r), string(params.Parameter[i+1].Resource))
+	}
 }
 
 func TestFlattenerClient_Flatten(t *testing.T) {
@@ -229,7 +264,7 @@ func TestFlattenerClient_Flatten(t *testing.T) {
 	t.Run("empty resources", func(t *testing.T) {
 		client := services.NewFlattenerClient(newTestFlatteningConfig("http://localhost:8080"), noRetryConfig(), nil, lib.DefaultLogger)
 
-		result, err := client.Flatten(models.ViewDefinition{Name: "TestView"}, []map[string]any{})
+		result, err := client.Flatten(models.ViewDefinition{Name: "TestView"}, []json.RawMessage{})
 		require.NoError(t, err)
 		assert.Empty(t, result)
 	})
@@ -778,7 +813,7 @@ func TestFlattenerClient_ReadResponseBodyError(t *testing.T) {
 
 	_, err := client.Flatten(
 		models.ViewDefinition{Name: "V", Resource: "Patient"},
-		[]map[string]any{{"resourceType": "Patient"}},
+		[]json.RawMessage{json.RawMessage(`{"resourceType":"Patient"}`)},
 	)
 
 	require.Error(t, err)
@@ -796,8 +831,8 @@ func TestFlattenerClient_Flatten_UnmarshalableResource(t *testing.T) {
 		lib.NewLogger(lib.LogLevelError),
 	)
 
-	// A channel has no JSON representation.
-	resources := []map[string]any{{"resourceType": "Patient", "bad": make(chan int)}}
+	// Truncated JSON is not a valid raw message.
+	resources := []json.RawMessage{json.RawMessage(`{"resourceType":`)}
 
 	rows, err := client.Flatten(newTestViewDefinition("patients", "Patient"), resources)
 

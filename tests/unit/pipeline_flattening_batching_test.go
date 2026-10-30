@@ -1,8 +1,7 @@
 package unit
 
 import (
-	"fmt"
-	"net/http"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,8 +12,6 @@ import (
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
-	"github.com/medizininformatik-initiative/aether/internal/pipeline"
-	"github.com/medizininformatik-initiative/aether/internal/services"
 	"github.com/medizininformatik-initiative/aether/internal/services/servicestest"
 )
 
@@ -48,40 +45,28 @@ func runFlatteningWithOptions(t *testing.T, inputs map[string][]map[string]any, 
 	t.Helper()
 	var run flatteningRun
 	fake := &servicestest.MockFlattener{
-		FlattenFunc: func(_ models.ViewDefinition, resources []map[string]any) ([][]string, error) {
+		FlattenFunc: func(_ models.ViewDefinition, resources []json.RawMessage) ([][]string, error) {
 			run.batches = append(run.batches, len(resources))
 			if flattenErr != nil {
 				return nil, flattenErr
 			}
 			rows := make([][]string, len(resources))
 			for i, r := range resources {
-				rows[i] = []string{fmt.Sprint(r["id"])}
+				var res struct {
+					ID string `json:"id"`
+				}
+				require.NoError(t, json.Unmarshal(r, &res))
+				rows[i] = []string{res.ID}
 			}
 			return rows, nil
 		},
 	}
-	pipeline.SetFlattenerFactoryForTesting(
-		func(models.FlatteningConfig, models.RetryConfig, *http.Transport, *lib.Logger) services.Flattener {
-			return fake
-		},
-	)
-	t.Cleanup(pipeline.ResetFlattenerFactory)
+	installFakeFlattener(t, fake)
 
-	tempDir := t.TempDir()
-	jobDir := filepath.Join(tempDir, "jobs", "flatten-batching-job")
-	inputDir := filepath.Join(jobDir, "import")
-	require.NoError(t, os.MkdirAll(inputDir, 0755))
+	job, jobDir, inputDir := newBatchingJob(t)
 	for name, resources := range inputs {
 		writeTestNDJSON(t, filepath.Join(inputDir, name), resources)
 	}
-
-	crtdlPath := filepath.Join(tempDir, "crtdl.json")
-	writeTestCRTDL(t, crtdlPath, batchingGroupID, "Patient", batchingProfileURL)
-	lookupPath := filepath.Join(tempDir, "lookup.json")
-	writeTestLookupTable(t, lookupPath, batchingProfileURL, "Patient")
-
-	job := createFlatteningTestJob("http://flattener.invalid", lookupPath, crtdlPath)
-	job.Config.Services.Flattening.BatchSizeMB = 1
 
 	stopCapture := captureStdoutForTest(t)
 	var logBuf strings.Builder
@@ -92,6 +77,26 @@ func runFlatteningWithOptions(t *testing.T, inputs map[string][]map[string]any, 
 	require.True(t, found)
 	run.step = step
 	return run, logBuf.String(), err
+}
+
+// newBatchingJob prepares a flattening job for one Patient attribute group with
+// a batch budget of 1 MiB. It returns the job, its directory and its import
+// directory.
+func newBatchingJob(t *testing.T) (*models.PipelineJob, string, string) {
+	t.Helper()
+	tempDir := t.TempDir()
+	jobDir := filepath.Join(tempDir, "jobs", "flatten-batching-job")
+	inputDir := filepath.Join(jobDir, "import")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+
+	crtdlPath := filepath.Join(tempDir, "crtdl.json")
+	writeTestCRTDL(t, crtdlPath, batchingGroupID, "Patient", batchingProfileURL)
+	lookupPath := filepath.Join(tempDir, "lookup.json")
+	writeTestLookupTable(t, lookupPath, batchingProfileURL, "Patient")
+
+	job := createFlatteningTestJob("http://flattener.invalid", lookupPath, crtdlPath)
+	job.Config.Services.Flattening.BatchSizeMB = 1
+	return job, jobDir, inputDir
 }
 
 func batchingPatient(id string) map[string]any {
@@ -157,6 +162,67 @@ func TestFlatteningStep_BundleEntriesFlushWhenBatchReachesBudget(t *testing.T) {
 	run := runFlatteningWithFake(t, map[string][]map[string]any{"bundle.ndjson": {bundle}})
 
 	assert.Equal(t, []int{2, 1}, run.batches)
+}
+
+func TestFlatteningStep_SkipsMalformedBundleEntriesAndKeepsTheOthers(t *testing.T) {
+	bundle := makeBundle("b1",
+		batchingPatient("1"), makeProvenance("prov-1", "Patient/1", batchingGroupID),
+		batchingPatient("2"), makeProvenance("prov-2", "Patient/2", batchingGroupID),
+	)
+	bundle["entry"] = append([]any{"not an entry", map[string]any{"resource": "not a resource"}},
+		bundle["entry"].([]any)...)
+
+	run := runFlatteningWithFake(t, map[string][]map[string]any{"bundle.ndjson": {bundle}})
+
+	assert.Equal(t, []int{2}, run.batches)
+}
+
+func TestFlatteningStep_SkipsBundleEntryWithNonStringID(t *testing.T) {
+	bundle := linkedBundle(batchingPatient("1"))
+	bundle["entry"] = append([]any{map[string]any{"resource": map[string]any{"resourceType": "Patient", "id": 123}}},
+		bundle["entry"].([]any)...)
+
+	run := runFlatteningWithFake(t, map[string][]map[string]any{"bundle.ndjson": {bundle}})
+
+	assert.Equal(t, []int{1}, run.batches)
+}
+
+func TestFlatteningStep_FailsOnTopLevelValueThatIsNotAnObject(t *testing.T) {
+	installFakeFlattener(t, &servicestest.MockFlattener{})
+	job, jobDir, inputDir := newBatchingJob(t)
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "input.ndjson"), []byte(`"not a resource"`+"\n"), 0o644))
+
+	stopCapture := captureStdoutForTest(t)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, lib.NewLogger(lib.LogLevelError))
+	stopCapture()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to load input.ndjson")
+}
+
+func TestFlatteningStep_SendsBundleEntryResourcesWithoutProvenance(t *testing.T) {
+	var sent []json.RawMessage
+	installFakeFlattener(t, &servicestest.MockFlattener{
+		FlattenFunc: func(_ models.ViewDefinition, resources []json.RawMessage) ([][]string, error) {
+			sent = append(sent, resources...)
+			return nil, nil
+		},
+	})
+	job, jobDir, inputDir := newBatchingJob(t)
+	patient := batchingPatient("1")
+	writeTestNDJSON(t, filepath.Join(inputDir, "bundle.ndjson"), []map[string]any{
+		makeBundle("b1", patient, makeProvenance("prov-1", "Patient/1", batchingGroupID)),
+	})
+
+	stopCapture := captureStdoutForTest(t)
+	err := runPipelineStep(models.StepFlattening, job, jobDir, lib.NewLogger(lib.LogLevelError))
+	stopCapture()
+	require.NoError(t, err)
+
+	want, err := json.Marshal(patient)
+	require.NoError(t, err)
+	require.Len(t, sent, 1)
+	assert.JSONEq(t, string(want), string(sent[0]))
 }
 
 func TestFlatteningStep_BundleEntriesBelowBudgetStayInOneBatch(t *testing.T) {

@@ -47,7 +47,13 @@ type ServiceConfig struct {
 	CRTDLPreprocessing CRTDLPreprocessingConfig `yaml:"crtdl_preprocessing" json:"crtdl_preprocessing" mapstructure:"crtdl_preprocessing"`
 	Send               SendConfig               `yaml:"send" json:"send" mapstructure:"send"`
 	LocalImport        LocalImportConfig        `yaml:"local_import" json:"local_import" mapstructure:"local_import"`
+	CSVImport          CSVImportConfig          `yaml:"csv_import" json:"csv_import" mapstructure:"csv_import"`
 	Validation         ValidationConfig         `yaml:"validation" json:"validation" mapstructure:"validation"`
+}
+
+// CSVImportConfig contains settings for the import of already-flattened CSV files
+type CSVImportConfig struct {
+	Dir string `yaml:"dir" json:"dir" mapstructure:"dir"` // Default directory path for CSV imports
 }
 
 // ValidationConfig contains FHIR validation service settings

@@ -19,6 +19,7 @@ var stepDirNames = map[models.StepName]string{
 	models.StepTorchImport: "import",
 	models.StepLocalImport: "import",
 	models.StepHttpImport:  "import",
+	models.StepCSVImport:   "csv",
 	models.StepDIMP:        "dimp",
 	models.StepValidation:  "validation",
 	models.StepFlattening:  "csv",

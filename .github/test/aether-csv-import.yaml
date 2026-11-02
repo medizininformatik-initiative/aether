@@ -1,0 +1,24 @@
+# Aether E2E Test Configuration for CSV import
+# Uploads a directory of CSV files to SeaweedFS (S3-compatible) without a FHIR import.
+
+services:
+  csv_import:
+    dir: "/tmp/csv-input"
+
+  send:
+    send_as: "s3_upload"
+    s3:
+      endpoint: "http://seaweedfs:8333"
+      region: "eu-central-1"
+      bucket: "aether-test"
+      access_key_id: "aetheradmin"
+      secret_access_key: "aetheradmin"
+      use_path_style: true
+      timeout: 10m
+
+pipeline:
+  enabled_steps:
+    - csv_import
+    - send
+
+jobs_dir: "./jobs"

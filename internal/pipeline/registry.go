@@ -3,12 +3,13 @@ package pipeline
 import "github.com/medizininformatik-initiative/aether/internal/models"
 
 // stepRegistry maps every pipeline step name to its Step implementation. The
-// three import names share importStep, each carrying its own name; send's three
+// four import names share importStep, each carrying its own name; send's three
 // sub-modes live inside sendStep.Run.
 var stepRegistry = map[models.StepName]Step{
 	models.StepTorchImport: importStep{name: models.StepTorchImport},
 	models.StepLocalImport: importStep{name: models.StepLocalImport},
 	models.StepHttpImport:  importStep{name: models.StepHttpImport},
+	models.StepCSVImport:   importStep{name: models.StepCSVImport},
 	models.StepDIMP:        dimpStep{},
 	models.StepValidation:  validationStep{},
 	models.StepFlattening:  flatteningStep{},

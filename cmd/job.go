@@ -93,6 +93,7 @@ useful for:
 Available Steps:
   torch             - Import FHIR data from TORCH via CRTDL or TORCH result URL
   local_import      - Import FHIR data from a local directory
+  csv_import        - Import already-flattened CSV files from a local directory
   http_import       - Import FHIR data from an HTTP URL
   dimp              - Pseudonymize data via DIMP service
   validation        - Validate FHIR data against a FHIR validation service
@@ -323,6 +324,7 @@ func validateStepName(step string) (models.StepName, error) {
 	validSteps := map[string]models.StepName{
 		"torch":        models.StepTorchImport,
 		"local_import": models.StepLocalImport,
+		"csv_import":   models.StepCSVImport,
 		"http_import":  models.StepHttpImport,
 		"dimp":         models.StepDIMP,
 		"validation":   models.StepValidation,
@@ -332,7 +334,7 @@ func validateStepName(step string) (models.StepName, error) {
 
 	stepName, ok := validSteps[step]
 	if !ok {
-		return "", fmt.Errorf("invalid step name '%s'. Valid steps: torch, local_import, http_import, dimp, validation, flattening, send", step)
+		return "", fmt.Errorf("invalid step name '%s'. Valid steps: torch, local_import, http_import, csv_import, dimp, validation, flattening, send", step)
 	}
 
 	return stepName, nil
@@ -410,14 +412,8 @@ func executeStepManually(job *models.PipelineJob, stepName models.StepName, conf
 	return nil
 }
 
-// isImportStep reports whether the step is one of the three import variants.
 func isImportStep(stepName models.StepName) bool {
-	switch stepName {
-	case models.StepTorchImport, models.StepLocalImport, models.StepHttpImport:
-		return true
-	default:
-		return false
-	}
+	return stepName.IsImport()
 }
 
 // validateImportStepMatchesInput rejects a manual --step import request whose

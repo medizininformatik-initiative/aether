@@ -16,7 +16,7 @@ import (
 
 var (
 	noProgress          bool
-	localImportDir      string // CLI flag for local import directory override
+	localImportDir      string // CLI flag for the local_import and csv_import directory override
 	allowHTTPCRTDL      bool   // CLI flag acknowledging http_import + CRTDL semantic mismatch
 	anonymizationConfig string // CLI flag for the DIMP anonymization YAML override
 )
@@ -44,8 +44,8 @@ Arguments:
   <crtdl>   CRTDL JSON file (required, second positional)
   [input]   Optional input source for the enabled import step:
               • omitted (torch_import): CRTDL is submitted to TORCH
-              • omitted (local_import): data dir is read from --dir or config
-              • local directory path (local_import): files imported from disk
+              • omitted (local_import, csv_import): data dir is read from --dir or config
+              • local directory path (local_import, csv_import): files imported from disk
               • HTTP(S) URL (http_import): single NDJSON file downloaded
               • TORCH result URL (torch_import): auto-detected when the URL
                 contains /fhir/extraction/ or /fhir/result/; extraction is
@@ -174,7 +174,7 @@ func init() {
 	pipelineCmd.AddCommand(pipelineContinueCmd)
 
 	pipelineStartCmd.Flags().BoolVar(&noProgress, "no-progress", false, "Disable progress indicators")
-	pipelineStartCmd.Flags().StringVar(&localImportDir, "dir", "", "Directory for local import (overrides config)")
+	pipelineStartCmd.Flags().StringVar(&localImportDir, "dir", "", "Source directory for local_import and csv_import (overrides config)")
 	pipelineStartCmd.Flags().BoolVar(&allowHTTPCRTDL, "allow-http-crtdl", false, "Acknowledge that combining http_import with a CRTDL may not match the endpoint's data")
 	pipelineStartCmd.Flags().StringVar(&anonymizationConfig, "anonymization-config", "", "Anonymization YAML sent to DIMP with each request (overrides config)")
 
@@ -310,6 +310,9 @@ func checkCRTDLArgument(crtdlPath string) error {
 func applyStartFlags(config *models.ProjectConfig) {
 	if localImportDir != "" {
 		config.Services.LocalImport.Dir = localImportDir
+		if config.Pipeline.IsStepEnabled(models.StepCSVImport) {
+			config.Services.CSVImport.Dir = localImportDir
+		}
 	}
 
 	// The job keeps the resolved config, so `pipeline continue` sends the same
@@ -333,13 +336,20 @@ func validateStartSources(config *models.ProjectConfig, inputSource string) erro
 }
 
 func validateLocalImportSource(config *models.ProjectConfig, inputSource string) error {
+	if config.Pipeline.IsStepEnabled(models.StepCSVImport) {
+		return requireSourceDir(models.StepCSVImport, config.Services.CSVImport.Dir, inputSource)
+	}
 	if !config.Pipeline.IsStepEnabled(models.StepLocalImport) || config.Pipeline.IsStepEnabled(models.StepTorchImport) {
 		return nil
 	}
-	if config.Services.LocalImport.Dir != "" || inputSource != "" {
+	return requireSourceDir(models.StepLocalImport, config.Services.LocalImport.Dir, inputSource)
+}
+
+func requireSourceDir(step models.StepName, configDir, inputSource string) error {
+	if configDir != "" || inputSource != "" {
 		return nil
 	}
-	return fmt.Errorf("local_import step enabled but no directory specified\n\nProvide directory via:\n  1. Positional: aether pipeline start <config> <crtdl> /path/to/data\n  2. --dir flag: aether pipeline start <config> <crtdl> --dir /path/to/data\n  3. Config file: services.local_import.dir in aether.yaml")
+	return fmt.Errorf("%[1]s step enabled but no directory specified\n\nProvide directory via:\n  1. Positional: aether pipeline start <config> <crtdl> /path/to/data\n  2. --dir flag: aether pipeline start <config> <crtdl> --dir /path/to/data\n  3. Config file: services.%[1]s.dir in aether.yaml", step)
 }
 
 // preflightStart runs the checks that stop a defective start before the job

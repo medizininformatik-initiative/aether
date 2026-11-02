@@ -11,6 +11,7 @@ One import step must be first in the pipeline. Only enable one at a time.
 | [TORCH Import](./steps/torch-import.md) | Extract data from TORCH server using CRTDL queries or a direct TORCH URL |
 | [Local Import](./steps/local-import.md) | Import FHIR NDJSON files from local directory |
 | [HTTP Import](./steps/http-import.md) | Download FHIR NDJSON files from HTTP URL |
+| [CSV Import](./steps/csv-import.md) | Import already-flattened CSV files from local directory |
 
 ## Processing Steps
 
@@ -64,6 +65,15 @@ pipeline:
     - validation
     - dimp
     - flattening
+    - send
+```
+
+### Send Flattened CSV Files
+
+```yaml
+pipeline:
+  enabled_steps:
+    - csv_import
     - send
 ```
 

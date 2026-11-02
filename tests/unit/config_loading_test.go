@@ -2348,6 +2348,60 @@ jobs_dir: "` + jobsDir + `"
 	assert.Equal(t, dataDir, config.Services.LocalImport.Dir, "LocalImport.Dir should expand environment variable")
 }
 
+func TestConfigLoading_CSVImportDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	csvDir := filepath.Join(tmpDir, "csv")
+	require.NoError(t, os.MkdirAll(jobsDir, 0755))
+	require.NoError(t, os.MkdirAll(csvDir, 0755))
+
+	configContent := `
+services:
+  csv_import:
+    dir: "` + csvDir + `"
+
+pipeline:
+  enabled_steps:
+    - csv_import
+
+jobs_dir: "` + jobsDir + `"
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(configContent), 0644))
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err)
+
+	assert.Equal(t, csvDir, config.Services.CSVImport.Dir)
+	assert.Equal(t, []models.StepName{models.StepCSVImport}, config.Pipeline.EnabledSteps)
+}
+
+func TestConfigLoading_CSVImportDirDefaultsToEmpty(t *testing.T) {
+	assert.Empty(t, models.DefaultConfig().Services.CSVImport.Dir)
+}
+
+func TestConfigLoading_CSVImportDirEnvOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	require.NoError(t, os.MkdirAll(jobsDir, 0755))
+
+	configContent := `
+pipeline:
+  enabled_steps:
+    - csv_import
+
+jobs_dir: "` + jobsDir + `"
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(configContent), 0644))
+	t.Setenv("AETHER_SERVICES_CSV_IMPORT_DIR", "/data/from-env")
+
+	config, err := services.LoadConfig(configFile)
+	require.NoError(t, err)
+
+	assert.Equal(t, "/data/from-env", config.Services.CSVImport.Dir)
+}
+
 // TestPipelineJob_ValidateWithEmptyInputSource_LocalImportConfigDir verifies that
 // job validation allows empty InputSource when local_import uses config directory
 func TestPipelineJob_ValidateWithEmptyInputSource_LocalImportConfigDir(t *testing.T) {
@@ -2377,6 +2431,26 @@ func TestPipelineJob_ValidateWithEmptyInputSource_LocalImportConfigDir(t *testin
 	// Validation should pass because local_import config dir is set
 	err := job.Validate()
 	assert.NoError(t, err, "Validation should pass with empty InputSource when local_import config dir is set")
+}
+
+func TestPipelineJob_ValidateWithEmptyInputSource_CSVImportConfigDir(t *testing.T) {
+	steps := []models.StepName{models.StepCSVImport}
+	job := models.PipelineJob{
+		JobID:       "550e8400-e29b-41d4-a716-446655440000",
+		InputType:   models.InputTypeLocal,
+		CurrentStep: string(models.StepCSVImport),
+		Status:      models.JobStatusPending,
+		Steps:       models.InitializeSteps(steps),
+		Config: models.ProjectConfig{
+			JobsDir:  t.TempDir(),
+			Pipeline: models.PipelineConfig{EnabledSteps: steps},
+			Services: models.ServiceConfig{
+				CSVImport: models.CSVImportConfig{Dir: "/configured/csv"},
+			},
+		},
+	}
+
+	assert.NoError(t, job.Validate())
 }
 
 // TestPipelineJob_ValidateWithEmptyInputSource_NoConfigDir verifies that

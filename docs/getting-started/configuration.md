@@ -171,7 +171,7 @@ pipeline:
 - Should only appear once in the pipeline
 - Multiple instances are not supported (output directories would be overwritten)
 
-**Import steps (torch, local_import, http_import):**
+**Import steps (torch, local_import, http_import, csv_import):**
 - Must be first
 - Only one import step allowed
 

@@ -223,20 +223,30 @@ func copyFile(sourcePath string, destDir string, logger *lib.Logger, compress bo
 	}, nil
 }
 
+// statDir reports whether path is a directory. It fails if path does not exist
+// or cannot be read.
+func statDir(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, fmt.Errorf("directory does not exist: %s", path)
+		}
+		return false, fmt.Errorf("cannot access directory: %w", err)
+	}
+	return info.IsDir(), nil
+}
+
 // ValidateImportSource checks if an import source is valid. recursive is only
 // consulted for InputTypeLocal (see findNDJSONFiles).
 func ValidateImportSource(sourcePath string, inputType models.InputType, recursive bool) error {
 	switch inputType {
 	case models.InputTypeLocal:
-		info, err := os.Stat(sourcePath)
+		isDir, err := statDir(sourcePath)
 		if err != nil {
-			if os.IsNotExist(err) {
-				return fmt.Errorf("directory does not exist: %s", sourcePath)
-			}
-			return fmt.Errorf("cannot access directory: %w", err)
+			return err
 		}
 
-		if !info.IsDir() {
+		if !isDir {
 			fileExt := strings.ToLower(filepath.Ext(sourcePath))
 			var hint string
 			switch fileExt {

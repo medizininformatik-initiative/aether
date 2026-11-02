@@ -315,7 +315,7 @@ make stop
 
 ### Adding a New Pipeline Step
 
-**Note**: The import step types (torch, local_import, http_import) are already implemented. This section is for adding new processing steps after import.
+**Note**: The import step types (torch, local_import, http_import, csv_import) are already implemented. This section is for adding new processing steps after import.
 
 1. **Create model** in `internal/models/step.go`
 2. **Write tests** in `tests/unit/{step_name}_test.go`

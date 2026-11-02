@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"time"
@@ -28,9 +29,9 @@ func ResetExtractorFactory() {
 	extractorFactory = defaultExtractorFactory
 }
 
-// importStep imports FHIR data into the import/ directory. It carries its own
-// step name (torch/local/http) because the registry maps all three names to it
-// and the name selects both the import method and the error-classification rule.
+// importStep imports data into the output directory of its step. It carries its
+// own step name because the registry maps all import step names to it, and the
+// name selects both the import method and the error-classification rule.
 type importStep struct {
 	name models.StepName
 }
@@ -78,12 +79,11 @@ func (s importStep) Run(ctx *StepContext) (StepResult, error) {
 	var err error
 
 	switch currentStep {
+	case models.StepCSVImport:
+		return runCSVImport(job, importDir, logger)
+
 	case models.StepLocalImport:
-		// Config dir takes precedence, fallback to job.InputSource
-		sourceDir := job.Config.Services.LocalImport.Dir
-		if sourceDir == "" {
-			sourceDir = job.InputSource
-		}
+		sourceDir := cmp.Or(job.Config.Services.LocalImport.Dir, job.InputSource)
 		recursive := job.Config.Services.LocalImport.Recursive
 		if verr := services.ValidateImportSource(sourceDir, models.InputTypeLocal, recursive); verr != nil {
 			return StepResult{}, verr
@@ -133,6 +133,23 @@ func (s importStep) Run(ctx *StepContext) (StepResult, error) {
 	job.TotalBytes = totalBytes
 
 	return StepResult{FilesProcessed: len(importedFiles), BytesProcessed: totalBytes}, nil
+}
+
+// runCSVImport copies the CSV files of the source directory into importDir.
+// send zips each CSV file itself, so the copy is never compressed.
+func runCSVImport(job *models.PipelineJob, importDir string, logger *lib.Logger) (StepResult, error) {
+	sourceDir := cmp.Or(job.Config.Services.CSVImport.Dir, job.InputSource)
+	if sourceDir == "" {
+		return StepResult{}, errors.New("csv_import has no source directory: set services.csv_import.dir or pass a directory")
+	}
+	logger.Info("Importing CSV files from directory", "source", sourceDir)
+	files, size, err := services.ImportCSVFiles(sourceDir, importDir, logger)
+	if err != nil {
+		return StepResult{}, err
+	}
+	job.TotalFiles = files
+	job.TotalBytes = size
+	return StepResult{FilesProcessed: files, BytesProcessed: size}, nil
 }
 
 // executeTORCHExtraction submits the (already prepared) CRTDL to TORCH,

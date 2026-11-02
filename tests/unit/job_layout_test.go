@@ -85,6 +85,27 @@ func TestJobLayout_WaitDir(t *testing.T) {
 	})
 }
 
+// TestJobLayout_CSVImport verifies csv_import shares the flattening output
+// directory, so send reads CSV files from it directly or through a wait override.
+func TestJobLayout_CSVImport(t *testing.T) {
+	assert.Equal(t, "/tmp/jobs/job-1/csv", services.NewJobLayout("/tmp/jobs", "job-1", nil).OutputDir(models.StepCSVImport))
+
+	cases := []struct {
+		name  string
+		steps []models.StepName
+		want  string
+	}{
+		{"send reads csv", []models.StepName{models.StepCSVImport, models.StepSend}, "/tmp/jobs/job-1/csv"},
+		{"send reads csv wait override", []models.StepName{models.StepCSVImport, models.StepWait, models.StepSend}, "/tmp/jobs/job-1/csv_wait"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			layout := services.NewJobLayout("/tmp/jobs", "job-1", c.steps)
+			assert.Equal(t, c.want, layout.InputDir(models.StepSend))
+		})
+	}
+}
+
 // TestJobLayout_InputDir_Wait verifies a wait override is named after the step it
 // immediately follows, so the reader matches the path the paused pipeline tells
 // the user to populate — including when that step is transparent (validation).

@@ -79,6 +79,9 @@ services:
     dir: string
     recursive: boolean                 # default: false
 
+  csv_import:
+    dir: string
+
   crtdl_preprocessing:
     enabled: boolean                       # default: false
     enrichments_path: string               # Path to external JSON file
@@ -347,6 +350,20 @@ services:
 | `dir` | string | Default import directory (overridable with `--dir` flag) |
 | `recursive` | bool | Scan subdirectories of `dir` for NDJSON files. Default `false` (top level only). |
 
+### CSV Import
+
+Default directory for the `csv_import` step. The step copies all CSV files from this directory, including subdirectories. See [CSV Import](../guides/steps/csv-import.md).
+
+```yaml
+services:
+  csv_import:
+    dir: "./output/2026-11-02_09-40-53"
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `dir` | string | Source directory (overridable with the `--dir` flag) |
+
 ### CRTDL Preprocessing
 
 Enriches CRTDL documents with additional attributes before sending to TORCH. This is required when using DIMP pseudonymization, which needs certain identifier attributes (for example, `Patient.identifier`) to be present in the CRTDL extraction query.
@@ -438,6 +455,7 @@ pipeline:
 | `torch` | Import via TORCH (requires CRTDL) |
 | `local_import` | Import from local directory |
 | `http_import` | Import from HTTP URL |
+| `csv_import` | Import already-flattened CSV files from local directory |
 | `dimp` | Pseudonymize via DIMP |
 | `wait` | Pause for manual inspection |
 | `flattening` | Transform to CSV (requires CRTDL) |
@@ -445,7 +463,8 @@ pipeline:
 | `validation` | Validate FHIR data against profiles |
 
 **Rules:**
-- One import step must be first (torch, local_import, or http_import)
+- One import step must be first (torch, local_import, http_import, or csv_import)
+- After csv_import, only wait and send are allowed. The send mode must be transfer_load or s3_upload
 - Wait step cannot be first or consecutive
 - Flattening requires CRTDL input
 

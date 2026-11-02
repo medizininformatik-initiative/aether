@@ -177,7 +177,7 @@ func TestProjectConfig_Validate(t *testing.T) {
 				JobsDir: "/tmp/jobs",
 			},
 			wantErr: true,
-			errMsg:  "first enabled step must be an import step (torch, local_import, or http_import)",
+			errMsg:  "first enabled step must be an import step (torch, local_import, http_import, or csv_import)",
 		},
 		{
 			name: "First step is not an import step - DIMP first",
@@ -196,7 +196,7 @@ func TestProjectConfig_Validate(t *testing.T) {
 				JobsDir: "/tmp/jobs",
 			},
 			wantErr: true,
-			errMsg:  "first enabled step must be an import step (torch, local_import, or http_import)",
+			errMsg:  "first enabled step must be an import step (torch, local_import, http_import, or csv_import)",
 		},
 		{
 			name: "First step is torch_import - valid",

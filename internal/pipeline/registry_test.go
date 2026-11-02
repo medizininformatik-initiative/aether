@@ -11,7 +11,7 @@ import (
 
 func TestStepRegistry_ResolvesEveryStep(t *testing.T) {
 	names := []models.StepName{
-		models.StepTorchImport, models.StepLocalImport, models.StepHttpImport,
+		models.StepTorchImport, models.StepLocalImport, models.StepHttpImport, models.StepCSVImport,
 		models.StepDIMP, models.StepValidation, models.StepFlattening,
 		models.StepSend, models.StepWait,
 	}

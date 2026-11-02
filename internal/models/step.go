@@ -35,6 +35,7 @@ const (
 	StepTorchImport StepName = "torch"        // TORCH import via CRTDL or direct TORCH URL
 	StepLocalImport StepName = "local_import" // Import from local directory
 	StepHttpImport  StepName = "http_import"  // Import from HTTP URL
+	StepCSVImport   StepName = "csv_import"   // Import already-flattened CSV files from a local directory
 	StepDIMP        StepName = "dimp"
 	StepValidation  StepName = "validation"
 	StepWait        StepName = "wait"       // Pause pipeline for user inspection/modification
@@ -80,7 +81,7 @@ const (
 // IsValidStepName checks if the step name is recognized
 func IsValidStepName(name StepName) bool {
 	switch name {
-	case StepTorchImport, StepLocalImport, StepHttpImport, StepDIMP, StepValidation, StepWait, StepFlattening, StepSend:
+	case StepTorchImport, StepLocalImport, StepHttpImport, StepCSVImport, StepDIMP, StepValidation, StepWait, StepFlattening, StepSend:
 		return true
 	default:
 		return false
@@ -96,13 +97,18 @@ func AcceptedInputTypes(step StepName) []InputType {
 	switch step {
 	case StepTorchImport:
 		return []InputType{InputTypeLocal, InputTypeCRTDL, InputTypeTORCHURL}
-	case StepLocalImport:
+	case StepLocalImport, StepCSVImport:
 		return []InputType{InputTypeLocal}
 	case StepHttpImport:
 		return []InputType{InputTypeHTTP}
 	default:
 		return nil
 	}
+}
+
+// IsImport reports whether the step imports data into a job.
+func (s StepName) IsImport() bool {
+	return AcceptedInputTypes(s) != nil
 }
 
 // ImportStepAcceptsInputType reports whether the import step can handle the

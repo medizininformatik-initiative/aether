@@ -1,11 +1,12 @@
 package models
 
 // StepPrerequisites defines which steps must complete before a given step can run
-// Note: "import" is a placeholder representing any of the three import step types
+// Note: "import" is a placeholder representing any import step
 var StepPrerequisites = map[StepName][]StepName{
 	StepTorchImport: {},         // No prerequisites - can always run
 	StepLocalImport: {},         // No prerequisites - can always run
 	StepHttpImport:  {},         // No prerequisites - can always run
+	StepCSVImport:   {},         // No prerequisites - can always run
 	StepDIMP:        {"import"}, // Requires any import step to complete
 	StepValidation:  {"import"}, // Can validate after import (regardless of DIMP)
 	StepFlattening:  {"import"}, // Flattening needs imported FHIR input to transform
@@ -25,15 +26,7 @@ func ValidateStepPrerequisites(job PipelineJob, stepName StepName) (StepName, bo
 	for _, prerequisite := range prerequisites {
 		// "import" means any import step type
 		if prerequisite == "import" {
-			importCompleted := false
-			for _, importStep := range []StepName{StepTorchImport, StepLocalImport, StepHttpImport} {
-				step, found := GetStepByName(job, importStep)
-				if found && step.Status == StepStatusCompleted {
-					importCompleted = true
-					break
-				}
-			}
-			if !importCompleted {
+			if !hasCompletedImport(job) {
 				return "import", false
 			}
 			continue
@@ -52,6 +45,16 @@ func ValidateStepPrerequisites(job PipelineJob, stepName StepName) (StepName, bo
 	}
 
 	return "", true
+}
+
+// hasCompletedImport reports whether any import step of the job has completed.
+func hasCompletedImport(job PipelineJob) bool {
+	for _, step := range job.Steps {
+		if step.Name.IsImport() && step.Status == StepStatusCompleted {
+			return true
+		}
+	}
+	return false
 }
 
 // CanRunStep checks if a step can be executed based on current job state

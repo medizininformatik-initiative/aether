@@ -25,7 +25,7 @@ import (
 //   - TORCH result URL (auto-detected)
 //   - Local directory path (for local_import)
 //   - Empty string: torch_import submits the CRTDL to TORCH, or local_import
-//     falls back to config.Services.LocalImport.Dir
+//     and csv_import fall back to the directory in their service config
 //
 // Returns the created job with initialized steps.
 func CreateJob(jobID string, inputSource string, crtdlPath string, config models.ProjectConfig, logger *lib.Logger) (*models.PipelineJob, error) {
@@ -34,10 +34,10 @@ func CreateJob(jobID string, inputSource string, crtdlPath string, config models
 	var err error
 
 	if inputSource == "" {
-		// No input source provided - torch_import submits the CRTDL, or
-		// local_import uses config.Services.LocalImport.Dir.
 		inputType = models.InputTypeLocal
-		logger.Info("No input source provided, using local import from config", "dir", config.Services.LocalImport.Dir)
+		logger.Info("No input source provided, using import directory from config",
+			"local_import_dir", config.Services.LocalImport.Dir,
+			"csv_import_dir", config.Services.CSVImport.Dir)
 	} else {
 		// Detect input type from provided source
 		inputType, err = lib.DetectInputType(inputSource)
@@ -51,11 +51,8 @@ func CreateJob(jobID string, inputSource string, crtdlPath string, config models
 	// Priority: find the first import step that's enabled
 	var initialStep models.StepName
 	for _, step := range config.Pipeline.EnabledSteps {
-		switch step {
-		case models.StepTorchImport, models.StepLocalImport, models.StepHttpImport:
+		if step.IsImport() {
 			initialStep = step
-		}
-		if initialStep != "" {
 			break
 		}
 	}

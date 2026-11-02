@@ -24,6 +24,7 @@ services:
       - ./aether-validation.yaml:/app/aether-validation.yaml:ro
       - ./aether-direct-load.yaml:/app/aether-direct-load.yaml:ro
       - ./aether-s3-upload.yaml:/app/aether-s3-upload.yaml:ro
+      - ./aether-csv-import.yaml:/app/aether-csv-import.yaml:ro
       - ./aether-dimp-anonymization-config.yaml:/app/aether-dimp-anonymization-config.yaml:ro
       - ./torch/queries:/app/torch/queries:ro
       - ./example-flattening:/app/example-flattening:ro

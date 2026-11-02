@@ -1,7 +1,7 @@
 # Makefile for Aether Test Infrastructure
 # Located in .github/test/
 
-.PHONY: help services build start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test flattener-up flattener-down flattener-logs blaze-up blaze-down blaze-logs validator-up validator-down validator-logs seaweedfs-up seaweedfs-down seaweedfs-logs test-with-services upload-testdata e2e-test e2e-test-flattening e2e-test-validation e2e-test-dimp-anonymization-config e2e-test-direct-load e2e-test-s3-upload clean-test-data
+.PHONY: help services build start stop torch-up torch-down torch-logs torch-test dimp-up dimp-down dimp-test flattener-up flattener-down flattener-logs blaze-up blaze-down blaze-logs validator-up validator-down validator-logs seaweedfs-up seaweedfs-down seaweedfs-logs test-with-services upload-testdata e2e-test e2e-test-flattening e2e-test-validation e2e-test-dimp-anonymization-config e2e-test-direct-load e2e-test-s3-upload e2e-test-csv-import clean-test-data
 
 # Default target
 .DEFAULT_GOAL := help
@@ -51,6 +51,7 @@ help:
 	@echo "  e2e-test-direct-load Run direct resource load E2E test (torch → send)"
 	@echo "  build             Build aether binary"
 	@echo "  e2e-test-s3-upload Run S3 upload E2E test (torch → send via SeaweedFS)"
+	@echo "  e2e-test-csv-import Run CSV import E2E test (csv_import → send via SeaweedFS)"
 	@echo "  clean-test-data   Clean test data and temporary files"
 
 ## build: Build aether binary
@@ -281,6 +282,12 @@ e2e-test-s3-upload: start upload-testdata
 	@echo "Running S3 upload E2E test script..."
 	../scripts/run-s3-upload-e2e-test.sh
 	@echo "✓ S3 upload E2E test complete"
+
+## e2e-test-csv-import: Run CSV import E2E test (csv_import → send via SeaweedFS)
+e2e-test-csv-import:
+	@docker compose up -d --wait --no-deps seaweedfs aether-runner
+	../scripts/run-csv-import-e2e-test.sh
+	@echo "✓ CSV import E2E test complete"
 
 ## clean-test-data: Clean test data and temporary files
 clean-test-data:

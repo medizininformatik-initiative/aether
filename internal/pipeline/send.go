@@ -109,7 +109,7 @@ func executeTransferLoadSend(job *models.PipelineJob, layout services.JobLayout,
 
 	fmt.Printf("Preparing %d file(s) for transfer...\n\n", len(files))
 
-	binaryResources, err := buildBinaryResources(files, job.JobID, logger)
+	binaryResources, err := buildBinaryResources(files, inputDir, job.JobID, logger)
 	if err != nil {
 		return StepResult{}, err
 	}
@@ -153,14 +153,20 @@ func newSendHTTPClient(job *models.PipelineJob, logger *lib.Logger) *services.HT
 	return services.NewHTTPClient(30*time.Second, job.Config.Retry, job.Config.TLS, logger)
 }
 
-// buildBinaryResources makes one FHIR Binary resource for each file.
-func buildBinaryResources(files []string, jobID string, logger *lib.Logger) ([]binaryEntry, error) {
+// buildBinaryResources makes one FHIR Binary resource for each file. The zip
+// entry of each file has its path relative to inputDir, so that the receiver
+// can tell apart files with the same name in different subdirectories.
+func buildBinaryResources(files []string, inputDir, jobID string, logger *lib.Logger) ([]binaryEntry, error) {
 	var binaryResources []binaryEntry
 
 	for _, filePath := range files {
-		fileName := filepath.Base(filePath)
+		rel, err := filepath.Rel(inputDir, filePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get relative path of %s: %w", filePath, err)
+		}
+		fileName := lib.GetUncompressedFilename(filepath.ToSlash(rel))
 
-		entry, err := createBinaryFromFile(filePath)
+		entry, err := createBinaryFromFile(filePath, fileName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to process %s: %w", fileName, err)
 		}
@@ -327,15 +333,15 @@ func newRequestDump(job *models.PipelineJob, layout services.JobLayout, logger *
 }
 
 // createBinaryFromFile reads a file, zips it, base64-encodes the content,
-// and returns a FHIR Binary resource.
-func createBinaryFromFile(filePath string) (binaryEntry, error) {
+// and returns a FHIR Binary resource. entryName is the name of the file in the zip.
+func createBinaryFromFile(filePath, entryName string) (binaryEntry, error) {
 	// Every file is zipped for transfer, so the Binary describes a zip archive.
 	// application/zip is the IANA-registered type for zip archives.
 	const contentType = "application/zip"
 
-	data, err := zipSingleFile(filePath)
+	data, err := zipSingleFile(filePath, entryName)
 	if err != nil {
-		return binaryEntry{}, fmt.Errorf("failed to zip %s: %w", filepath.Base(filePath), err)
+		return binaryEntry{}, fmt.Errorf("failed to zip %s: %w", entryName, err)
 	}
 
 	id := uuid.New().String()
@@ -372,15 +378,12 @@ func (b binaryEntry) dumpResource() map[string]any {
 // zipSingleFile compresses a single file into an in-memory zip archive.
 // Uses lib.OpenFileForReading to transparently decompress .zst files before zipping,
 // so the zip contains the raw (uncompressed) data.
-func zipSingleFile(filePath string) ([]byte, error) {
+func zipSingleFile(filePath, entryName string) ([]byte, error) {
 	reader, err := lib.OpenFileForReading(filePath)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = reader.Close() }()
-
-	// Use the uncompressed filename inside the zip (strip .zst suffix)
-	entryName := lib.GetUncompressedFilename(filepath.Base(filePath))
 
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)

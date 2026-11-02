@@ -20,9 +20,10 @@ func (j *PipelineJob) Validate() error {
 	}
 
 	// Validate InputSource is not empty (unless a CRTDL is attached, or using
-	// local_import with a config directory).
+	// local_import or csv_import with a config directory).
 	if j.InputSource == "" {
-		localFromConfig := j.InputType == InputTypeLocal && j.Config.Services.LocalImport.Dir != ""
+		localFromConfig := j.InputType == InputTypeLocal &&
+			(j.Config.Services.LocalImport.Dir != "" || j.Config.Services.CSVImport.Dir != "")
 		if j.CRTDLPath == "" && !localFromConfig {
 			return errors.New("input_source is required")
 		}
@@ -145,8 +146,8 @@ func (c *ProjectConfig) Validate() error {
 
 	// Validate first step is always an import step
 	firstStep := c.Pipeline.EnabledSteps[0]
-	if firstStep != StepTorchImport && firstStep != StepLocalImport && firstStep != StepHttpImport {
-		return errors.New("first enabled step must be an import step (torch, local_import, or http_import)")
+	if !firstStep.IsImport() {
+		return errors.New("first enabled step must be an import step (torch, local_import, http_import, or csv_import)")
 	}
 
 	// Validate all enabled steps are recognized
@@ -154,6 +155,10 @@ func (c *ProjectConfig) Validate() error {
 		if !IsValidStepName(step) {
 			return fmt.Errorf("unrecognized step in enabled_steps: %s", step)
 		}
+	}
+
+	if err := c.validateCSVImportPipeline(); err != nil {
+		return err
 	}
 
 	// Validate service URLs for enabled steps
@@ -211,6 +216,42 @@ func (c *ProjectConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// validateCSVImportPipeline checks the restrictions that csv_import puts on the
+// pipeline. CSV files carry no FHIR data, so only wait and send can follow, and
+// send cannot use direct_resource_load.
+func (c *ProjectConfig) validateCSVImportPipeline() error {
+	if !c.Pipeline.IsStepEnabled(StepCSVImport) {
+		return nil
+	}
+
+	for i, step := range c.Pipeline.EnabledSteps {
+		if err := checkStepAfterCSVImport(i, step); err != nil {
+			return err
+		}
+	}
+
+	if c.Pipeline.IsStepEnabled(StepSend) && !csvSendModeAllowed(c.Services.Send.SendAs) {
+		return fmt.Errorf("csv_import requires send_as 'transfer_load' or 's3_upload', got '%s'", c.Services.Send.SendAs)
+	}
+
+	return nil
+}
+
+// checkStepAfterCSVImport checks one step of a pipeline that contains csv_import.
+func checkStepAfterCSVImport(index int, step StepName) error {
+	switch {
+	case step == StepCSVImport && index != 0:
+		return errors.New("csv_import must be the first enabled step and cannot be combined with another import step")
+	case index > 0 && step != StepWait && step != StepSend:
+		return fmt.Errorf("step '%s' cannot run after csv_import: only wait and send accept CSV data", step)
+	}
+	return nil
+}
+
+func csvSendModeAllowed(mode SendMode) bool {
+	return mode == SendModeTransferLoad || mode == SendModeS3Upload
 }
 
 // ValidateJobsDir checks if the jobs directory exists and is writable

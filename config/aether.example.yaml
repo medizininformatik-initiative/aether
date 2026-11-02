@@ -278,15 +278,24 @@ services:
     # directories can otherwise be picked up as if they were real output.
     recursive: false
 
+  # CSV Import Configuration
+  # Directory with already-flattened CSV files for the csv_import step.
+  # The step scans subdirectories and keeps the relative paths.
+  # Can be overridden with --dir flag on command line
+  # csv_import:
+  #   dir: "/path/to/csv/data"
+
 pipeline:
   # List of steps to execute in order
-  # Import step options (must be first): torch, local_import, http_import
+  # Import step options (must be first): torch, local_import, http_import, csv_import
   # Other step options: dimp, validation, wait, flattening, send
   #
   # IMPORTANT: Only ONE import step should be enabled at a time!
   #   - torch: Use with CRTDL for TORCH extraction
   #   - local_import: Import from local directory (set via services.local_import.dir or --dir flag)
   #   - http_import: Download from HTTP URL
+  #   - csv_import: Import already-flattened CSV files (set via services.csv_import.dir or --dir flag).
+  #     Only wait and send can follow it, and send_as must be transfer_load or s3_upload.
   #
   # CRTDL file requirements:
   #   - Required when: torch OR flattening step is enabled
@@ -316,6 +325,7 @@ pipeline:
     # - torch           # TORCH import via CRTDL or direct TORCH URL
     - local_import    # Import from local directory (configured above)
     # - http_import     # Import from HTTP URL
+    # - csv_import      # Import flattened CSV files (then only wait/send)
     # - wait          # Uncomment to pause after import for inspection
     - dimp
     # - wait          # Uncomment to pause after pseudonymization

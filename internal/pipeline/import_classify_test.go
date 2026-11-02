@@ -20,6 +20,7 @@ func TestImportStep_ClassifyError_NetworkError(t *testing.T) {
 		{models.StepTorchImport, models.ErrorTypeTransient},
 		{models.StepHttpImport, models.ErrorTypeTransient},
 		{models.StepLocalImport, models.ErrorTypeNonTransient},
+		{models.StepCSVImport, models.ErrorTypeNonTransient},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.step), func(t *testing.T) {

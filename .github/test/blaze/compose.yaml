@@ -3,7 +3,7 @@ name: blaze
 services:
   # Blaze FHIR server used as DSF transfer target for the send step
   blaze-fhir:
-    image: samply/blaze:1.12.1@sha256:ecea2fd1f646d60d4653eb623df3bd85998e0a405fb7e90abc91dcf2ffa7fded
+    image: samply/blaze:1.13.0@sha256:808d04a6224ca926ab2422d4235cd008399b5e4d4f5855d52fd2715de295f1c2
     ports: [ ":8080" ]
     networks: [ "aether" ]
     environment:
@@ -11,7 +11,7 @@ services:
       LOG_LEVEL: debug
       JAVA_TOOL_OPTIONS: "-Xmx2g"
     healthcheck:
-      test: [ "CMD", "curl", "-sSf", "http://localhost:8080/health" ]
+      test: [ "CMD", "wget", "-q", "--spider", "http://localhost:8080/health" ]
       interval: 10s
       timeout: 5s
       retries: 5

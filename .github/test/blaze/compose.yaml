@@ -11,7 +11,7 @@ services:
       LOG_LEVEL: debug
       JAVA_TOOL_OPTIONS: "-Xmx2g"
     healthcheck:
-      test: [ "CMD", "curl", "-sSf", "http://localhost:8080/health" ]
+      test: [ "CMD", "wget", "-q", "--spider", "http://localhost:8080/health" ]
       interval: 10s
       timeout: 5s
       retries: 5

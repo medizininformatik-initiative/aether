@@ -19,7 +19,7 @@ import (
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
-	"github.com/medizininformatik-initiative/aether/internal/pipeline"
+	"github.com/medizininformatik-initiative/aether/internal/send"
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
@@ -942,7 +942,7 @@ func TestExecuteSendStep_OAuth2(t *testing.T) {
 	defer fhirServer.Close()
 
 	// Clear the token cache before the test
-	pipeline.ClearOAuth2TokenCacheForTesting()
+	send.ClearOAuth2TokenCacheForTesting()
 
 	tmpDir := t.TempDir()
 	jobID := "test-oauth2"
@@ -1011,7 +1011,7 @@ func TestExecuteSendStep_OAuth2TokenError(t *testing.T) {
 	defer fhirServer.Close()
 
 	// Clear the token cache before the test
-	pipeline.ClearOAuth2TokenCacheForTesting()
+	send.ClearOAuth2TokenCacheForTesting()
 
 	tmpDir := t.TempDir()
 	jobID := "test-oauth2-error"
@@ -1051,7 +1051,7 @@ func TestExecuteSendStep_OAuth2TokenCaching(t *testing.T) {
 	defer fhirServer.Close()
 
 	// Clear the token cache before the test
-	pipeline.ClearOAuth2TokenCacheForTesting()
+	send.ClearOAuth2TokenCacheForTesting()
 
 	tmpDir := t.TempDir()
 
@@ -1114,7 +1114,7 @@ func TestExecuteSendStep_OAuth2TokenInvalidJSON(t *testing.T) {
 	defer fhirServer.Close()
 
 	// Clear the token cache before the test
-	pipeline.ClearOAuth2TokenCacheForTesting()
+	send.ClearOAuth2TokenCacheForTesting()
 
 	tmpDir := t.TempDir()
 	jobID := "test-oauth2-invalid-json"
@@ -1153,7 +1153,7 @@ func TestExecuteSendStep_OAuth2TokenMissingAccessToken(t *testing.T) {
 	defer fhirServer.Close()
 
 	// Clear the token cache before the test
-	pipeline.ClearOAuth2TokenCacheForTesting()
+	send.ClearOAuth2TokenCacheForTesting()
 
 	tmpDir := t.TempDir()
 	jobID := "test-oauth2-missing-token"
@@ -1193,7 +1193,7 @@ func TestExecuteSendStep_OAuth2TokenShortExpiry(t *testing.T) {
 	defer fhirServer.Close()
 
 	// Clear the token cache before the test
-	pipeline.ClearOAuth2TokenCacheForTesting()
+	send.ClearOAuth2TokenCacheForTesting()
 
 	tmpDir := t.TempDir()
 	jobID := "test-oauth2-short-expiry"
@@ -1621,10 +1621,10 @@ func TestExecuteSendStep_FHIR_CoreAndCompressed(t *testing.T) {
 
 func TestExecuteSendStep_S3_Success(t *testing.T) {
 	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	send.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return mock, nil
 	})
-	defer pipeline.ResetS3UploaderFactory()
+	defer send.ResetS3UploaderFactory()
 
 	tmpDir := t.TempDir()
 	jobID := "test-s3-success"
@@ -1671,10 +1671,10 @@ func TestExecuteSendStep_S3_Success(t *testing.T) {
 
 func TestExecuteSendStep_S3_NoFiles(t *testing.T) {
 	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	send.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return mock, nil
 	})
-	defer pipeline.ResetS3UploaderFactory()
+	defer send.ResetS3UploaderFactory()
 
 	tmpDir := t.TempDir()
 	jobID := "test-s3-empty"
@@ -1695,10 +1695,10 @@ func TestExecuteSendStep_S3_UploadError(t *testing.T) {
 		Bucket:    "test-bucket",
 		UploadErr: &services.S3Error{Message: "AccessDenied: access denied", ErrorType: models.ErrorTypeNonTransient},
 	}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	send.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return mock, nil
 	})
-	defer pipeline.ResetS3UploaderFactory()
+	defer send.ResetS3UploaderFactory()
 
 	tmpDir := t.TempDir()
 	jobID := "test-s3-upload-error"
@@ -1728,12 +1728,12 @@ func TestExecuteSendStep_S3_UploadError(t *testing.T) {
 func TestExecuteSendStep_S3_ManifestRetry(t *testing.T) {
 	uploadCount := 0
 	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	send.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		// Reset tracked keys on each factory call (new "session")
 		mock.UploadedKeys = nil
 		return mock, nil
 	})
-	defer pipeline.ResetS3UploaderFactory()
+	defer send.ResetS3UploaderFactory()
 
 	tmpDir := t.TempDir()
 	jobID := "test-s3-manifest-retry"
@@ -1776,10 +1776,10 @@ func TestExecuteSendStep_S3_ManifestRetry(t *testing.T) {
 
 func TestExecuteSendStep_S3_SubdirectoryFiles(t *testing.T) {
 	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	send.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return mock, nil
 	})
-	defer pipeline.ResetS3UploaderFactory()
+	defer send.ResetS3UploaderFactory()
 
 	tmpDir := t.TempDir()
 	jobID := "test-s3-subdirs"
@@ -1848,10 +1848,10 @@ func TestExecuteSendStep_S3_TransientError(t *testing.T) {
 		Bucket:    "test-bucket",
 		UploadErr: &services.S3Error{Message: "SlowDown: rate exceeded", ErrorType: models.ErrorTypeTransient},
 	}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	send.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return mock, nil
 	})
-	defer pipeline.ResetS3UploaderFactory()
+	defer send.ResetS3UploaderFactory()
 
 	tmpDir := t.TempDir()
 	jobID := "test-s3-transient"
@@ -2118,17 +2118,17 @@ func TestFormatSize_AllBranches(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := pipeline.FormatSizeForTesting(tt.bytes)
+			result := send.FormatSizeForTesting(tt.bytes)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
 func TestExecuteSendStep_S3_UploaderFactoryError(t *testing.T) {
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	send.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return nil, fmt.Errorf("failed to initialize S3 client")
 	})
-	defer pipeline.ResetS3UploaderFactory()
+	defer send.ResetS3UploaderFactory()
 
 	tmpDir := t.TempDir()
 	jobID := "test-s3-factory-error"
@@ -2146,10 +2146,10 @@ func TestExecuteSendStep_S3_UploaderFactoryError(t *testing.T) {
 
 func TestExecuteSendStep_S3_NonExistentInputDir(t *testing.T) {
 	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	send.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return mock, nil
 	})
-	defer pipeline.ResetS3UploaderFactory()
+	defer send.ResetS3UploaderFactory()
 
 	tmpDir := t.TempDir()
 	jobID := "test-s3-no-input-dir"

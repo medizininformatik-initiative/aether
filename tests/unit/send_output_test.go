@@ -14,7 +14,7 @@ import (
 
 	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/models"
-	"github.com/medizininformatik-initiative/aether/internal/pipeline"
+	"github.com/medizininformatik-initiative/aether/internal/send"
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
@@ -111,10 +111,10 @@ func TestExecuteSendStep_FHIR_ClosesInputFilesWithoutWarning(t *testing.T) {
 func runS3SendWithJobDirSetup(t *testing.T, prepare func(jobDir string)) (logs string, uploadedKeys []string) {
 	t.Helper()
 	mock := &services.MockS3Uploader{Bucket: "test-bucket"}
-	pipeline.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
+	send.SetS3UploaderFactoryForTesting(func(_ models.S3Config, _ models.AuthConfig, _ models.TLSConfig, _ *lib.Logger) (services.S3Uploader, error) {
 		return mock, nil
 	})
-	defer pipeline.ResetS3UploaderFactory()
+	defer send.ResetS3UploaderFactory()
 
 	tmpDir := t.TempDir()
 	jobID := "test-s3-manifest-log"

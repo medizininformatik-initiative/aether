@@ -1,4 +1,4 @@
-package pipeline
+package send
 
 import (
 	"testing"
@@ -11,7 +11,7 @@ import (
 )
 
 func TestNewSendHTTPClient_Uses30SecondTimeout(t *testing.T) {
-	client := newSendHTTPClient(&models.PipelineJob{}, lib.NewLogger(lib.LogLevelError))
+	client := newSendHTTPClient(models.RetryConfig{}, models.TLSConfig{}, lib.NewLogger(lib.LogLevelError))
 
 	assert.Equal(t, 30*time.Second, client.Timeout())
 }

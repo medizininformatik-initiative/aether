@@ -48,91 +48,123 @@ func (s importStep) ClassifyError(err error) models.ErrorType {
 // longer download-safe timeout.
 func (s importStep) Run(ctx *StepContext) (StepResult, error) {
 	job := ctx.Job
-	logger := ctx.Logger
-	currentStep := s.name
 
-	// The import method is chosen by step name; the job's input type must be one
-	// the method can handle. Nothing on the RunLoop/continue path cross-checks the
-	// two (CreateJob picks the step from config, the input type from the source),
-	// so without this guard a mismatch surfaces as a confusing downstream error.
-	accepted := models.AcceptedInputTypes(currentStep)
-	if len(accepted) == 0 {
-		return StepResult{}, fmt.Errorf("unsupported import step: %s", currentStep)
-	}
-	if !models.ImportStepAcceptsInputType(currentStep, job.InputType) {
-		return StepResult{}, fmt.Errorf("import step %q does not accept input type %q (accepts %v)", currentStep, job.InputType, accepted)
+	if err := checkImportInputType(s.name, job.InputType); err != nil {
+		return StepResult{}, err
 	}
 
-	httpClient := ctx.HTTPClient
-	if httpClient == nil {
-		httpClient = services.NewHTTPClient(
-			time.Duration(job.Config.Retry.InitialBackoffMs)*time.Millisecond*10,
-			job.Config.Retry, job.Config.TLS, logger)
-	}
+	httpClient := resolveImportHTTPClient(ctx)
 
-	importDir := ctx.Layout.OutputDir(currentStep)
-	compress := job.Config.Compression.Enabled
-	compressionLevel := job.Config.Compression.Level
-
-	var importedFiles []models.FHIRDataFile
-	var err error
-
-	switch currentStep {
-	case models.StepLocalImport:
-		// Config dir takes precedence, fallback to job.InputSource
-		sourceDir := job.Config.Services.LocalImport.Dir
-		if sourceDir == "" {
-			sourceDir = job.InputSource
-		}
-		recursive := job.Config.Services.LocalImport.Recursive
-		if verr := services.ValidateImportSource(sourceDir, models.InputTypeLocal, recursive); verr != nil {
-			return StepResult{}, verr
-		}
-		logger.Info("Importing from local directory", "source", sourceDir, "compress", compress, "recursive", recursive)
-		importedFiles, err = services.ImportFromLocalDirectory(sourceDir, importDir, logger, compress, compressionLevel, recursive)
-
-	case models.StepHttpImport:
-		if verr := services.ValidateImportSource(job.InputSource, models.InputTypeHTTP, false); verr != nil {
-			return StepResult{}, verr
-		}
-		logger.Info("Downloading from URL", "source", job.InputSource, "compress", compress)
-		if ctx.ShowProgress {
-			importedFiles, err = services.DownloadFromURLWithProgress(job.InputSource, importDir, httpClient, logger, compress, compressionLevel)
-		} else {
-			importedFiles, err = services.DownloadFromURL(job.InputSource, importDir, httpClient, logger, false, compress, compressionLevel)
-		}
-
-	case models.StepTorchImport:
-		// TORCH result URL: poll directly. Otherwise: submit the CRTDL for extraction.
-		if job.InputType == models.InputTypeTORCHURL {
-			if verr := services.ValidateImportSource(job.InputSource, models.InputTypeTORCHURL, false); verr != nil {
-				return StepResult{}, verr
-			}
-			logger.Info("Downloading from TORCH result URL", "source", job.InputSource, "compress", compress)
-			importedFiles, err = executeTORCHDownload(job, importDir, httpClient, logger, ctx.ShowProgress, compress, compressionLevel)
-		} else {
-			if verr := services.ValidateImportSource(job.CRTDLPath, models.InputTypeCRTDL, false); verr != nil {
-				return StepResult{}, verr
-			}
-			logger.Info("Extracting data from TORCH using CRTDL", "crtdl", job.CRTDLPath, "compress", compress)
-			importedFiles, err = executeTORCHExtraction(job, importDir, httpClient, logger, ctx.ShowProgress, compress, compressionLevel)
-		}
-	}
-
+	importedFiles, err := s.importFiles(ctx, httpClient)
 	if err != nil {
 		return StepResult{}, err
 	}
 
-	var totalBytes int64
-	for _, file := range importedFiles {
-		totalBytes += file.FileSize
-	}
+	totalBytes := sumFileSizes(importedFiles)
 
 	// Job-level totals are non-lifecycle state the import step owns.
 	job.TotalFiles = len(importedFiles)
 	job.TotalBytes = totalBytes
 
 	return StepResult{FilesProcessed: len(importedFiles), BytesProcessed: totalBytes}, nil
+}
+
+// checkImportInputType rejects a step name that is no import step and a job
+// input type the import method cannot handle. Nothing on the RunLoop/continue
+// path cross-checks the two (CreateJob picks the step from config, the input
+// type from the source), so without this guard a mismatch surfaces as a
+// confusing downstream error.
+func checkImportInputType(step models.StepName, inputType models.InputType) error {
+	accepted := models.AcceptedInputTypes(step)
+	if len(accepted) == 0 {
+		return fmt.Errorf("unsupported import step: %s", step)
+	}
+	if !models.ImportStepAcceptsInputType(step, inputType) {
+		return fmt.Errorf("import step %q does not accept input type %q (accepts %v)", step, inputType, accepted)
+	}
+	return nil
+}
+
+func resolveImportHTTPClient(ctx *StepContext) *services.HTTPClient {
+	if ctx.HTTPClient != nil {
+		return ctx.HTTPClient
+	}
+	cfg := &ctx.Job.Config
+	return services.NewHTTPClient(
+		time.Duration(cfg.Retry.InitialBackoffMs)*time.Millisecond*10,
+		cfg.Retry, cfg.TLS, ctx.Logger)
+}
+
+func (s importStep) importFiles(ctx *StepContext, httpClient *services.HTTPClient) ([]models.FHIRDataFile, error) {
+	importDir := ctx.Layout.OutputDir(s.name)
+
+	switch s.name {
+	case models.StepLocalImport:
+		return importLocal(ctx, importDir)
+	case models.StepHttpImport:
+		return importHTTP(ctx, httpClient, importDir)
+	default:
+		// checkImportInputType has already rejected every other step name.
+		return importTORCH(ctx, httpClient, importDir)
+	}
+}
+
+func importLocal(ctx *StepContext, importDir string) ([]models.FHIRDataFile, error) {
+	job := ctx.Job
+	compression := job.Config.Compression
+
+	sourceDir := job.Config.Services.LocalImport.Dir
+	if sourceDir == "" {
+		sourceDir = job.InputSource
+	}
+	recursive := job.Config.Services.LocalImport.Recursive
+	if err := services.ValidateImportSource(sourceDir, models.InputTypeLocal, recursive); err != nil {
+		return nil, err
+	}
+	ctx.Logger.Info("Importing from local directory", "source", sourceDir, "compress", compression.Enabled, "recursive", recursive)
+	return services.ImportFromLocalDirectory(sourceDir, importDir, ctx.Logger, compression.Enabled, compression.Level, recursive)
+}
+
+func importHTTP(ctx *StepContext, httpClient *services.HTTPClient, importDir string) ([]models.FHIRDataFile, error) {
+	job := ctx.Job
+	compression := job.Config.Compression
+
+	if err := services.ValidateImportSource(job.InputSource, models.InputTypeHTTP, false); err != nil {
+		return nil, err
+	}
+	ctx.Logger.Info("Downloading from URL", "source", job.InputSource, "compress", compression.Enabled)
+	if ctx.ShowProgress {
+		return services.DownloadFromURLWithProgress(job.InputSource, importDir, httpClient, ctx.Logger, compression.Enabled, compression.Level)
+	}
+	return services.DownloadFromURL(job.InputSource, importDir, httpClient, ctx.Logger, false, compression.Enabled, compression.Level)
+}
+
+// importTORCH polls a TORCH result URL directly. Otherwise it submits the CRTDL
+// for extraction.
+func importTORCH(ctx *StepContext, httpClient *services.HTTPClient, importDir string) ([]models.FHIRDataFile, error) {
+	job := ctx.Job
+	compression := job.Config.Compression
+
+	if job.InputType == models.InputTypeTORCHURL {
+		if err := services.ValidateImportSource(job.InputSource, models.InputTypeTORCHURL, false); err != nil {
+			return nil, err
+		}
+		ctx.Logger.Info("Downloading from TORCH result URL", "source", job.InputSource, "compress", compression.Enabled)
+		return executeTORCHDownload(job, importDir, httpClient, ctx.Logger, ctx.ShowProgress, compression.Enabled, compression.Level)
+	}
+	if err := services.ValidateImportSource(job.CRTDLPath, models.InputTypeCRTDL, false); err != nil {
+		return nil, err
+	}
+	ctx.Logger.Info("Extracting data from TORCH using CRTDL", "crtdl", job.CRTDLPath, "compress", compression.Enabled)
+	return executeTORCHExtraction(job, importDir, httpClient, ctx.Logger, ctx.ShowProgress, compression.Enabled, compression.Level)
+}
+
+func sumFileSizes(files []models.FHIRDataFile) int64 {
+	var total int64
+	for _, file := range files {
+		total += file.FileSize
+	}
+	return total
 }
 
 // executeTORCHExtraction submits the (already prepared) CRTDL to TORCH,

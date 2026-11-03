@@ -111,6 +111,39 @@ func refuseRemovedKeys() error {
 //  3. Configuration file
 //  4. Default values
 func LoadConfig(configFile string) (*models.ProjectConfig, error) {
+	config, err := readConfigFile(configFile)
+	if err != nil {
+		return nil, err
+	}
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+	if err := models.ValidateJobsDir(config.JobsDir); err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
+// LoadSendConfig loads the configuration for `aether send`. It does not
+// validate the pipeline, because the command runs no pipeline. The caller
+// validates the send settings.
+func LoadSendConfig(configFile string) (*models.ProjectConfig, error) {
+	config, err := readConfigFile(configFile)
+	if err != nil {
+		return nil, err
+	}
+	if err := config.ValidateCommon(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+	if err := models.ValidateJobsDir(config.JobsDir); err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
+// readConfigFile decodes the file, the environment overrides and the defaults
+// into a configuration. It does not validate the result.
+func readConfigFile(configFile string) (*models.ProjectConfig, error) {
 	if configFile == "" {
 		return nil, fmt.Errorf("config file is required: pass aether.yaml as the first positional argument (e.g. `aether pipeline start aether.yaml crtdl.json`)")
 	}
@@ -157,24 +190,6 @@ func LoadConfig(configFile string) (*models.ProjectConfig, error) {
 	if err := viper.Unmarshal(&config, viper.DecodeHook(decodeHook)); err != nil {
 		return nil, fmt.Errorf("failed to decode configuration: %w", err)
 	}
-
-	// Validate the configuration
-	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %w", err)
-	}
-
-	// Validate jobs directory exists and is writable
-	if err := models.ValidateJobsDir(config.JobsDir); err != nil {
-		// Try to create it if it doesn't exist
-		if os.IsNotExist(err) {
-			if createErr := os.MkdirAll(config.JobsDir, 0755); createErr != nil {
-				return nil, fmt.Errorf("failed to create jobs directory: %w", createErr)
-			}
-		} else {
-			return nil, err
-		}
-	}
-
 	return &config, nil
 }
 

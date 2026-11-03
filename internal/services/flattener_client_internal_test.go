@@ -205,10 +205,12 @@ func TestFlattenerClient_Flatten_WatchdogStopsWhenFlattenReturns(t *testing.T) {
 	_, err := client.Flatten(livenessTestViewDefinition(), livenessTestResources())
 	require.NoError(t, err)
 
-	// Flatten waits for the watchdog, so no probe starts after it returns.
+	// Flatten waits for the watchdog, so no probe starts after it returns. The
+	// watchdog sends one probe at a time and does not wait for the probe in
+	// flight, so the server can count that one probe after the return.
 	probesAtReturn := probes.Load()
 	time.Sleep(10 * client.liveness.interval)
-	assert.Equal(t, probesAtReturn, probes.Load())
+	assert.LessOrEqual(t, probes.Load(), probesAtReturn+1)
 }
 
 func TestFlattenerClient_Flatten_ReturnsWithoutWaitingForProbeInFlight(t *testing.T) {

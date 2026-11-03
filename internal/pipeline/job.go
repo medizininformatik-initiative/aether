@@ -29,37 +29,12 @@ import (
 //
 // Returns the created job with initialized steps.
 func CreateJob(jobID string, inputSource string, crtdlPath string, config models.ProjectConfig, logger *lib.Logger) (*models.PipelineJob, error) {
-	// Determine input type based on what was provided
-	var inputType models.InputType
-	var err error
-
-	if inputSource == "" {
-		// No input source provided - torch_import submits the CRTDL, or
-		// local_import uses config.Services.LocalImport.Dir.
-		inputType = models.InputTypeLocal
-		logger.Info("No input source provided, using local import from config", "dir", config.Services.LocalImport.Dir)
-	} else {
-		// Detect input type from provided source
-		inputType, err = lib.DetectInputType(inputSource)
-		if err != nil {
-			return nil, fmt.Errorf("failed to detect input type: %w", err)
-		}
-		logger.Info("Detected input type", "type", inputType, "source", inputSource)
+	inputType, err := detectJobInputType(inputSource, config.Services.LocalImport.Dir, logger)
+	if err != nil {
+		return nil, err
 	}
 
-	// Determine initial step based on enabled import step in config
-	// Priority: find the first import step that's enabled
-	var initialStep models.StepName
-	for _, step := range config.Pipeline.EnabledSteps {
-		switch step {
-		case models.StepTorchImport, models.StepLocalImport, models.StepHttpImport:
-			initialStep = step
-		}
-		if initialStep != "" {
-			break
-		}
-	}
-
+	initialStep := firstImportStep(config.Pipeline.EnabledSteps)
 	if initialStep == "" {
 		return nil, fmt.Errorf("no import step enabled in pipeline configuration")
 	}
@@ -74,52 +49,76 @@ func CreateJob(jobID string, inputSource string, crtdlPath string, config models
 		return nil, fmt.Errorf("input %q was detected as %s, which the enabled import step %q does not accept (accepts %v)", inputSource, inputType, initialStep, models.AcceptedInputTypes(initialStep))
 	}
 
-	// Initialize steps from config
-	steps := models.InitializeSteps(config.Pipeline.EnabledSteps)
-
-	// Create job
 	job := &models.PipelineJob{
-		JobID:              jobID,
-		CreatedAt:          time.Now(),
-		UpdatedAt:          time.Now(),
-		InputSource:        inputSource,
-		InputType:          inputType,
-		CRTDLPath:          crtdlPath,
-		TORCHExtractionURL: "",                  // Will be set during TORCH extraction if applicable
-		CurrentStep:        string(initialStep), // Set based on input type
-		Status:             models.JobStatusPending,
-		Steps:              steps,
-		Config:             config,
-		TotalFiles:         0,
-		TotalBytes:         0,
-		ErrorMessage:       "",
+		JobID:       jobID,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		InputSource: inputSource,
+		InputType:   inputType,
+		CRTDLPath:   crtdlPath,
+		CurrentStep: string(initialStep),
+		Status:      models.JobStatusPending,
+		Steps:       models.InitializeSteps(config.Pipeline.EnabledSteps),
+		Config:      config,
 	}
 
-	// Validate the job
 	if err := job.Validate(); err != nil {
 		return nil, fmt.Errorf("failed to create valid job: %w", err)
 	}
 
-	// Create job directory structure
-	if _, err := services.EnsureJobDirs(config.JobsDir, jobID); err != nil {
-		return nil, fmt.Errorf("failed to create job directories: %w", err)
-	}
-
-	// Save initial job state
-	if err := services.SaveJobState(config.JobsDir, job); err != nil {
-		return nil, fmt.Errorf("failed to save initial job state: %w", err)
-	}
-
-	// Prepare the effective CRTDL once so every downstream step reads the
-	// same enriched/copied file. Persist again so InputSource is up to date.
-	if err := PrepareCRTDL(job, logger); err != nil {
-		return nil, fmt.Errorf("failed to prepare CRTDL: %w", err)
-	}
-	if err := services.SaveJobState(config.JobsDir, job); err != nil {
-		return nil, fmt.Errorf("failed to save job state after CRTDL preparation: %w", err)
+	if err := persistNewJob(job, logger); err != nil {
+		return nil, err
 	}
 
 	return job, nil
+}
+
+// detectJobInputType derives the input type from the provided source. An empty
+// source means torch_import submits the CRTDL, or local_import uses
+// localImportDir.
+func detectJobInputType(inputSource string, localImportDir string, logger *lib.Logger) (models.InputType, error) {
+	if inputSource == "" {
+		logger.Info("No input source provided, using local import from config", "dir", localImportDir)
+		return models.InputTypeLocal, nil
+	}
+	inputType, err := lib.DetectInputType(inputSource)
+	if err != nil {
+		return "", fmt.Errorf("failed to detect input type: %w", err)
+	}
+	logger.Info("Detected input type", "type", inputType, "source", inputSource)
+	return inputType, nil
+}
+
+// firstImportStep returns the first enabled import step, or "" when none is enabled.
+func firstImportStep(steps []models.StepName) models.StepName {
+	for _, step := range steps {
+		if len(models.AcceptedInputTypes(step)) > 0 {
+			return step
+		}
+	}
+	return ""
+}
+
+// persistNewJob creates the job directories and saves the job state. It
+// prepares the effective CRTDL once so every downstream step reads the same
+// enriched/copied file, then saves again so InputSource is up to date.
+func persistNewJob(job *models.PipelineJob, logger *lib.Logger) error {
+	jobsDir := job.Config.JobsDir
+	if _, err := services.EnsureJobDirs(jobsDir, job.JobID); err != nil {
+		return fmt.Errorf("failed to create job directories: %w", err)
+	}
+
+	if err := services.SaveJobState(jobsDir, job); err != nil {
+		return fmt.Errorf("failed to save initial job state: %w", err)
+	}
+
+	if err := PrepareCRTDL(job, logger); err != nil {
+		return fmt.Errorf("failed to prepare CRTDL: %w", err)
+	}
+	if err := services.SaveJobState(jobsDir, job); err != nil {
+		return fmt.Errorf("failed to save job state after CRTDL preparation: %w", err)
+	}
+	return nil
 }
 
 // LoadJob loads an existing job from disk

@@ -19,57 +19,79 @@ func (j *PipelineJob) Validate() error {
 		return err
 	}
 
-	// Validate InputSource is not empty (unless a CRTDL is attached, or using
-	// local_import with a config directory).
+	return runChecks(
+		j.validateInputSourcePresent,
+		j.validateHTTPInputSource,
+		j.validateInputTypeAndStatus,
+		j.validateCurrentStep,
+		j.validateTotals,
+	)
+}
+
+// runChecks runs the checks in order and returns the first error.
+func runChecks(checks ...func() error) error {
+	for _, check := range checks {
+		if err := check(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (j *PipelineJob) validateInputTypeAndStatus() error {
+	if !IsValidInputType(j.InputType) {
+		return fmt.Errorf("invalid input_type: %s", j.InputType)
+	}
+	if !IsValidJobStatus(j.Status) {
+		return fmt.Errorf("invalid status: %s", j.Status)
+	}
+	return nil
+}
+
+func (j *PipelineJob) validateInputSourcePresent() error {
+	// An empty source is valid when a CRTDL is attached, or when using
+	// local_import with a config directory.
 	if j.InputSource == "" {
 		localFromConfig := j.InputType == InputTypeLocal && j.Config.Services.LocalImport.Dir != ""
 		if j.CRTDLPath == "" && !localFromConfig {
 			return errors.New("input_source is required")
 		}
 	}
+	return nil
+}
 
-	// Validate InputType matches InputSource
-	if j.InputType == InputTypeHTTP {
-		if !strings.HasPrefix(j.InputSource, "http://") && !strings.HasPrefix(j.InputSource, "https://") {
-			return errors.New("input_source must be a valid HTTP(S) URL when input_type is http_url")
-		}
-		if _, err := url.Parse(j.InputSource); err != nil {
-			return fmt.Errorf("invalid input_source URL: %w", err)
-		}
+func (j *PipelineJob) validateHTTPInputSource() error {
+	if j.InputType != InputTypeHTTP {
+		return nil
 	}
-
-	// Validate InputType is recognized
-	if !IsValidInputType(j.InputType) {
-		return fmt.Errorf("invalid input_type: %s", j.InputType)
+	if !strings.HasPrefix(j.InputSource, "http://") && !strings.HasPrefix(j.InputSource, "https://") {
+		return errors.New("input_source must be a valid HTTP(S) URL when input_type is http_url")
 	}
-
-	// Validate JobStatus is recognized
-	if !IsValidJobStatus(j.Status) {
-		return fmt.Errorf("invalid status: %s", j.Status)
+	if _, err := url.Parse(j.InputSource); err != nil {
+		return fmt.Errorf("invalid input_source URL: %w", err)
 	}
+	return nil
+}
 
-	// Validate CurrentStep matches one of the steps in the job
-	if j.CurrentStep != "" {
-		stepFound := false
-		for _, step := range j.Steps {
-			if string(step.Name) == j.CurrentStep {
-				stepFound = true
-				break
-			}
-		}
-		if !stepFound {
-			return fmt.Errorf("current_step '%s' not found in job steps", j.CurrentStep)
+func (j *PipelineJob) validateCurrentStep() error {
+	if j.CurrentStep == "" {
+		return nil
+	}
+	for _, step := range j.Steps {
+		if string(step.Name) == j.CurrentStep {
+			return nil
 		}
 	}
+	return fmt.Errorf("current_step '%s' not found in job steps", j.CurrentStep)
+}
 
-	// Validate TotalFiles and TotalBytes are non-negative
+func (j *PipelineJob) validateTotals() error {
 	if j.TotalFiles < 0 {
 		return errors.New("total_files cannot be negative")
 	}
 	if j.TotalBytes < 0 {
 		return errors.New("total_bytes cannot be negative")
 	}
-
 	return nil
 }
 
@@ -138,25 +160,41 @@ func (f *FHIRDataFile) Validate() error {
 
 // Validate checks if a ProjectConfig has valid fields
 func (c *ProjectConfig) Validate() error {
-	// Validate at least one pipeline step is enabled
+	if err := runChecks(
+		c.validateStepList,
+		c.validateStepServiceURLs,
+		c.validateTORCHConfig,
+		c.validateSendConfig,
+		c.validateServiceURLsWellFormed,
+		c.Retry.Validate,
+	); err != nil {
+		return err
+	}
+	if c.JobsDir == "" {
+		return errors.New("jobs_dir is required")
+	}
+	return nil
+}
+
+func (c *ProjectConfig) validateStepList() error {
 	if len(c.Pipeline.EnabledSteps) == 0 {
 		return errors.New("at least one pipeline step must be enabled")
 	}
 
-	// Validate first step is always an import step
 	firstStep := c.Pipeline.EnabledSteps[0]
 	if firstStep != StepTorchImport && firstStep != StepLocalImport && firstStep != StepHttpImport {
 		return errors.New("first enabled step must be an import step (torch, local_import, or http_import)")
 	}
 
-	// Validate all enabled steps are recognized
 	for _, step := range c.Pipeline.EnabledSteps {
 		if !IsValidStepName(step) {
 			return fmt.Errorf("unrecognized step in enabled_steps: %s", step)
 		}
 	}
+	return nil
+}
 
-	// Validate service URLs for enabled steps
+func (c *ProjectConfig) validateStepServiceURLs() error {
 	for _, step := range c.Pipeline.EnabledSteps {
 		if !c.Services.HasServiceURL(step) {
 			switch step {
@@ -165,24 +203,30 @@ func (c *ProjectConfig) Validate() error {
 			}
 		}
 	}
+	return nil
+}
 
-	// Validate TORCH config if torch import step is enabled OR if TORCH is explicitly configured
-	// Check if any TORCH field is non-empty (indicates explicit configuration)
+func (c *ProjectConfig) validateTORCHConfig() error {
+	// An explicit TORCH configuration is validated even when the torch step is disabled.
 	torchIsConfigured := c.Services.TORCH.BaseURL != "" || c.Services.TORCH.EffectiveAuth() != (AuthConfig{})
 	if c.Pipeline.IsStepEnabled(StepTorchImport) || torchIsConfigured {
 		if err := c.Services.TORCH.Validate(); err != nil {
 			return fmt.Errorf("TORCH config validation failed: %w", err)
 		}
 	}
+	return nil
+}
 
-	// Validate Send config if send step is enabled
+func (c *ProjectConfig) validateSendConfig() error {
 	if c.Pipeline.IsStepEnabled(StepSend) {
 		if err := c.Services.Send.Validate(); err != nil {
 			return fmt.Errorf("send config validation failed: %w", err)
 		}
 	}
+	return nil
+}
 
-	// Validate service URLs are well-formed (if provided)
+func (c *ProjectConfig) validateServiceURLsWellFormed() error {
 	if err := c.Services.DIMP.Validate(); err != nil {
 		return err
 	}
@@ -191,25 +235,23 @@ func (c *ProjectConfig) Validate() error {
 			return fmt.Errorf("invalid validation url: %w", err)
 		}
 	}
-	// Validate retry configuration
-	if c.Retry.MaxAttempts < 1 || c.Retry.MaxAttempts > 10 {
+	return nil
+}
+
+// Validate checks the retry bounds.
+func (r *RetryConfig) Validate() error {
+	if r.MaxAttempts < 1 || r.MaxAttempts > 10 {
 		return errors.New("max_attempts must be between 1 and 10")
 	}
-	if c.Retry.InitialBackoffMs <= 0 {
+	if r.InitialBackoffMs <= 0 {
 		return errors.New("initial_backoff_ms must be positive")
 	}
-	if c.Retry.MaxBackoffMs <= 0 {
+	if r.MaxBackoffMs <= 0 {
 		return errors.New("max_backoff_ms must be positive")
 	}
-	if c.Retry.InitialBackoffMs >= c.Retry.MaxBackoffMs {
+	if r.InitialBackoffMs >= r.MaxBackoffMs {
 		return errors.New("initial_backoff_ms must be less than max_backoff_ms")
 	}
-
-	// Validate jobs_dir is not empty
-	if c.JobsDir == "" {
-		return errors.New("jobs_dir is required")
-	}
-
 	return nil
 }
 

@@ -228,69 +228,80 @@ func copyFile(sourcePath string, destDir string, logger *lib.Logger, compress bo
 func ValidateImportSource(sourcePath string, inputType models.InputType, recursive bool) error {
 	switch inputType {
 	case models.InputTypeLocal:
-		info, err := os.Stat(sourcePath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return fmt.Errorf("directory does not exist: %s", sourcePath)
-			}
-			return fmt.Errorf("cannot access directory: %w", err)
-		}
-
-		if !info.IsDir() {
-			fileExt := strings.ToLower(filepath.Ext(sourcePath))
-			var hint string
-			switch fileExt {
-			case ".json":
-				hint = "\n\nThis appears to be a JSON file. Possible issues:\n  - File may not have valid CRTDL structure (missing cohortDefinition or dataExtraction)\n  - File may be using FHIR Parameters format instead of flat CRTDL format\n\nRun with verbose logging to see detailed validation errors."
-			case ".ndjson":
-				hint = "\n\nThis is an NDJSON file. Please provide the directory containing it, not the file itself."
-			}
-			return fmt.Errorf("expected directory but got file: %s%s", sourcePath, hint)
-		}
-
-		files, _, err := findNDJSONFiles(sourcePath, recursive)
-		if err != nil {
-			return fmt.Errorf("failed to scan directory: %w", err)
-		}
-
-		if len(files) == 0 {
-			return fmt.Errorf("no FHIR NDJSON files found in directory: %s%s\n\nExpected files with extensions: .ndjson", sourcePath, recursiveHint(recursive))
-		}
-
-		return nil
-
+		return validateLocalSource(sourcePath, recursive)
 	case models.InputTypeHTTP:
 		if sourcePath == "" {
 			return fmt.Errorf("URL cannot be empty")
 		}
 		return nil
-
 	case models.InputTypeCRTDL:
-		if sourcePath == "" {
-			return fmt.Errorf("CRTDL file path cannot be empty")
-		}
-		info, err := os.Stat(sourcePath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return fmt.Errorf("CRTDL file does not exist: %s", sourcePath)
-			}
-			return fmt.Errorf("cannot access CRTDL file: %w", err)
-		}
-		if info.IsDir() {
-			return fmt.Errorf("CRTDL path is a directory, not a file: %s", sourcePath)
-		}
-		return nil
-
+		return validateCRTDLSource(sourcePath)
 	case models.InputTypeTORCHURL:
-		if sourcePath == "" {
-			return fmt.Errorf("TORCH result URL cannot be empty")
-		}
-		if !strings.HasPrefix(sourcePath, "http://") && !strings.HasPrefix(sourcePath, "https://") {
-			return fmt.Errorf("TORCH URL must start with http:// or https://")
-		}
-		return nil
-
+		return validateTORCHURLSource(sourcePath)
 	default:
 		return fmt.Errorf("unknown input type: %s", inputType)
 	}
+}
+
+func validateLocalSource(sourcePath string, recursive bool) error {
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("directory does not exist: %s", sourcePath)
+		}
+		return fmt.Errorf("cannot access directory: %w", err)
+	}
+
+	if !info.IsDir() {
+		return fmt.Errorf("expected directory but got file: %s%s", sourcePath, fileTypeHint(sourcePath))
+	}
+
+	files, _, err := findNDJSONFiles(sourcePath, recursive)
+	if err != nil {
+		return fmt.Errorf("failed to scan directory: %w", err)
+	}
+
+	if len(files) == 0 {
+		return fmt.Errorf("no FHIR NDJSON files found in directory: %s%s\n\nExpected files with extensions: .ndjson", sourcePath, recursiveHint(recursive))
+	}
+
+	return nil
+}
+
+// fileTypeHint explains what to do when a file is given instead of a directory.
+func fileTypeHint(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".json":
+		return "\n\nThis appears to be a JSON file. Possible issues:\n  - File may not have valid CRTDL structure (missing cohortDefinition or dataExtraction)\n  - File may be using FHIR Parameters format instead of flat CRTDL format\n\nRun with verbose logging to see detailed validation errors."
+	case ".ndjson":
+		return "\n\nThis is an NDJSON file. Please provide the directory containing it, not the file itself."
+	}
+	return ""
+}
+
+func validateCRTDLSource(sourcePath string) error {
+	if sourcePath == "" {
+		return fmt.Errorf("CRTDL file path cannot be empty")
+	}
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("CRTDL file does not exist: %s", sourcePath)
+		}
+		return fmt.Errorf("cannot access CRTDL file: %w", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("CRTDL path is a directory, not a file: %s", sourcePath)
+	}
+	return nil
+}
+
+func validateTORCHURLSource(sourcePath string) error {
+	if sourcePath == "" {
+		return fmt.Errorf("TORCH result URL cannot be empty")
+	}
+	if !strings.HasPrefix(sourcePath, "http://") && !strings.HasPrefix(sourcePath, "https://") {
+		return fmt.Errorf("TORCH URL must start with http:// or https://")
+	}
+	return nil
 }

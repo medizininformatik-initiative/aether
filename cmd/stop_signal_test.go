@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // fakeSignal is an os.Signal that is not a syscall.Signal, thus it exercises the
@@ -17,6 +18,32 @@ type fakeSignal struct{}
 
 func (fakeSignal) String() string { return "fake" }
 func (fakeSignal) Signal()        {}
+
+func TestStopHandler_RemoveWaitsForStopThatStarted(t *testing.T) {
+	signals := make(chan os.Signal, 1)
+	stops := make(chan os.Signal, 1)
+	releaseStop := make(chan struct{})
+	remove := watchStopSignals(signals, func(sig os.Signal) {
+		stops <- sig
+		<-releaseStop
+	})
+	signals <- syscall.SIGTERM
+	require.Equal(t, syscall.SIGTERM, <-stops)
+
+	removed := make(chan struct{})
+	go func() {
+		remove()
+		close(removed)
+	}()
+
+	select {
+	case <-removed:
+		t.Fatal("the handler was removed before it ended the process")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(releaseStop)
+	<-removed
+}
 
 func TestExitCodeForSignal(t *testing.T) {
 	tests := []struct {

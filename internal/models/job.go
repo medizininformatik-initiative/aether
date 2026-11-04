@@ -40,7 +40,7 @@ const (
 	JobStatusCompleted  JobStatus = "completed"
 	JobStatusFailed     JobStatus = "failed"
 	// JobStatusStopped marks a job that no process runs any more, but which is
-	// not complete. The signal handler writes it on SIGINT and SIGTERM.
+	// not complete. A stop writes it: SIGINT, SIGTERM, or `aether job stop`.
 	// EffectiveJobStatus also reports it for a process that died without a
 	// chance to write, for example from SIGKILL or a crash.
 	// It is resumable: `pipeline continue` re-enters the current step.

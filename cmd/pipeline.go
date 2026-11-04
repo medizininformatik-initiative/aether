@@ -434,6 +434,7 @@ func createStartJob(config *models.ProjectConfig, crtdlPath, inputSource string,
 // runStartJob holds the job lock and runs the job until it completes, pauses
 // or fails.
 func runStartJob(config *models.ProjectConfig, job *models.PipelineJob, logger *lib.Logger) error {
+	stopRequested := services.NewStopRequestCheck(config.JobsDir, job.JobID)
 	lock, err := services.AcquireJobLock(config.JobsDir, job.JobID, logger)
 	if err != nil {
 		return fmt.Errorf("cannot start pipeline: %w\n\nAnother process may be working on this job", err)
@@ -446,7 +447,7 @@ func runStartJob(config *models.ProjectConfig, job *models.PipelineJob, logger *
 		return fmt.Errorf("failed to update job state: %w", err)
 	}
 
-	defer installStopHandler(config.JobsDir, job.JobID, logger)()
+	defer installStopTriggers(config.JobsDir, job.JobID, stopRequested, logger)()
 
 	fmt.Printf("Starting %s step...\n", startedJob.CurrentStep)
 
@@ -537,6 +538,7 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	stopRequested := services.NewStopRequestCheck(config.JobsDir, jobID)
 	lock, err := services.AcquireJobLock(config.JobsDir, jobID, logger)
 	if err != nil {
 		return fmt.Errorf("cannot continue pipeline: %w\n\nAnother process may be working on this job. Wait for it to complete or check its status with 'pipeline status'", err)
@@ -550,7 +552,7 @@ func runPipelineContinue(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("\nResuming pipeline execution...\n")
 
-	defer installStopHandler(config.JobsDir, jobID, logger)()
+	defer installStopTriggers(config.JobsDir, jobID, stopRequested, logger)()
 
 	return runLoopAndReport(job, logger)
 }

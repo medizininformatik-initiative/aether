@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -41,9 +42,28 @@ func TestFetchOAuth2Token_Success(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
-	token, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
+	token, err := services.FetchOAuth2Token(context.Background(), server.URL, "test-client", "test-secret", httpClient)
 	require.NoError(t, err)
 	assert.Equal(t, "test-token-123", token)
+}
+
+func TestFetchOAuth2Token_EndsWhenContextEnds(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	defer server.Close()
+	defer close(release)
+	logger := lib.NewLogger(lib.LogLevelError)
+	httpClient := services.NewHTTPClient(30*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := services.FetchOAuth2Token(ctx, server.URL, "test-client", "test-secret", httpClient)
+
+	require.Error(t, err)
+	assert.Less(t, time.Since(start), 5*time.Second)
 }
 
 func TestFetchOAuth2Token_CacheHit(t *testing.T) {
@@ -63,13 +83,13 @@ func TestFetchOAuth2Token_CacheHit(t *testing.T) {
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
 	// First request - should hit the server
-	token1, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
+	token1, err := services.FetchOAuth2Token(context.Background(), server.URL, "test-client", "test-secret", httpClient)
 	require.NoError(t, err)
 	assert.Equal(t, "cached-token", token1)
 	assert.Equal(t, 1, requestCount)
 
 	// Second request - should use cache
-	token2, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
+	token2, err := services.FetchOAuth2Token(context.Background(), server.URL, "test-client", "test-secret", httpClient)
 	require.NoError(t, err)
 	assert.Equal(t, "cached-token", token2)
 	assert.Equal(t, 1, requestCount) // Still 1, cache was used
@@ -95,12 +115,12 @@ func TestFetchOAuth2Token_DifferentIssuersNoCollision(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
-	tokenA, err := services.FetchOAuth2Token(serverA.URL, "client-a", "secret-a", httpClient)
+	tokenA, err := services.FetchOAuth2Token(context.Background(), serverA.URL, "client-a", "secret-a", httpClient)
 	require.NoError(t, err)
 	assert.Equal(t, "token-A", tokenA)
 
 	// Second issuer within the first token's expiry window must not receive A's token.
-	tokenB, err := services.FetchOAuth2Token(serverB.URL, "client-b", "secret-b", httpClient)
+	tokenB, err := services.FetchOAuth2Token(context.Background(), serverB.URL, "client-b", "secret-b", httpClient)
 	require.NoError(t, err)
 	assert.Equal(t, "token-B", tokenB)
 }
@@ -119,11 +139,11 @@ func TestFetchOAuth2Token_DifferentClientsSameIssuerNoCollision(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
-	token1, err := services.FetchOAuth2Token(server.URL, "client-one", "secret", httpClient)
+	token1, err := services.FetchOAuth2Token(context.Background(), server.URL, "client-one", "secret", httpClient)
 	require.NoError(t, err)
 	assert.Equal(t, "token-client-one", token1)
 
-	token2, err := services.FetchOAuth2Token(server.URL, "client-two", "secret", httpClient)
+	token2, err := services.FetchOAuth2Token(context.Background(), server.URL, "client-two", "secret", httpClient)
 	require.NoError(t, err)
 	assert.Equal(t, "token-client-two", token2)
 }
@@ -147,7 +167,7 @@ func TestFetchOAuth2Token_ConcurrentSameKey(t *testing.T) {
 	for i := 0; i < goroutines; i++ {
 		go func() {
 			defer wg.Done()
-			token, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
+			token, err := services.FetchOAuth2Token(context.Background(), server.URL, "test-client", "test-secret", httpClient)
 			assert.NoError(t, err)
 			assert.Equal(t, "concurrent-token", token)
 		}()
@@ -168,7 +188,7 @@ func TestFetchOAuth2Token_HTTPError(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
-	_, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
+	_, err := services.FetchOAuth2Token(context.Background(), server.URL, "test-client", "test-secret", httpClient)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "401")
 }
@@ -187,7 +207,7 @@ func TestFetchOAuth2Token_InvalidJSON(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
-	_, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
+	_, err := services.FetchOAuth2Token(context.Background(), server.URL, "test-client", "test-secret", httpClient)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parse token response")
 }
@@ -207,7 +227,7 @@ func TestFetchOAuth2Token_MissingAccessToken(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
-	_, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
+	_, err := services.FetchOAuth2Token(context.Background(), server.URL, "test-client", "test-secret", httpClient)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing access_token")
 }
@@ -230,13 +250,13 @@ func TestFetchOAuth2Token_ShortExpiresIn(t *testing.T) {
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
 	// First request
-	token1, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
+	token1, err := services.FetchOAuth2Token(context.Background(), server.URL, "test-client", "test-secret", httpClient)
 	require.NoError(t, err)
 	assert.Equal(t, "short-lived-token", token1)
 	assert.Equal(t, 1, requestCount)
 
 	// Second request - should NOT use cache because token expires too soon
-	token2, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
+	token2, err := services.FetchOAuth2Token(context.Background(), server.URL, "test-client", "test-secret", httpClient)
 	require.NoError(t, err)
 	assert.Equal(t, "short-lived-token", token2)
 	assert.Equal(t, 2, requestCount) // Request count increased, cache was not used
@@ -258,7 +278,7 @@ func TestFetchOAuth2Token_CacheExpiresThirtySecondsEarly(t *testing.T) {
 	logger := lib.NewLogger(lib.LogLevelError)
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 	fetch := func() {
-		_, err := services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
+		_, err := services.FetchOAuth2Token(context.Background(), server.URL, "test-client", "test-secret", httpClient)
 		require.NoError(t, err)
 	}
 
@@ -288,7 +308,7 @@ func TestFetchOAuth2Token_TrailingSlashInIssuerURI(t *testing.T) {
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
 	// Issuer URI with trailing slash
-	_, err := services.FetchOAuth2Token(server.URL+"/", "test-client", "test-secret", httpClient)
+	_, err := services.FetchOAuth2Token(context.Background(), server.URL+"/", "test-client", "test-secret", httpClient)
 	require.NoError(t, err)
 	// Should not have double slashes
 	assert.Equal(t, "/protocol/openid-connect/token", receivedPath)
@@ -309,7 +329,7 @@ func TestClearOAuth2TokenCache(t *testing.T) {
 	httpClient := services.NewHTTPClient(5*time.Second, models.RetryConfig{MaxAttempts: 1}, models.TLSConfig{}, logger)
 
 	// Populate cache
-	_, _ = services.FetchOAuth2Token(server.URL, "test-client", "test-secret", httpClient)
+	_, _ = services.FetchOAuth2Token(context.Background(), server.URL, "test-client", "test-secret", httpClient)
 
 	// Clear cache
 	services.ClearOAuth2TokenCache()
@@ -324,7 +344,7 @@ func TestClearOAuth2TokenCache(t *testing.T) {
 	}))
 	defer server2.Close()
 
-	token, err := services.FetchOAuth2Token(server2.URL, "test-client", "test-secret", httpClient)
+	token, err := services.FetchOAuth2Token(context.Background(), server2.URL, "test-client", "test-secret", httpClient)
 	require.NoError(t, err)
 	assert.Equal(t, "new-token", token)
 	assert.Equal(t, 1, requestCount) // Server was called because cache was cleared

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,7 +40,7 @@ type oauth2TokenResponse struct {
 
 // FetchOAuth2Token retrieves an access token using the OAuth2 client credentials flow.
 // Uses the Keycloak standard token endpoint: {issuer_uri}/protocol/openid-connect/token
-func FetchOAuth2Token(issuerURI, clientID, clientSecret string, httpClient *HTTPClient) (string, error) {
+func FetchOAuth2Token(ctx context.Context, issuerURI, clientID, clientSecret string, httpClient *HTTPClient) (string, error) {
 	cacheKey := oauth2CacheKey{issuerURI: issuerURI, clientID: clientID}
 
 	// Check cache first
@@ -60,7 +61,7 @@ func FetchOAuth2Token(issuerURI, clientID, clientSecret string, httpClient *HTTP
 	data.Set("client_secret", clientSecret)
 
 	// Create request
-	req, err := http.NewRequest("POST", tokenURL, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
 		return "", fmt.Errorf("failed to create token request: %w", err)
 	}

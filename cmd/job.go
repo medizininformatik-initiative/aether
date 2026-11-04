@@ -268,29 +268,9 @@ func runJobRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	config, err := services.LoadConfig(cfgPath)
+	config, job, err := loadRunnableJob(cfgPath, jobID, stepName)
 	if err != nil {
-		return fmt.Errorf("failed to load configuration: %w", err)
-	}
-
-	// Check if step is enabled in configuration
-	if !isStepEnabledInConfig(config, stepName) {
-		return fmt.Errorf("step '%s' is not enabled in configuration (check enabled_steps in config file)", stepName)
-	}
-
-	// Load job
-	job, err := pipeline.LoadJob(config.JobsDir, jobID)
-	if err != nil {
-		return fmt.Errorf("failed to load job: %w", err)
-	}
-
-	fmt.Printf("Job: %s\n", job.JobID)
-	fmt.Printf("Executing step: %s\n\n", stepName)
-
-	// Validate prerequisites
-	canRun, prerequisite := models.CanRunStep(*job, stepName)
-	if !canRun {
-		return fmt.Errorf("cannot run step '%s': prerequisite step '%s' must be completed first", stepName, prerequisite)
+		return err
 	}
 
 	// Acquire job lock to prevent concurrent execution
@@ -299,11 +279,7 @@ func runJobRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("cannot execute step: %w\n\nAnother process may be working on this job. Wait for it to complete or check its status with 'pipeline status'", err)
 	}
-	defer func() {
-		if err := lock.Release(); err != nil {
-			logger.Error("Failed to release job lock", "error", err)
-		}
-	}()
+	defer releaseJobLock(lock, logger)
 
 	defer installStopHandler(config.JobsDir, jobID, logger)()
 
@@ -316,6 +292,32 @@ func runJobRun(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\n✓ Step '%s' completed successfully\n", stepName)
 
 	return nil
+}
+
+// loadRunnableJob loads the configuration and the job, and checks that the step
+// is enabled and that its prerequisite step is completed.
+func loadRunnableJob(cfgPath string, jobID string, stepName models.StepName) (*models.ProjectConfig, *models.PipelineJob, error) {
+	config, err := services.LoadConfig(cfgPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	if !isStepEnabledInConfig(config, stepName) {
+		return nil, nil, fmt.Errorf("step '%s' is not enabled in configuration (check enabled_steps in config file)", stepName)
+	}
+
+	job, err := pipeline.LoadJob(config.JobsDir, jobID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load job: %w", err)
+	}
+
+	fmt.Printf("Job: %s\n", job.JobID)
+	fmt.Printf("Executing step: %s\n\n", stepName)
+
+	if canRun, prerequisite := models.CanRunStep(*job, stepName); !canRun {
+		return nil, nil, fmt.Errorf("cannot run step '%s': prerequisite step '%s' must be completed first", stepName, prerequisite)
+	}
+	return config, job, nil
 }
 
 // validateStepName validates and converts step flag to StepName type

@@ -301,3 +301,60 @@ func TestSend_RejectsBrokenRequestContract(t *testing.T) {
 		})
 	}
 }
+
+func TestSend_TransferLoad_ZipEntryNameIsEntryName(t *testing.T) {
+	var mu sync.Mutex
+	var binaries []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var res map[string]any
+		_ = json.Unmarshal(body, &res)
+		if res["resourceType"] == "Binary" {
+			mu.Lock()
+			binaries = append(binaries, res)
+			mu.Unlock()
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sub", "b.csv")
+	writeSendFile(t, path, "id\n1\n")
+
+	_, err := send.Send(context.Background(), send.Request{
+		JobID:  "job-name",
+		Config: transferSendConfig(server.URL),
+		Retry:  FastRetryConfig(),
+		Files:  []send.File{{Path: path, Name: "sub/b.csv", EntryName: "sub/b.csv"}},
+		State:  send.State{FailedRequestsDir: filepath.Join(dir, "failed")},
+	}, lib.NewLogger(lib.LogLevelError))
+	require.NoError(t, err)
+
+	require.Len(t, binaries, 1)
+	data, err := base64.StdEncoding.DecodeString(binaries[0]["data"].(string))
+	require.NoError(t, err)
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	require.NoError(t, err)
+	require.Len(t, zr.File, 1)
+	assert.Equal(t, "sub/b.csv", zr.File[0].Name)
+}
+
+func TestSend_TransferLoad_ErrorNamesEntryName(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+
+	_, err := send.Send(context.Background(), send.Request{
+		JobID:  "job-name",
+		Config: transferSendConfig(server.URL),
+		Retry:  FastRetryConfig(),
+		Files:  []send.File{{Path: filepath.Join(dir, "2024", "a.csv"), Name: "2024/a.csv", EntryName: "2024/a.csv"}},
+		State:  send.State{FailedRequestsDir: filepath.Join(dir, "failed")},
+	}, lib.NewLogger(lib.LogLevelError))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to process 2024/a.csv")
+}

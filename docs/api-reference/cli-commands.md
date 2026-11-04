@@ -108,6 +108,45 @@ aether pipeline continue aether.yaml abc-123-def
 aether pipeline continue aether.yaml abc-123-def --no-progress
 ```
 
+## Send Command
+
+### `aether send`
+
+Send the CSV files of a directory with the `services.send` settings.
+
+```bash
+aether send <config> <dir> [--job <job-id>]
+```
+
+The command needs no CRTDL and no pipeline job. It reads the files in place and makes no copy of them. It writes nothing into `<dir>`. It ignores the `pipeline` section of the configuration, so a file with only `services.send` and `jobs_dir` is sufficient.
+
+**Arguments:**
+- `<config>` - Path to `aether.yaml` (required)
+- `<dir>` - Directory with the CSV files (required)
+
+**Rules:**
+- The command sends each file below `<dir>` whose name ends in `.csv`, in any letter case. It does not send other files.
+- The command follows symbolic links to files and to directories. A link loop, a link to nothing, and a directory without CSV files are errors.
+- `send_as` must be `transfer_load` or `s3_upload`. `direct_resource_load` is an error.
+- With `transfer_load`, the name of each zip entry is the path relative to `<dir>`.
+- With `s3_upload`, the S3 key is the job ID and the path relative to `<dir>`.
+
+**Job directory:**
+
+Each run creates a job directory under `jobs_dir`. It holds `source.json`, `job.log`, and the upload manifest. `source.json` records the name, size, and SHA-256 hash of each file. The command prints the job ID and the command to resume the run. These jobs have no `state.json`, so `aether job list` does not show them.
+
+**Options:**
+- `--job <job-id>` - Resume an earlier run. The command compares the files with `source.json` and stops with an error when they differ. It sends nothing when the run is complete.
+
+**Examples:**
+```bash
+# Send all CSV files below ./csv
+aether send aether.yaml ./csv
+
+# Resume an earlier run
+aether send aether.yaml ./csv --job 20250101_1200_3f2a9c1e-7b4d-4e8a-9c6f-1d2e3f4a5b6c
+```
+
 ## Job Commands
 
 ### `aether job list`

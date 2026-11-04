@@ -158,22 +158,17 @@ func (f *FHIRDataFile) Validate() error {
 	return nil
 }
 
-// Validate checks if a ProjectConfig has valid fields
+// Validate checks if a ProjectConfig has valid fields for a pipeline run. It
+// includes the checks of ValidateCommon.
 func (c *ProjectConfig) Validate() error {
-	if err := runChecks(
+	return runChecks(
 		c.validateStepList,
 		c.validateStepServiceURLs,
 		c.validateTORCHConfig,
 		c.validateSendConfig,
 		c.validateServiceURLsWellFormed,
-		c.Retry.Validate,
-	); err != nil {
-		return err
-	}
-	if c.JobsDir == "" {
-		return errors.New("jobs_dir is required")
-	}
-	return nil
+		c.ValidateCommon,
+	)
 }
 
 func (c *ProjectConfig) validateStepList() error {
@@ -234,6 +229,18 @@ func (c *ProjectConfig) validateServiceURLsWellFormed() error {
 		if _, err := url.Parse(c.Services.Validation.URL); err != nil {
 			return fmt.Errorf("invalid validation url: %w", err)
 		}
+	}
+	return nil
+}
+
+// ValidateCommon checks the fields that every command uses, also commands that
+// run no pipeline: the retry settings and jobs_dir.
+func (c *ProjectConfig) ValidateCommon() error {
+	if err := c.Retry.Validate(); err != nil {
+		return err
+	}
+	if c.JobsDir == "" {
+		return errors.New("jobs_dir is required")
 	}
 	return nil
 }

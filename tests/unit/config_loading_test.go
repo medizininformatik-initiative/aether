@@ -15,6 +15,45 @@ import (
 	"github.com/medizininformatik-initiative/aether/internal/services"
 )
 
+func TestLoadSendConfig_AcceptsConfigWithoutPipeline(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	jobsDir := filepath.Join(tmpDir, "jobs")
+	content := `
+services:
+  send:
+    url: "http://localhost:8080/fhir"
+    send_as: transfer_load
+jobs_dir: "` + jobsDir + `"
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(content), 0o644))
+
+	_, err := services.LoadConfig(configFile)
+	require.Error(t, err)
+
+	config, err := services.LoadSendConfig(configFile)
+	require.NoError(t, err)
+	assert.Equal(t, models.SendModeTransferLoad, config.Services.Send.SendAs)
+	assert.Equal(t, "http://localhost:8080/fhir", config.Services.Send.URL)
+	assert.DirExists(t, jobsDir)
+}
+
+func TestLoadSendConfig_RefusesRemovedKeys(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	content := `
+services:
+  dimp:
+    experimental_v3: true
+jobs_dir: "` + filepath.Join(tmpDir, "jobs") + `"
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(content), 0o644))
+
+	_, err := services.LoadSendConfig(configFile)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "experimental_v3")
+}
+
 // TestConfigLoading_MultipleEnabledSteps verifies that all enabled steps
 // are loaded from YAML config file (regression test for viper.Unmarshal bug)
 func TestConfigLoading_MultipleEnabledSteps(t *testing.T) {

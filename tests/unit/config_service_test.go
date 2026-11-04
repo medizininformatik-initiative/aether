@@ -220,6 +220,9 @@ func TestLoadConfig_InvalidJobsDir(t *testing.T) {
 	// Create a config file
 	configFile := filepath.Join(tmpDir, "config.yaml")
 	configContent := `jobs_dir: ` + jobsDir + `
+pipeline:
+  enabled_steps:
+    - local_import
 services:
   dimp:
     url: "http://localhost:8080"
@@ -228,9 +231,9 @@ services:
 
 	viper.Reset()
 
-	// Load config - should fail because jobs_dir is a file, not a directory
 	_, loadErr := services.LoadConfig(configFile)
-	assert.Error(t, loadErr)
+	require.Error(t, loadErr)
+	assert.Contains(t, loadErr.Error(), "jobs_dir is not a directory")
 }
 
 // TestLoadConfig_EnvVarOverride tests environment variable override of config values

@@ -28,9 +28,12 @@ import (
 type File struct {
 	// Path is the location of the file on disk.
 	Path string
-	// Name is the path relative to the input root. Only s3_upload uses it, as
-	// the suffix of the S3 key. The zip entry name is the base name of Path.
+	// Name is the path relative to the input root. s3_upload uses it as the
+	// suffix of the S3 key.
 	Name string
+	// EntryName is the name of the file in its transfer_load zip archive. When
+	// EntryName is empty, the name is the base name of Path.
+	EntryName string
 }
 
 // State holds the paths where a send writes its own files.
@@ -195,9 +198,9 @@ func buildBinaryResources(files []File, jobID string, logger *lib.Logger) ([]bin
 	var binaryResources []binaryEntry
 
 	for _, file := range files {
-		fileName := filepath.Base(file.Path)
+		fileName := displayName(file)
 
-		entry, err := createBinaryFromFile(file.Path)
+		entry, err := createBinaryFromFile(file)
 		if err != nil {
 			return nil, fmt.Errorf("failed to process %s: %w", fileName, err)
 		}
@@ -332,12 +335,13 @@ func newRequestDump(req Request, logger *lib.Logger) *services.RequestDump {
 
 // createBinaryFromFile reads a file, zips it, base64-encodes the content,
 // and returns a FHIR Binary resource.
-func createBinaryFromFile(filePath string) (binaryEntry, error) {
+func createBinaryFromFile(file File) (binaryEntry, error) {
+	filePath := file.Path
 	// Every file is zipped for transfer, so the Binary describes a zip archive.
 	// application/zip is the IANA-registered type for zip archives.
 	const contentType = "application/zip"
 
-	data, err := zipSingleFile(filePath)
+	data, err := zipSingleFile(file)
 	if err != nil {
 		return binaryEntry{}, fmt.Errorf("failed to zip %s: %w", filepath.Base(filePath), err)
 	}
@@ -376,14 +380,15 @@ func (b binaryEntry) dumpResource() map[string]any {
 // zipSingleFile compresses a single file into an in-memory zip archive.
 // Uses lib.OpenFileForReading to transparently decompress .zst files before zipping,
 // so the zip contains the raw (uncompressed) data.
-func zipSingleFile(filePath string) ([]byte, error) {
+func zipSingleFile(file File) ([]byte, error) {
+	filePath := file.Path
 	reader, err := lib.OpenFileForReading(filePath)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = reader.Close() }()
 
-	entryName := lib.GetUncompressedFilename(filepath.Base(filePath))
+	entryName := zipEntryName(file)
 
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -402,6 +407,19 @@ func zipSingleFile(filePath string) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+// zipEntryName gives the entry name of a file in its zip archive.
+func zipEntryName(file File) string {
+	return lib.GetUncompressedFilename(displayName(file))
+}
+
+// displayName gives the name of a file in messages and logs.
+func displayName(file File) string {
+	if file.EntryName != "" {
+		return file.EntryName
+	}
+	return filepath.Base(file.Path)
 }
 
 // buildDocumentReference creates a FHIR DocumentReference linking all Binary resources.

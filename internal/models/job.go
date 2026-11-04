@@ -49,6 +49,11 @@ const (
 	JobStatusWaiting JobStatus = "waiting"
 )
 
+// IsEnded tells if the job reached a final outcome: it is completed or failed.
+func (s JobStatus) IsEnded() bool {
+	return s == JobStatusCompleted || s == JobStatusFailed
+}
+
 // IsValidInputType checks if the input type is recognized
 func IsValidInputType(t InputType) bool {
 	return t == InputTypeLocal || t == InputTypeHTTP || t == InputTypeCRTDL || t == InputTypeTORCHURL

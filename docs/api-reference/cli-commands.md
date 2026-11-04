@@ -221,6 +221,53 @@ aether job run aether.yaml abc-123-def --step local_import
 aether job run aether.yaml abc-123-def --step dimp --force
 ```
 
+### `aether job stop`
+
+Stop a job for good and cancel its TORCH job.
+
+```bash
+aether job stop <config> <job-id>
+```
+
+If a process runs the job, the command asks that process to stop and waits
+until the process ends. The process records the status `stopped`, cancels the
+TORCH job, and exits with code 143. If the process does not record the stop in
+30 seconds, the command fails. After the record, the command waits until the
+process ends. The command asks the process with a marker file `.stop` in the job
+directory. It does not send a signal, thus it also works on Windows. The command
+removes the marker when it ends.
+
+When no process runs the job, the command holds the job lock and sets the
+status to `stopped` itself. This also applies when the process of the job ended
+without a record of the stop, for example after SIGKILL.
+
+A running process stops a job in any state that is not `completed` or `failed`,
+also a job with the status `waiting` or `pending`.
+
+If the torch step waits for a TORCH job, Aether cancels that TORCH job with
+`POST /fhir/Task/{id}/$cancel`. The cancel sends one request and waits at most
+5 seconds, also for the OAuth2 token. After the process of the job ends, the
+command sends the cancel again, thus it knows the result. If TORCH answers
+`404`, `409` or `410`, the TORCH job does not run, and the cancel counts as
+done. If the cancel fails, the job stays `stopped` and the TORCH job runs until
+it ends. The command then prints an error and exits with a non-zero code.
+
+A job that is `completed` or `failed` cannot be stopped. The command then prints
+an error and exits with a non-zero code. This also applies when the job ends on
+its own while the command waits.
+
+`aether pipeline continue` starts the stopped job again. TORCH answers `410 Gone`
+for the cancelled TORCH job, thus `continue` submits a new extraction.
+
+**Examples:**
+```bash
+# Stop a job
+aether job stop aether.yaml abc-123-def
+
+# Start it again with a new TORCH extraction
+aether pipeline continue aether.yaml abc-123-def
+```
+
 ## Other Commands
 
 ### `aether completion`

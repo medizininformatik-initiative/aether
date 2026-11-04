@@ -237,8 +237,9 @@ func IsJobComplete(job PipelineJob) bool {
 // it needs `pipeline continue`, which in_progress would hide.
 //
 // The steps cannot show JobStatusStopped: a stopped job says its process died,
-// which is a fact about the process, not about a step. The signal handler writes
-// that status, and EffectiveJobStatus infers it from the job lock.
+// which is a fact about the process, not about a step. A stop (a signal or
+// `aether job stop`) writes that status, and EffectiveJobStatus infers it from
+// the job lock.
 //
 // Pure function - no mutations.
 func DeriveJobStatus(job PipelineJob) JobStatus {

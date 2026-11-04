@@ -187,6 +187,11 @@ jobs:
         run: |
           JOBS_DIR=./jobs ../scripts/verify-e2e-output.sh
 
+      # Runs after the output check, because that check expects every job to complete.
+      - name: Run job stop E2E test
+        working-directory: .github/test
+        run: ../scripts/run-job-stop-e2e-test.sh
+
       - name: Upload E2E job outputs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

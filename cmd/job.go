@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"time"
 
@@ -27,7 +30,8 @@ var jobCmd = &cobra.Command{
 
 Available subcommands:
   list - List all pipeline jobs
-  run  - Execute a specific pipeline step manually`,
+  run  - Execute a specific pipeline step manually
+  stop - Stop a job and cancel its TORCH job`,
 }
 
 // jobListCmd represents the job list command
@@ -123,6 +127,35 @@ Error Handling:
 	RunE: runJobRun,
 }
 
+// jobStopCmd represents the job stop command
+var jobStopCmd = &cobra.Command{
+	Use:   "stop <config> <job-id>",
+	Short: "Stop a job and cancel its TORCH job",
+	Long: `Stop a job for good.
+
+Arguments:
+  <config>  Path to aether.yaml (required, first positional)
+  <job-id>  Pipeline job ID (required, second positional)
+
+If a process runs the job, this command asks that process to stop and waits
+until it ends. At most 30 seconds. If the job waits for a TORCH job, the
+command cancels that TORCH job on the TORCH server.
+
+If no process runs the job, the command sets the job status to stopped and
+cancels the TORCH job.
+
+A job that is completed or failed cannot be stopped.
+
+Examples:
+  # Stop a job
+  aether job stop aether.yaml 20240115_1030_550e8400-e29b-41d4-a716-446655440000
+
+  # Start the job again with a new TORCH extraction
+  aether pipeline continue aether.yaml 20240115_1030_550e8400-e29b-41d4-a716-446655440000`,
+	Args: cobra.ExactArgs(2),
+	RunE: runJobStop,
+}
+
 var (
 	stepFlag  string
 	forceFlag bool
@@ -132,6 +165,7 @@ func init() {
 	rootCmd.AddCommand(jobCmd)
 	jobCmd.AddCommand(jobListCmd)
 	jobCmd.AddCommand(jobRunCmd)
+	jobCmd.AddCommand(jobStopCmd)
 
 	// Add --step flag to job run command
 	jobRunCmd.Flags().StringVar(&stepFlag, "step", "", "Pipeline step to execute (required)")
@@ -259,6 +293,97 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%dd", days)
 }
 
+const (
+	stopProcessWait = 30 * time.Second
+	stopProcessPoll = 100 * time.Millisecond
+)
+
+func runJobStop(cmd *cobra.Command, args []string) error {
+	cfgPath := args[0]
+	jobID := args[1]
+
+	config, err := services.LoadConfig(cfgPath)
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	return stopJob(config.JobsDir, cfgPath, jobID, stopProcessWait, stopProcessPoll, cmd.OutOrStdout(), lib.DefaultLogger)
+}
+
+// stopJob stops the job under the job lock. If a process holds the lock, it
+// asks that process to stop and waits for the lock to go. Then it takes the
+// lock and stops the job itself: this cancels the TORCH job again, because the
+// cancel of the process can have failed, and it stops a job whose process died
+// without a record of the stop.
+// It returns an error if the job ended before, or if the TORCH cancel fails.
+// The job stays stopped in the second case.
+func stopJob(
+	jobsDir string,
+	cfgPath string,
+	jobID string,
+	wait time.Duration,
+	poll time.Duration,
+	out io.Writer,
+	logger *lib.Logger,
+) error {
+	if _, err := pipeline.LoadJob(jobsDir, jobID); err != nil {
+		return fmt.Errorf("failed to load job: %w", err)
+	}
+
+	lock, err := services.AcquireJobLock(jobsDir, jobID, logger)
+	if err != nil {
+		if err := stopRunningJob(jobsDir, jobID, wait, poll); err != nil {
+			return err
+		}
+		lock, err = services.AcquireJobLock(jobsDir, jobID, logger)
+		if err != nil {
+			return fmt.Errorf("failed to lock job %s to stop it: %w", jobID, err)
+		}
+	}
+	defer releaseJobLock(lock, logger)
+
+	if err := pipeline.StopIdleJob(context.Background(), jobsDir, jobID, logger); err != nil {
+		var ended *pipeline.JobEndedError
+		if errors.As(err, &ended) {
+			return err
+		}
+		return fmt.Errorf("job %s is stopped, but the TORCH cancel failed: %w", jobID, err)
+	}
+	reportStopped(out, cfgPath, jobID)
+	return nil
+}
+
+// stopRunningJob asks the process that holds the job lock to stop, and waits
+// for the lock to go. That process records the stop and cancels the TORCH job.
+// The time limit wait applies only until the process records the stop. After
+// that, the process ends on its own: the TORCH cancel and a submit in progress
+// have time limits of their own.
+func stopRunningJob(jobsDir string, jobID string, wait time.Duration, poll time.Duration) error {
+	if err := services.RequestStop(jobsDir, jobID); err != nil {
+		return fmt.Errorf("failed to ask the job process to stop: %w", err)
+	}
+	defer func() { _ = services.ClearStopRequest(jobsDir, jobID) }()
+
+	deadline := time.Now().Add(wait)
+	for services.IsJobLocked(jobsDir, jobID) {
+		if time.Now().After(deadline) && !stopRecorded(jobsDir, jobID) {
+			return fmt.Errorf("the process of job %s did not end in %s", jobID, wait)
+		}
+		time.Sleep(poll)
+	}
+	return nil
+}
+
+func stopRecorded(jobsDir string, jobID string) bool {
+	job, err := pipeline.LoadJob(jobsDir, jobID)
+	return err == nil && job.Status == models.JobStatusStopped
+}
+
+func reportStopped(out io.Writer, cfgPath string, jobID string) {
+	_, _ = fmt.Fprintf(out, "Job %s stopped\n", jobID)
+	_, _ = fmt.Fprintf(out, "Continue it with: aether pipeline continue %s %s\n", cfgPath, jobID)
+}
+
 func runJobRun(cmd *cobra.Command, args []string) error {
 	cfgPath := args[0]
 	jobID := args[1]
@@ -268,44 +393,21 @@ func runJobRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	config, err := services.LoadConfig(cfgPath)
+	config, job, err := loadRunnableJob(cfgPath, jobID, stepName)
 	if err != nil {
-		return fmt.Errorf("failed to load configuration: %w", err)
-	}
-
-	// Check if step is enabled in configuration
-	if !isStepEnabledInConfig(config, stepName) {
-		return fmt.Errorf("step '%s' is not enabled in configuration (check enabled_steps in config file)", stepName)
-	}
-
-	// Load job
-	job, err := pipeline.LoadJob(config.JobsDir, jobID)
-	if err != nil {
-		return fmt.Errorf("failed to load job: %w", err)
-	}
-
-	fmt.Printf("Job: %s\n", job.JobID)
-	fmt.Printf("Executing step: %s\n\n", stepName)
-
-	// Validate prerequisites
-	canRun, prerequisite := models.CanRunStep(*job, stepName)
-	if !canRun {
-		return fmt.Errorf("cannot run step '%s': prerequisite step '%s' must be completed first", stepName, prerequisite)
+		return err
 	}
 
 	// Acquire job lock to prevent concurrent execution
 	logger := lib.DefaultLogger
+	stopRequested := services.NewStopRequestCheck(config.JobsDir, jobID)
 	lock, err := services.AcquireJobLock(config.JobsDir, jobID, logger)
 	if err != nil {
 		return fmt.Errorf("cannot execute step: %w\n\nAnother process may be working on this job. Wait for it to complete or check its status with 'pipeline status'", err)
 	}
-	defer func() {
-		if err := lock.Release(); err != nil {
-			logger.Error("Failed to release job lock", "error", err)
-		}
-	}()
+	defer releaseJobLock(lock, logger)
 
-	defer installStopHandler(config.JobsDir, jobID, logger)()
+	defer installStopTriggers(config.JobsDir, jobID, stopRequested, logger)()
 
 	// Execute the step (with lock held). executeStepManually already contextualizes
 	// every error path, so return it as-is rather than double-wrapping.
@@ -316,6 +418,32 @@ func runJobRun(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\n✓ Step '%s' completed successfully\n", stepName)
 
 	return nil
+}
+
+// loadRunnableJob loads the configuration and the job, and checks that the step
+// is enabled and that its prerequisite step is completed.
+func loadRunnableJob(cfgPath string, jobID string, stepName models.StepName) (*models.ProjectConfig, *models.PipelineJob, error) {
+	config, err := services.LoadConfig(cfgPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	if !isStepEnabledInConfig(config, stepName) {
+		return nil, nil, fmt.Errorf("step '%s' is not enabled in configuration (check enabled_steps in config file)", stepName)
+	}
+
+	job, err := pipeline.LoadJob(config.JobsDir, jobID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load job: %w", err)
+	}
+
+	fmt.Printf("Job: %s\n", job.JobID)
+	fmt.Printf("Executing step: %s\n\n", stepName)
+
+	if canRun, prerequisite := models.CanRunStep(*job, stepName); !canRun {
+		return nil, nil, fmt.Errorf("cannot run step '%s': prerequisite step '%s' must be completed first", stepName, prerequisite)
+	}
+	return config, job, nil
 }
 
 // validateStepName validates and converts step flag to StepName type

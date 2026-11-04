@@ -25,8 +25,7 @@ import (
 func installStopHandler(jobsDir string, jobID string, logger *lib.Logger) func() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
-
-	go handleStopSignals(ch, os.Stdout, time.Now, func(sig os.Signal) {
+	remove := watchStopSignals(ch, func(sig os.Signal) {
 		fmt.Printf("\n%s received. Stopping job %s\n", sig, jobID)
 		if err := pipeline.MarkJobStopped(jobsDir, jobID); err != nil {
 			logger.Error("Failed to record stopped job state", "job_id", jobID, "error", err)
@@ -35,8 +34,27 @@ func installStopHandler(jobsDir string, jobID string, logger *lib.Logger) func()
 		_ = logger.Close()
 		os.Exit(exitCodeForSignal(sig))
 	})
+	return func() {
+		signal.Stop(ch)
+		remove()
+	}
+}
 
-	return func() { signal.Stop(ch); close(ch) }
+// watchStopSignals runs handleStopSignals in the background. The caller must
+// call the returned function to end it.
+func watchStopSignals(ch chan os.Signal, stop func(sig os.Signal)) func() {
+	ended := make(chan struct{})
+	go func() {
+		defer close(ended)
+		handleStopSignals(ch, os.Stdout, time.Now, stop)
+	}()
+
+	// A stop that started ends the process itself with its exit code. Thus the
+	// remove waits for it.
+	return func() {
+		close(ch)
+		<-ended
+	}
 }
 
 // confirmWindow is the time in which a second interrupt stops the job. A later

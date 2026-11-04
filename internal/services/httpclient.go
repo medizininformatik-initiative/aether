@@ -297,7 +297,7 @@ func (c *HTTPClient) applyAuthorizationHeader(req *http.Request, auth models.Aut
 	}
 
 	if auth.OAuthIssuerURI != "" && auth.OAuthClientID != "" && auth.OAuthClientSecret != "" {
-		token, err := FetchOAuth2Token(auth.OAuthIssuerURI, auth.OAuthClientID, auth.OAuthClientSecret, c)
+		token, err := FetchOAuth2Token(req.Context(), auth.OAuthIssuerURI, auth.OAuthClientID, auth.OAuthClientSecret, c)
 		if err != nil {
 			return fmt.Errorf("failed to get OAuth2 token: %w", err)
 		}

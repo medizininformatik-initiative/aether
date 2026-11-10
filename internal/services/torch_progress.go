@@ -1,12 +1,14 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
+	"github.com/medizininformatik-initiative/aether/internal/lib"
 	"github.com/medizininformatik-initiative/aether/internal/ui"
 )
 
@@ -135,14 +137,46 @@ func (c *TORCHClient) FetchJobProgress(jobID string) *TORCHProgress {
 	return progress
 }
 
+func (c *TORCHClient) taskURL(jobID string) string {
+	return fmt.Sprintf("%s/fhir/Task/%s", c.config.BaseURL, jobID)
+}
+
+// CancelExtraction stops the TORCH job with the Task API operation
+// POST {BaseURL}/fhir/Task/{jobID}/$cancel.
+func (c *TORCHClient) CancelExtraction(ctx context.Context, jobID string) error {
+	cancelURL := c.taskURL(jobID) + "/$cancel"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cancelURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create cancel request: %w", err)
+	}
+	if err := c.httpClient.ApplyAuth(req, c.config.EffectiveAuth()); err != nil {
+		return fmt.Errorf("failed to add auth header: %w", err)
+	}
+
+	resp, err := c.httpClient.DoOnce(req)
+	if err != nil {
+		return fmt.Errorf("TORCH cancel request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return &TORCHError{
+			Operation:  "cancel",
+			StatusCode: resp.StatusCode,
+			Message:    string(bodyBytes),
+			ErrorType:  lib.ClassifyHTTPError(resp.StatusCode),
+		}
+	}
+	return nil
+}
+
 // fetchJobProgressChecked fetches progress and also reports whether the Task
 // API is usable. `supported == false` (non-200, or a body that is not a Task)
 // tells the poll loop to stop asking; a transport error or a Task without the
 // extension keeps `supported == true` so a later poll asks again.
 func (c *TORCHClient) fetchJobProgressChecked(jobID string) (progress *TORCHProgress, supported bool) {
-	taskURL := fmt.Sprintf("%s/fhir/Task/%s", c.config.BaseURL, jobID)
-
-	req, err := http.NewRequest("GET", taskURL, nil)
+	req, err := http.NewRequest("GET", c.taskURL(jobID), nil)
 	if err != nil {
 		c.logger.Debug("TORCH progress request creation failed", "error", err)
 		return nil, false

@@ -61,7 +61,7 @@ pipeline:
 ### How it Works
 
 1. Reads all files from input directory
-2. Zips each file and wraps in FHIR Binary resource
+2. Zips each file and wraps in FHIR Binary resource. The name of the zip entry is the path of the file relative to the input directory, with forward slashes.
 3. Creates DocumentReference linking all Binary resources
 4. Uploads to transfer server
 

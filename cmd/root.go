@@ -56,6 +56,9 @@ Quick Start:
   5. Resume a job:
        aether pipeline continue aether.yaml <job-id>
 
+  6. Send a directory of CSV files without a pipeline:
+       aether send aether.yaml ./csv
+
 Configuration:
   Every command that needs configuration takes the path to your
   aether.yaml as the first positional argument. There is no

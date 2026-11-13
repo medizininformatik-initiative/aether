@@ -3,7 +3,7 @@
 Uploads pipeline output to a destination. Supports three modes selected via `send_as`:
 
 - `direct_resource_load` — POST FHIR resources to a FHIR server using transaction bundles
-- `transfer_load` — wrap files in `Binary` / `DocumentReference` resources and POST them to a DSF transfer server
+- `transfer_load` — wrap files in `Binary` / `DocumentReference` resources and PUT them to a DSF transfer server
 - `s3_upload` — upload files directly to an S3-compatible object store (AWS S3, MinIO, Ceph)
 
 ## Direct Resource Load
@@ -62,8 +62,17 @@ pipeline:
 
 1. Reads all files from input directory
 2. Zips each file and wraps in FHIR Binary resource. The name of the zip entry is the path of the file relative to the input directory, with forward slashes.
-3. Creates DocumentReference linking all Binary resources
-4. Uploads to transfer server
+3. Uploads the Binary resources one file at a time. The ID of each Binary is made from the job ID and the name of the file, so it is the same in every run of the job. The job directory lists the uploaded files in `transfer_manifest.json`.
+4. Makes one DocumentReference that links each Binary resource one time. The ID of the DocumentReference is made from the job ID.
+5. Uploads the DocumentReference.
+
+Before the first upload, the send opens each file. If a file cannot be opened, the send stops and uploads nothing. A read error later in a file stops the send after the earlier files are on the server. Resume the job to send the remaining files.
+
+If an upload fails, resume the job, for example with `aether pipeline continue`. The resumed run uploads only the files that are not in `transfer_manifest.json`. Then it uploads the DocumentReference. The manifest records the SHA-256 hash of each uploaded file. If the content of a file changed, the resumed run uploads that file again. If the server URL, the project identifier, or the job ID changed, the resumed run ignores the manifest and uploads all files. If the manifest is lost, the run uploads all files again. The IDs stay the same, thus the server overwrites the Binary resources and keeps no duplicate. A send after a complete send uploads all files again with the same IDs.
+
+Before a resumed run skips a file, it searches the server for the Binary of the file, with `Binary?_id=...&_summary=true` and at most 50 IDs in one request. If the Binary is not on the server, for example because the server deleted it, the run uploads the file again. If the search fails, the run logs a warning and uploads all files again.
+
+aether makes sure that the server accepted each Binary and the DocumentReference. aether does not make sure that the server keeps them unchanged after the send.
 
 ## S3 Upload
 

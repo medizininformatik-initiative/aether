@@ -143,6 +143,38 @@ func TestExecuteSendStep_Success(t *testing.T) {
 	require.NotNil(t, sendStep)
 	assert.Equal(t, models.StepStatusCompleted, sendStep.Status)
 	assert.Equal(t, 2, sendStep.FilesProcessed)
+
+	manifest, err := models.LoadTransferManifest(filepath.Join(jobDir, "transfer_manifest.json"))
+	require.NoError(t, err)
+	require.NotNil(t, manifest)
+	assert.Len(t, manifest.Files, 2)
+	assert.NotNil(t, manifest.CompletedAt)
+}
+
+func TestExecuteSendStep_TransferResumeReusesIDsOfTheFailedRun(t *testing.T) {
+	server := newTransferServer(t)
+
+	tmpDir := t.TempDir()
+	jobID := "test-send-resume-job"
+	jobDir := filepath.Join(tmpDir, jobID)
+	inputDir := filepath.Join(jobDir, "csv")
+	require.NoError(t, os.MkdirAll(inputDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "A.csv"), []byte("id\n1\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(inputDir, "B.csv"), []byte("id\n2\n"), 0644))
+
+	job := createSendTestJob(server.URL, jobID, tmpDir)
+	logger := lib.NewLogger(lib.LogLevelError)
+
+	server.startRun(2, false)
+	require.Error(t, runPipelineStep(models.StepSend, job, jobDir, logger))
+	firstRun := server.binaryIDs()
+	require.Len(t, firstRun, 2)
+
+	server.startRun(0, false)
+	require.NoError(t, runPipelineStep(models.StepSend, job, jobDir, logger))
+
+	assert.Equal(t, firstRun[1:], server.binaryIDs())
+	assert.Len(t, server.documentReferencePaths(), 1)
 }
 
 func TestExecuteSendStep_ZipContentVerification(t *testing.T) {

@@ -70,7 +70,7 @@ func TestSend_TransferLoad_UploadsBinaryPerFileAndOneDocumentReference(t *testin
 			{Path: csvPath, Name: "Patient.csv"},
 			{Path: ndjsonPath, Name: filepath.Join("sub", "Observation.ndjson")},
 		},
-		State: send.State{FailedRequestsDir: filepath.Join(dir, "failed")},
+		State: transferState(dir),
 	}, lib.NewLogger(lib.LogLevelError))
 	require.NoError(t, err)
 	assert.Equal(t, 2, result.FilesProcessed)
@@ -173,7 +173,8 @@ func TestSend_DumpsFailedRequestsToStateDir(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "Patient.csv")
 	writeSendFile(t, path, "id\n1\n")
-	failedDir := filepath.Join(dir, "dumps")
+	dumpState := transferState(dir)
+	dumpState.FailedRequestsDir = filepath.Join(dir, "dumps")
 
 	cfg := transferSendConfig(server.URL)
 	cfg.DumpFailedRequests = true
@@ -183,11 +184,11 @@ func TestSend_DumpsFailedRequestsToStateDir(t *testing.T) {
 		Config: cfg,
 		Retry:  FastRetryConfig(),
 		Files:  []send.File{{Path: path, Name: "Patient.csv"}},
-		State:  send.State{FailedRequestsDir: failedDir},
+		State:  dumpState,
 	}, lib.NewLogger(lib.LogLevelError))
 	require.Error(t, err)
 
-	dumps, globErr := filepath.Glob(filepath.Join(failedDir, "*.request.json"))
+	dumps, globErr := filepath.Glob(filepath.Join(dumpState.FailedRequestsDir, "*.request.json"))
 	require.NoError(t, globErr)
 	assert.NotEmpty(t, dumps)
 }
@@ -286,6 +287,11 @@ func TestSend_RejectsBrokenRequestContract(t *testing.T) {
 			wantErr: "manifest path",
 		},
 		{
+			name:    "transfer without manifest path",
+			req:     send.Request{JobID: "job", Config: transferSendConfig("http://127.0.0.1:1"), Files: files},
+			wantErr: "transfer manifest path",
+		},
+		{
 			name:    "dump without directory",
 			req:     send.Request{JobID: "job", Config: dumpConfig, Files: files},
 			wantErr: "failed requests directory",
@@ -327,7 +333,7 @@ func TestSend_TransferLoad_ZipEntryNameIsEntryName(t *testing.T) {
 		Config: transferSendConfig(server.URL),
 		Retry:  FastRetryConfig(),
 		Files:  []send.File{{Path: path, Name: "sub/b.csv", EntryName: "sub/b.csv"}},
-		State:  send.State{FailedRequestsDir: filepath.Join(dir, "failed")},
+		State:  transferState(dir),
 	}, lib.NewLogger(lib.LogLevelError))
 	require.NoError(t, err)
 
@@ -352,9 +358,85 @@ func TestSend_TransferLoad_ErrorNamesEntryName(t *testing.T) {
 		Config: transferSendConfig(server.URL),
 		Retry:  FastRetryConfig(),
 		Files:  []send.File{{Path: filepath.Join(dir, "2024", "a.csv"), Name: "2024/a.csv", EntryName: "2024/a.csv"}},
-		State:  send.State{FailedRequestsDir: filepath.Join(dir, "failed")},
+		State:  transferState(dir),
 	}, lib.NewLogger(lib.LogLevelError))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to process 2024/a.csv")
+}
+
+func TestSend_TransferLoad_UploadsEachBinaryBeforeReadingNextFile(t *testing.T) {
+	dir := t.TempDir()
+	firstPath := filepath.Join(dir, "first.csv")
+	secondPath := filepath.Join(dir, "second.csv")
+	writeSendFile(t, firstPath, "id\n1\n")
+
+	var mu sync.Mutex
+	var binaryData []string
+	var writeErr error
+	created := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var res map[string]any
+		_ = json.Unmarshal(body, &res)
+		mu.Lock()
+		defer mu.Unlock()
+		if res["resourceType"] == "Binary" {
+			data, _ := res["data"].(string)
+			binaryData = append(binaryData, data)
+			if !created {
+				created = true
+				writeErr = os.WriteFile(secondPath, []byte("id\nwritten-by-server\n"), 0o644)
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	_, err := send.Send(context.Background(), send.Request{
+		JobID:  "job-lazy",
+		Config: transferSendConfig(server.URL),
+		Retry:  FastRetryConfig(),
+		Files: []send.File{
+			{Path: firstPath, Name: "first.csv"},
+			{Path: secondPath, Name: "second.csv"},
+		},
+		State: transferState(dir),
+	}, lib.NewLogger(lib.LogLevelError))
+	require.NoError(t, writeErr)
+	require.NoError(t, err)
+
+	require.Len(t, binaryData, 2)
+	data, decErr := base64.StdEncoding.DecodeString(binaryData[1])
+	require.NoError(t, decErr)
+	zr, zipErr := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	require.NoError(t, zipErr)
+	require.Len(t, zr.File, 1)
+	rc, openErr := zr.File[0].Open()
+	require.NoError(t, openErr)
+	content, readErr := io.ReadAll(rc)
+	require.NoError(t, readErr)
+	require.NoError(t, rc.Close())
+	assert.Equal(t, "id\nwritten-by-server\n", string(content))
+}
+
+func TestSend_TransferLoad_DocumentReferenceIsLastAndLinksBinariesInFileOrder(t *testing.T) {
+	server := newTransferServer(t)
+	req := transferRequest(t, server.URL, "a.csv", "b.csv", "c.csv")
+
+	_, err := send.Send(context.Background(), req, lib.NewLogger(lib.LogLevelError))
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"Binary", "Binary", "Binary", "DocumentReference"}, server.requestKinds())
+	binaryIDs := server.binaryIDs()
+	require.Len(t, binaryIDs, 3)
+	urls := server.documentReferenceAttachmentURLs(t)
+	require.Len(t, urls, len(binaryIDs))
+	for i, url := range urls {
+		assert.Equal(t, "Binary/"+binaryIDs[i], url)
+	}
+	for _, c := range server.documentReferences[0]["content"].([]any) {
+		attachment := c.(map[string]any)["attachment"].(map[string]any)
+		assert.Equal(t, "application/zip", attachment["contentType"])
+	}
 }

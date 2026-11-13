@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -212,6 +213,43 @@ func TestSendCommand_TransferLoadSendsOnlyCSVFilesAndLeavesDirUntouched(t *testi
 	assert.True(t, stored.Completed)
 	assert.Len(t, stored.Files, 2)
 	assert.NoFileExists(t, services.GetStateFilePath(jobsDir, jobID))
+	assert.FileExists(t, filepath.Join(services.GetJobDir(jobsDir, jobID), "transfer_manifest.json"))
+}
+
+func TestSendCommand_ResumeUploadsOnlyMissingFilesWithTheirFirstIDs(t *testing.T) {
+	var mu sync.Mutex
+	var binaryPaths []string
+	failSecondBinary := true
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if strings.HasPrefix(r.URL.Path, "/fhir/Binary/") {
+			binaryPaths = append(binaryPaths, r.URL.Path)
+			if failSecondBinary && len(binaryPaths) == 2 {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+	configPath, jobsDir := transferConfig(t, server.URL)
+	dir := writeCSVTree(t)
+
+	require.Error(t, runSendCommand(t, configPath, dir))
+	jobID := onlyJobID(t, jobsDir)
+	mu.Lock()
+	require.Len(t, binaryPaths, 2)
+	failedPath := binaryPaths[1]
+	binaryPaths = nil
+	failSecondBinary = false
+	mu.Unlock()
+
+	require.NoError(t, runSendCommand(t, configPath, dir, "--job", jobID))
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, []string{failedPath}, binaryPaths)
 }
 
 func TestSendCommand_S3UploadUsesJobIDAsKeyPrefix(t *testing.T) {

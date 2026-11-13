@@ -47,16 +47,19 @@ Send modes:
   direct_resource_load is not available for this command.
 
 Each run creates a job directory under jobs_dir with the job ID, a
-source.json file, a job.log file and the upload manifest. The source.json file
-records the name, the size and the SHA-256 hash of each file. The command
-prints the job ID.
+source.json file, a job.log file and a manifest. With transfer_load, the
+manifest is transfer_manifest.json. With s3_upload, it is upload_manifest.json.
+The source.json file records the name, the size and the SHA-256 hash of each
+file. The command prints the job ID.
 
 Options:
   --job <job-id>  Resume an earlier run. The command compares the files of
                   <dir> with source.json and stops when they differ. It does
-                  nothing when the run is complete. With s3_upload, the
-                  upload manifest lets the run skip the files that are
-                  already in the bucket.
+                  nothing when the run is complete. The manifest lets the
+                  run skip the files that are already on the server or in
+                  the bucket. With transfer_load, the run uses the same
+                  Binary and DocumentReference IDs as the first run, so
+                  the server gets no duplicate resource.
 
 Examples:
   aether send aether.yaml ./csv
@@ -185,6 +188,11 @@ func (j *sendJob) run(cmd *cobra.Command) error {
 		}
 	}()
 
+	return j.runLocked(cmd, logger)
+}
+
+// runLocked sends the files of the job. The caller holds the job lock.
+func (j *sendJob) runLocked(cmd *cobra.Command, logger *lib.Logger) error {
 	if j.source == nil {
 		completed, err := j.loadResumedSource()
 		if err != nil {
@@ -196,23 +204,33 @@ func (j *sendJob) run(cmd *cobra.Command) error {
 		}
 	}
 
-	if _, err := send.Send(context.Background(), send.Request{
+	if err := j.sendFiles(logger); err != nil {
+		return err
+	}
+
+	j.source.Completed = true
+	if err := send.SaveSource(j.sourcePath(), *j.source); err != nil {
+		return fmt.Errorf("send finished, but saving the job state failed: %w", err)
+	}
+	return nil
+}
+
+// sendFiles sends the files of the job and wraps a failure with a resume hint.
+func (j *sendJob) sendFiles(logger *lib.Logger) error {
+	_, err := send.Send(context.Background(), send.Request{
 		JobID:  j.id,
 		Config: j.config.Services.Send,
 		Retry:  j.config.Retry,
 		TLS:    j.config.TLS,
 		Files:  j.files,
 		State: send.State{
-			ManifestPath:      models.GetUploadManifestPath(j.jobDir),
-			FailedRequestsDir: filepath.Join(j.jobDir, "send", "failed"),
+			ManifestPath:         models.GetUploadManifestPath(j.jobDir),
+			TransferManifestPath: models.GetTransferManifestPath(j.jobDir),
+			FailedRequestsDir:    filepath.Join(j.jobDir, "send", "failed"),
 		},
-	}, logger); err != nil {
+	}, logger)
+	if err != nil {
 		return fmt.Errorf("send failed: %w\n\nResume with: %s", err, resumeHint(j.cfgPath, j.dir, j.id))
-	}
-
-	j.source.Completed = true
-	if err := send.SaveSource(j.sourcePath(), *j.source); err != nil {
-		return fmt.Errorf("send finished, but saving the job state failed: %w", err)
 	}
 	return nil
 }

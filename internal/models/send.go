@@ -67,28 +67,33 @@ func (m *UploadManifest) MarkCompleted() {
 
 // SaveManifest writes the manifest to disk using atomic write (temp file + rename).
 func SaveManifest(manifest *UploadManifest, manifestPath string) error {
-	data, err := json.MarshalIndent(manifest, "", "  ")
+	return writeJSONAtomic(manifest, manifestPath)
+}
+
+// writeJSONAtomic writes the value as indented JSON to a temp file and renames
+// it over the target, so a reader never sees a partial file.
+func writeJSONAtomic(value any, path string) error {
+	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal manifest: %w", err)
 	}
 
-	// Atomic write: write to temp file, then rename
-	tmpPath := manifestPath + ".tmp"
+	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write manifest temp file: %w", err)
 	}
 
-	if err := os.Rename(tmpPath, manifestPath); err != nil {
+	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("failed to rename manifest file: %w", err)
 	}
 
 	return nil
 }
 
-// LoadUploadManifest loads an existing manifest from disk.
-// Returns nil (no error) if the file does not exist.
-func LoadUploadManifest(manifestPath string) (*UploadManifest, error) {
-	data, err := os.ReadFile(manifestPath)
+// readJSONIfExists reads the JSON file into a new value. It returns nil (no
+// error) if the file does not exist.
+func readJSONIfExists[T any](path string) (*T, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -96,12 +101,18 @@ func LoadUploadManifest(manifestPath string) (*UploadManifest, error) {
 		return nil, fmt.Errorf("failed to read manifest: %w", err)
 	}
 
-	var manifest UploadManifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
+	var value T
+	if err := json.Unmarshal(data, &value); err != nil {
 		return nil, fmt.Errorf("failed to parse manifest: %w", err)
 	}
 
-	return &manifest, nil
+	return &value, nil
+}
+
+// LoadUploadManifest loads an existing manifest from disk.
+// Returns nil (no error) if the file does not exist.
+func LoadUploadManifest(manifestPath string) (*UploadManifest, error) {
+	return readJSONIfExists[UploadManifest](manifestPath)
 }
 
 // GetUploadManifestPath returns the path to the upload manifest file for a job.

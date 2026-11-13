@@ -151,23 +151,36 @@ func sendTransferLoad(req Request, logger *lib.Logger) (Result, error) {
 
 	fmt.Printf("Preparing %d file(s) for transfer...\n\n", len(files))
 
-	binaryResources, err := buildBinaryResources(files, req.JobID, logger)
-	if err != nil {
-		return Result{}, err
+	binaryIDs := make([]string, len(files))
+	for i := range files {
+		binaryIDs[i] = uuid.New().String()
 	}
 
 	sendConfig := req.Config
-	docRef := buildDocumentReference(binaryResources, sendConfig.Transfer)
+	docRef := buildDocumentReference(binaryIDs, sendConfig.Transfer)
 
 	logger.Debug("Uploading resources individually",
-		"binary_count", len(binaryResources),
+		"binary_count", len(binaryIDs),
 		"job_id", req.JobID)
 
 	httpClient := newSendHTTPClient(req.Retry, req.TLS, logger)
 	dump := newRequestDump(req, logger)
 
-	for i, binary := range binaryResources {
-		fmt.Printf("  Uploading Binary %d/%d...\n", i+1, len(binaryResources))
+	for i, file := range files {
+		fileName := displayName(file)
+
+		binary, err := createBinaryFromFile(file, binaryIDs[i])
+		if err != nil {
+			return Result{}, fmt.Errorf("failed to process %s: %w", fileName, err)
+		}
+		fmt.Printf("  ✓ %s (%s)\n", fileName, binary.contentType)
+
+		logger.Debug("Created Binary resource",
+			"file", fileName,
+			"content_type", binary.contentType,
+			"job_id", req.JobID)
+
+		fmt.Printf("  Uploading Binary %d/%d...\n", i+1, len(files))
 		if err := uploadBinary(binary, sendConfig, httpClient, logger, dump); err != nil {
 			return Result{}, fmt.Errorf("failed to upload Binary %s: %w", binary.id, err)
 		}
@@ -191,30 +204,6 @@ func sendTransferLoad(req Request, logger *lib.Logger) (Result, error) {
 // FHIR send modes.
 func newSendHTTPClient(retry models.RetryConfig, tls models.TLSConfig, logger *lib.Logger) *services.HTTPClient {
 	return services.NewHTTPClient(30*time.Second, retry, tls, logger)
-}
-
-// buildBinaryResources makes one FHIR Binary resource for each file.
-func buildBinaryResources(files []File, jobID string, logger *lib.Logger) ([]binaryEntry, error) {
-	var binaryResources []binaryEntry
-
-	for _, file := range files {
-		fileName := displayName(file)
-
-		entry, err := createBinaryFromFile(file)
-		if err != nil {
-			return nil, fmt.Errorf("failed to process %s: %w", fileName, err)
-		}
-
-		binaryResources = append(binaryResources, entry)
-		fmt.Printf("  ✓ %s (%s)\n", fileName, entry.contentType)
-
-		logger.Debug("Created Binary resource",
-			"file", fileName,
-			"content_type", entry.contentType,
-			"job_id", jobID)
-	}
-
-	return binaryResources, nil
 }
 
 // sendDirectResourceLoad uploads NDJSON files to a FHIR server using transaction bundles.
@@ -316,6 +305,10 @@ func partitionCoreFiles(files []string) (coreFiles, otherFiles []string) {
 	return coreFiles, otherFiles
 }
 
+// binaryContentType is the content type of every Binary. Each file is zipped
+// for transfer, and application/zip is the IANA-registered type for zip archives.
+const binaryContentType = "application/zip"
+
 // binaryEntry holds a FHIR Binary resource and its metadata
 type binaryEntry struct {
 	id          string
@@ -335,30 +328,26 @@ func newRequestDump(req Request, logger *lib.Logger) *services.RequestDump {
 
 // createBinaryFromFile reads a file, zips it, base64-encodes the content,
 // and returns a FHIR Binary resource.
-func createBinaryFromFile(file File) (binaryEntry, error) {
+func createBinaryFromFile(file File, id string) (binaryEntry, error) {
 	filePath := file.Path
-	// Every file is zipped for transfer, so the Binary describes a zip archive.
-	// application/zip is the IANA-registered type for zip archives.
-	const contentType = "application/zip"
 
 	data, err := zipSingleFile(file)
 	if err != nil {
 		return binaryEntry{}, fmt.Errorf("failed to zip %s: %w", filepath.Base(filePath), err)
 	}
 
-	id := uuid.New().String()
 	b64 := base64.StdEncoding.EncodeToString(data)
 
 	resource := map[string]any{
 		"resourceType": "Binary",
 		"id":           id,
-		"contentType":  contentType,
+		"contentType":  binaryContentType,
 		"data":         b64,
 	}
 
 	return binaryEntry{
 		id:          id,
-		contentType: contentType,
+		contentType: binaryContentType,
 		resource:    resource,
 		sourcePath:  filePath,
 	}, nil
@@ -423,13 +412,13 @@ func displayName(file File) string {
 }
 
 // buildDocumentReference creates a FHIR DocumentReference linking all Binary resources.
-func buildDocumentReference(binaries []binaryEntry, config models.TransferConfig) map[string]any {
-	content := make([]map[string]any, len(binaries))
-	for i, b := range binaries {
+func buildDocumentReference(binaryIDs []string, config models.TransferConfig) map[string]any {
+	content := make([]map[string]any, len(binaryIDs))
+	for i, id := range binaryIDs {
 		content[i] = map[string]any{
 			"attachment": map[string]any{
-				"contentType": b.contentType,
-				"url":         fmt.Sprintf("Binary/%s", b.id),
+				"contentType": binaryContentType,
+				"url":         fmt.Sprintf("Binary/%s", id),
 			},
 		}
 	}

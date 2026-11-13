@@ -40,6 +40,8 @@ type File struct {
 type State struct {
 	// ManifestPath is the S3 upload manifest file.
 	ManifestPath string
+	// TransferManifestPath is the transfer_load manifest file.
+	TransferManifestPath string
 	// FailedRequestsDir receives the dumps of rejected requests when
 	// Config.DumpFailedRequests is set.
 	FailedRequestsDir string
@@ -63,11 +65,19 @@ func (r Request) validate() error {
 	if r.JobID == "" {
 		return errors.New("job ID is empty")
 	}
+	return r.validateState()
+}
+
+// validateState checks that the state paths that the send mode needs are set.
+func (r Request) validateState() error {
 	if r.Config.SendAs == models.SendModeS3Upload && r.State.ManifestPath == "" {
 		return errors.New("manifest path is empty")
 	}
 	if r.Config.DumpFailedRequests && r.State.FailedRequestsDir == "" {
 		return errors.New("failed requests directory is empty")
+	}
+	if r.Config.SendAs == models.SendModeTransferLoad && r.State.TransferManifestPath == "" {
+		return errors.New("transfer manifest path is empty")
 	}
 	return nil
 }
@@ -143,31 +153,64 @@ func putWithAuth(targetURL, contentType string, body []byte, config models.SendC
 	return httpClient.Do(req)
 }
 
+// transferNamespace is the UUID namespace of the ids of a transfer_load send.
+var transferNamespace = uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://github.com/medizininformatik-initiative/aether/transfer_load"))
+
+// transferKey is the name of a file in the transfer manifest and in its Binary id.
+func transferKey(file File) string {
+	if file.Name != "" {
+		return file.Name
+	}
+	return file.Path
+}
+
+// binaryID derives the Binary id from the job and the file. Every send of the
+// job gives the same id, so a repeated PUT overwrites the Binary.
+func binaryID(jobID string, file File) string {
+	return uuid.NewSHA1(transferNamespace, []byte("Binary/"+jobID+"/"+transferKey(file))).String()
+}
+
+// documentReferenceID derives the DocumentReference id from the job.
+func documentReferenceID(jobID string) string {
+	return uuid.NewSHA1(transferNamespace, []byte("DocumentReference/"+jobID)).String()
+}
+
 // sendTransferLoad sends files to a transfer FHIR server.
-// For each file: zips it, base64-encodes it, and wraps it in a FHIR Binary resource.
-// Then creates a DocumentReference linking all Binaries and uploads them.
+// For each file: zips it, base64-encodes it, wraps it in a FHIR Binary resource
+// and uploads it. Then it uploads a DocumentReference that links all Binaries.
+// The ids derive from the job ID and the file name. The transfer manifest lists
+// the uploaded files, so a repeated send of the job skips them.
 func sendTransferLoad(req Request, logger *lib.Logger) (Result, error) {
 	files := req.Files
+	manifestPath := req.State.TransferManifestPath
 
 	fmt.Printf("Preparing %d file(s) for transfer...\n\n", len(files))
 
-	binaryIDs := make([]string, len(files))
-	for i := range files {
-		binaryIDs[i] = uuid.New().String()
-	}
+	manifest := loadOrCreateTransferManifest(manifestPath, req.JobID, logger)
 
 	sendConfig := req.Config
-	docRef := buildDocumentReference(binaryIDs, sendConfig.Transfer)
 
 	logger.Debug("Uploading resources individually",
-		"binary_count", len(binaryIDs),
+		"binary_count", len(files),
 		"job_id", req.JobID)
 
 	httpClient := newSendHTTPClient(req.Retry, req.TLS, logger)
 	dump := newRequestDump(req, logger)
 
+	binaryIDs := make([]string, len(files))
 	for i, file := range files {
+		binaryIDs[i] = binaryID(req.JobID, file)
 		fileName := displayName(file)
+		key := transferKey(file)
+
+		if manifest.IsUploaded(key) {
+			fmt.Printf("  ✓ %s already on the server\n", fileName)
+			logger.Debug("Skipping Binary already on the server",
+				"file", fileName,
+				"id", binaryIDs[i],
+				"job_id", req.JobID)
+			continue
+		}
 
 		binary, err := createBinaryFromFile(file, binaryIDs[i])
 		if err != nil {
@@ -184,12 +227,20 @@ func sendTransferLoad(req Request, logger *lib.Logger) (Result, error) {
 		if err := uploadBinary(binary, sendConfig, httpClient, logger, dump); err != nil {
 			return Result{}, fmt.Errorf("failed to upload Binary %s: %w", binary.id, err)
 		}
+
+		manifest.MarkUploaded(key)
+		saveTransferManifestOrWarn(manifest, manifestPath, logger)
 	}
+
+	docRef := buildDocumentReference(documentReferenceID(req.JobID), binaryIDs, sendConfig.Transfer)
 
 	fmt.Println("  Uploading DocumentReference...")
 	if err := uploadDocumentReference(docRef, sendConfig, httpClient, logger, dump); err != nil {
 		return Result{}, fmt.Errorf("failed to upload DocumentReference: %w", err)
 	}
+
+	manifest.MarkCompleted()
+	saveTransferManifestOrWarn(manifest, manifestPath, logger)
 
 	fmt.Printf("\n✓ Transfer complete (%d files sent)\n", len(files))
 
@@ -198,6 +249,30 @@ func sendTransferLoad(req Request, logger *lib.Logger) (Result, error) {
 		"job_id", req.JobID)
 
 	return Result{FilesProcessed: len(files)}, nil
+}
+
+// loadOrCreateTransferManifest loads the transfer manifest, or starts a new one
+// when loading fails, no manifest exists, or the manifest is complete. A send
+// after a complete send uploads all files again, because their content can be
+// different.
+func loadOrCreateTransferManifest(path, jobID string, logger *lib.Logger) *models.TransferManifest {
+	manifest, err := models.LoadTransferManifest(path)
+	if err != nil {
+		logger.Warn("Failed to load transfer manifest, starting fresh", "error", err)
+	}
+	if manifest == nil || manifest.CompletedAt != nil {
+		manifest = models.NewTransferManifest(jobID)
+	}
+	return manifest
+}
+
+// saveTransferManifestOrWarn saves the manifest and only warns on failure. The
+// ids do not depend on the manifest, so a lost manifest costs only a repeated
+// upload.
+func saveTransferManifestOrWarn(manifest *models.TransferManifest, path string, logger *lib.Logger) {
+	if err := models.SaveTransferManifest(manifest, path); err != nil {
+		logger.Warn("Failed to save transfer manifest", "error", err)
+	}
 }
 
 // newSendHTTPClient returns the client for the uploads of the transfer and the
@@ -412,7 +487,7 @@ func displayName(file File) string {
 }
 
 // buildDocumentReference creates a FHIR DocumentReference linking all Binary resources.
-func buildDocumentReference(binaryIDs []string, config models.TransferConfig) map[string]any {
+func buildDocumentReference(docRefID string, binaryIDs []string, config models.TransferConfig) map[string]any {
 	content := make([]map[string]any, len(binaryIDs))
 	for i, id := range binaryIDs {
 		content[i] = map[string]any{
@@ -425,7 +500,7 @@ func buildDocumentReference(binaryIDs []string, config models.TransferConfig) ma
 
 	return map[string]any{
 		"resourceType": "DocumentReference",
-		"id":           uuid.New().String(),
+		"id":           docRefID,
 		"masterIdentifier": map[string]any{
 			"system": "http://medizininformatik-initiative.de/sid/project-identifier",
 			"value":  config.ProjectIdentifier,

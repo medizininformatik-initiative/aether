@@ -128,15 +128,15 @@ The command needs no CRTDL and no pipeline job. It reads the files in place and 
 - The command sends each file below `<dir>` whose name ends in `.csv`, in any letter case. It does not send other files.
 - The command follows symbolic links to files and to directories. A link loop, a link to nothing, and a directory without CSV files are errors.
 - `send_as` must be `transfer_load` or `s3_upload`. `direct_resource_load` is an error.
-- With `transfer_load`, the name of each zip entry is the path relative to `<dir>`.
+- With `transfer_load`, the name of each zip entry is the path relative to `<dir>`. The ID of each Binary is made from the job ID and the path relative to `<dir>`.
 - With `s3_upload`, the S3 key is the job ID and the path relative to `<dir>`.
 
 **Job directory:**
 
-Each run creates a job directory under `jobs_dir`. It holds `source.json`, `job.log`, and the upload manifest. `source.json` records the name, size, and SHA-256 hash of each file. The command prints the job ID and the command to resume the run. These jobs have no `state.json`, so `aether job list` does not show them.
+Each run creates a job directory under `jobs_dir`. It holds `source.json`, `job.log`, and a manifest of the send. The manifest is `transfer_manifest.json` with `transfer_load` and `upload_manifest.json` with `s3_upload`. `source.json` records the name, size, and SHA-256 hash of each file. The command prints the job ID and the command to resume the run. These jobs have no `state.json`, so `aether job list` does not show them.
 
 **Options:**
-- `--job <job-id>` - Resume an earlier run. The command compares the files with `source.json` and stops with an error when they differ. It sends nothing when the run is complete.
+- `--job <job-id>` - Resume an earlier run. The command compares the files with `source.json` and stops with an error when they differ. It sends nothing when the run is complete. The manifest lets the run skip the files that are already on the server or in the bucket. With `transfer_load`, the Binary and DocumentReference IDs are made from the job ID and the file name, so the run uses the IDs of the first run.
 
 **Examples:**
 ```bash

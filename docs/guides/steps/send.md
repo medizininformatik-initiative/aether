@@ -62,8 +62,11 @@ pipeline:
 
 1. Reads all files from input directory
 2. Zips each file and wraps in FHIR Binary resource. The name of the zip entry is the path of the file relative to the input directory, with forward slashes.
-3. Creates DocumentReference linking all Binary resources
-4. Uploads to transfer server
+3. Uploads the Binary resources one file at a time. The ID of each Binary is made from the job ID and the name of the file, so it is the same in every run of the job. The job directory lists the uploaded files in `transfer_manifest.json`.
+4. Makes one DocumentReference that links each Binary resource one time. The ID of the DocumentReference is made from the job ID.
+5. Uploads the DocumentReference.
+
+If an upload fails, resume the job, for example with `aether pipeline continue`. The resumed run uploads only the files that are not in `transfer_manifest.json`. Then it uploads the DocumentReference. If the manifest is lost, the run uploads all files again. The IDs stay the same, thus the server overwrites the Binary resources and keeps no duplicate. A send after a complete send uploads all files again with the same IDs.
 
 ## S3 Upload
 

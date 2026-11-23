@@ -8,7 +8,7 @@ services:
   # read/list grant on the test bucket so the E2E verification can list
   # objects with a plain unsigned GET (writes still require the credentials).
   seaweedfs:
-    image: chrislusf/seaweedfs:4.54@sha256:4b42c212543a0acd4c0e675215ecdcaf62a186ef98def76c7e12701871222d15
+    image: chrislusf/seaweedfs:4.55@sha256:7ca46aeae2f223b37e5d91593c17ab37738eec6df6ab69b48a0487f7643342b9
     ports: [ ":8333" ]
     networks: [ "aether" ]
     command:

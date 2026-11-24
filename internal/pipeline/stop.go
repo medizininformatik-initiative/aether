@@ -127,19 +127,31 @@ func persistSubmittedHandle(jobsDir string, job *models.PipelineJob) error {
 	if !isStopped(jobsDir, job.JobID) {
 		return saveJob(jobsDir, job)
 	}
-	stored, err := LoadJob(jobsDir, job.JobID)
+	return updateStoredHandle(jobsDir, job.JobID, func(stored *models.PipelineJob) bool {
+		stored.TORCHJobID = job.TORCHJobID
+		stored.TORCHExtractionURL = job.TORCHExtractionURL
+		return true
+	})
+}
+
+// updateStoredHandle changes the TORCH handle in the state file of a job. It
+// writes directly, because UpdateJob drops writes after a stop. change returns
+// false if the handle must stay as it is. The caller must hold stopMu.
+func updateStoredHandle(jobsDir string, jobID string, change func(stored *models.PipelineJob) bool) error {
+	stored, err := LoadJob(jobsDir, jobID)
 	if err != nil {
 		return fmt.Errorf("failed to load stopped job: %w", err)
 	}
-	stored.TORCHJobID = job.TORCHJobID
-	stored.TORCHExtractionURL = job.TORCHExtractionURL
+	if !change(stored) {
+		return nil
+	}
 	return saveJob(jobsDir, stored)
 }
 
 // StopJobAndCancelExtraction records the stop of a job that a process runs, and
-// then cancels the TORCH job that the torch step waits for. The handle stays in the
-// state file: for the cancelled TORCH job, `pipeline continue` gets 410 Gone and
-// submits a new extraction.
+// then cancels the TORCH job that the torch step waits for. After a cancel that
+// leaves no TORCH job, the handle is removed from the state file, and `pipeline
+// continue` submits a new extraction. If the cancel fails, the handle stays.
 //
 // The stop comes first: the run loop of this process also gets 410 Gone after
 // the cancel, and it must not submit a new extraction. If a submit is in
@@ -157,7 +169,7 @@ func StopJobAndCancelExtraction(ctx context.Context, jobsDir string, jobID strin
 	if torchJobID == "" {
 		return nil
 	}
-	return cancelTORCHJob(ctx, job, torchJobID, logger)
+	return cancelTORCHJob(ctx, jobsDir, job, torchJobID, logger)
 }
 
 // torchJobToCancel returns the ID of the TORCH job to cancel, or "" if there is
@@ -170,10 +182,7 @@ func torchJobToCancel(job *models.PipelineJob, submitted <-chan string) string {
 	if submitted != nil {
 		return <-submitted
 	}
-	if torchExtractionRunning(job) {
-		return job.TORCHJobID
-	}
-	return ""
+	return runningTORCHJobID(job)
 }
 
 // JobEndedError tells that a job cannot stop, because it is completed or failed.
@@ -197,10 +206,11 @@ func StopIdleJob(ctx context.Context, jobsDir string, jobID string, logger *lib.
 	if err != nil {
 		return err
 	}
-	if !torchExtractionRunning(job) {
+	torchJobID := runningTORCHJobID(job)
+	if torchJobID == "" {
 		return nil
 	}
-	return cancelTORCHJob(ctx, job, job.TORCHJobID, logger)
+	return cancelTORCHJob(ctx, jobsDir, job, torchJobID, logger)
 }
 
 func stopIdleJobState(jobsDir string, jobID string) (*models.PipelineJob, error) {
@@ -232,31 +242,63 @@ func saveStopped(jobsDir string, job *models.PipelineJob) error {
 	return nil
 }
 
-func cancelTORCHJob(ctx context.Context, job *models.PipelineJob, torchJobID string, logger *lib.Logger) error {
+// cancelTORCHJob sends the cancel request. If no TORCH job remains afterwards,
+// it removes the handle from the state file. If the TORCH job already ended
+// (409), the handle stays, so that `pipeline continue` re-attaches and gets a
+// completed result. If the cancel fails, the handle stays, so that the user can
+// see the job and cancel again.
+func cancelTORCHJob(ctx context.Context, jobsDir string, job *models.PipelineJob, torchJobID string, logger *lib.Logger) error {
 	ctx, cancel := context.WithTimeout(ctx, TORCHCancelTimeout)
 	defer cancel()
 	logger.Info("Cancelling TORCH job", "torch_job_id", torchJobID)
 	torchConfig := job.Config.Services.TORCH
 	httpClient := services.NewHTTPClient(torchConfig.EffectiveRequestTimeout(), job.Config.Retry, job.Config.TLS, logger)
 	err := services.NewTORCHClient(torchConfig, httpClient, logger).CancelExtraction(ctx, torchJobID)
-	if err == nil || torchJobNotRunning(err) {
+	if err == nil || torchJobGone(err) {
+		if err := clearTORCHHandle(jobsDir, job.JobID, torchJobID); err != nil {
+			return fmt.Errorf("TORCH job %s is cancelled, but failed to remove its handle: %w", torchJobID, err)
+		}
+		return nil
+	}
+	if torchStatus(err) == http.StatusConflict {
+		logger.Info("TORCH job already ended; pipeline continue re-attaches to it", "torch_job_id", torchJobID)
 		return nil
 	}
 	return fmt.Errorf("failed to cancel TORCH job %s: %w", torchJobID, err)
 }
 
-// torchJobNotRunning tells if TORCH rejected the cancel because the TORCH job
-// is unknown (404, 410) or in a final state (409).
-func torchJobNotRunning(err error) bool {
+// clearTORCHHandle removes the handle of the cancelled TORCH job from the state
+// file. It leaves a handle for another TORCH job alone.
+func clearTORCHHandle(jobsDir string, jobID string, torchJobID string) error {
+	stopMu.Lock()
+	defer stopMu.Unlock()
+
+	return updateStoredHandle(jobsDir, jobID, func(stored *models.PipelineJob) bool {
+		if stored.TORCHJobID != torchJobID {
+			return false
+		}
+		stored.TORCHJobID = ""
+		stored.TORCHExtractionURL = ""
+		return true
+	})
+}
+
+// torchJobGone tells if TORCH rejected the cancel because it does not know the
+// TORCH job (404, 410).
+func torchJobGone(err error) bool {
+	status := torchStatus(err)
+	return status == http.StatusNotFound || status == http.StatusGone
+}
+
+// torchStatus returns the HTTP status of a TORCH error, or 0 for another error.
+// TORCH answers a cancel with 409 if the TORCH job is completed, failed, or
+// deleted. A completed TORCH job keeps its result, thus its handle must stay.
+func torchStatus(err error) int {
 	var torchErr *services.TORCHError
 	if !errors.As(err, &torchErr) {
-		return false
+		return 0
 	}
-	switch torchErr.StatusCode {
-	case http.StatusNotFound, http.StatusConflict, http.StatusGone:
-		return true
-	}
-	return false
+	return torchErr.StatusCode
 }
 
 // torchExtractionRunning tells if the job waits for a TORCH job that it
@@ -266,6 +308,56 @@ func torchExtractionRunning(job *models.PipelineJob) bool {
 	return job.CurrentStep == string(models.StepTorchImport) &&
 		found && step.Status == models.StepStatusInProgress &&
 		job.TORCHJobID != ""
+}
+
+// UnattendedExtraction is a TORCH extraction job that no aether process polls:
+// its aether job is stopped, but still has the job handle. Unlike an orphan, the
+// handle is known, thus `pipeline continue` can re-attach.
+type UnattendedExtraction struct {
+	JobID      string
+	TORCHJobID string
+}
+
+// UnattendedExtractions lists the stopped jobs that wait for a TORCH job that
+// they submitted. A job that a died process left in_progress counts as
+// stopped. A job whose state file cannot be loaded is skipped.
+func UnattendedExtractions(jobsDir string) ([]UnattendedExtraction, error) {
+	jobIDs, err := services.ListAllJobs(jobsDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list jobs: %w", err)
+	}
+	var unattended []UnattendedExtraction
+	for _, jobID := range jobIDs {
+		job, err := LoadJob(jobsDir, jobID)
+		if err != nil {
+			continue
+		}
+		// The lock probe of EffectiveJobStatus is the expensive test, thus it comes last.
+		torchJobID := runningTORCHJobID(job)
+		if torchJobID != "" && services.EffectiveJobStatus(jobsDir, *job) == models.JobStatusStopped {
+			unattended = append(unattended, UnattendedExtraction{JobID: jobID, TORCHJobID: torchJobID})
+		}
+	}
+	return unattended, nil
+}
+
+// RunningTORCHJobID returns the ID of the TORCH job that the stored job waits
+// for, or "" if it waits for none.
+func RunningTORCHJobID(jobsDir string, jobID string) (string, error) {
+	job, err := LoadJob(jobsDir, jobID)
+	if err != nil {
+		return "", fmt.Errorf("failed to load job: %w", err)
+	}
+	return runningTORCHJobID(job), nil
+}
+
+// runningTORCHJobID returns the ID of the TORCH job that the job waits for, or
+// "" if it waits for none.
+func runningTORCHJobID(job *models.PipelineJob) string {
+	if !torchExtractionRunning(job) {
+		return ""
+	}
+	return job.TORCHJobID
 }
 
 // jobStopped tells if a stop is recorded for the job.

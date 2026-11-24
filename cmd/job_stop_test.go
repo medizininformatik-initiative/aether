@@ -224,11 +224,34 @@ func TestStopJob_FailedTORCHCancelKeepsStopAndIsAnError(t *testing.T) {
 	err := stopJob(job.Config.JobsDir, "aether.yaml", job.JobID, time.Second, 10*time.Millisecond, &out, logger)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "job "+job.JobID+" is stopped, but the TORCH cancel failed")
+	assert.Contains(t, err.Error(), "job "+job.JobID+" is stopped, but failed to cancel TORCH job torch-job-1")
 	assert.EqualValues(t, 1, cancels.Load())
 	stored, loadErr := pipeline.LoadJob(job.Config.JobsDir, job.JobID)
 	require.NoError(t, loadErr)
 	assert.Equal(t, models.JobStatusStopped, stored.Status)
+}
+
+// A TORCH job that is cancelled must not be reported as a failed cancel, also
+// if the state file cannot keep the cleared handle.
+func TestStopJob_FailedHandleClearAfterCancelIsNotAFailedCancel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	logger := stopTestLogger()
+	job := persistTORCHJob(t, server.URL, logger)
+	job.TORCHJobID = "torch-job-1"
+	job.TORCHExtractionURL = server.URL + "/fhir/__status/torch-job-1"
+	job.Status = models.JobStatusStopped
+	require.NoError(t, pipeline.UpdateJob(job.Config.JobsDir, job))
+	failStateWriteOnNth(t, 1)
+	var out bytes.Buffer
+
+	err := stopJob(job.Config.JobsDir, "aether.yaml", job.JobID, time.Second, 10*time.Millisecond, &out, logger)
+
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "cancel failed")
+	assert.Contains(t, err.Error(), "TORCH job torch-job-1 is cancelled, but")
 }
 
 // After the process records the stop, it can still need time, for example for
@@ -276,7 +299,7 @@ func TestStopJob_CancelsTORCHJobAgainAfterTheProcessStopped(t *testing.T) {
 				assert.Contains(t, out.String(), "Job "+job.JobID+" stopped")
 			} else {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), "the TORCH cancel failed")
+				assert.Contains(t, err.Error(), "failed to cancel TORCH job")
 			}
 		})
 	}

@@ -49,6 +49,35 @@ func TestStopJobAndCancelExtraction_CancelsTORCHJob(t *testing.T) {
 	assert.Equal(t, models.JobStatusStopped, reloaded.Status)
 }
 
+func TestStopJobAndCancelExtraction_ClearsHandleAfterCancel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer server.Close()
+	job := persistTORCHExtractionJob(t, server.URL)
+
+	require.NoError(t, pipeline.StopJobAndCancelExtraction(context.Background(), job.Config.JobsDir, job.JobID, seamLogger()))
+
+	reloaded, err := pipeline.LoadJob(job.Config.JobsDir, job.JobID)
+	require.NoError(t, err)
+	assert.Equal(t, models.JobStatusStopped, reloaded.Status)
+	assert.Empty(t, reloaded.TORCHJobID)
+	assert.Empty(t, reloaded.TORCHExtractionURL)
+}
+
+func TestStopJobAndCancelExtraction_FailedCancelKeepsHandle(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	job := persistTORCHExtractionJob(t, server.URL)
+
+	err := pipeline.StopJobAndCancelExtraction(context.Background(), job.Config.JobsDir, job.JobID, seamLogger())
+
+	require.Error(t, err)
+	reloaded, err := pipeline.LoadJob(job.Config.JobsDir, job.JobID)
+	require.NoError(t, err)
+	assert.Equal(t, cancelTestTORCHJobID, reloaded.TORCHJobID)
+}
+
 func TestStopJobAndCancelExtraction_FailedCancelStillStops(t *testing.T) {
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

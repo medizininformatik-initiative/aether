@@ -184,12 +184,21 @@ Aether finds this in two ways:
    again.
    The stop does not cancel the work on the services: a TORCH extraction
    continues on the TORCH server, and `pipeline continue` re-attaches to it.
+   If the job has a TORCH extraction, the stop shows the TORCH job ID and the
+   `aether job stop <config> <job-id>` command that cancels it. A TORCH submit
+   that is in progress at the stop has no handle yet, thus it gets no hint.
 2. If the process dies without a chance to write, for example from SIGKILL, a
    crash, or a power loss, the state file keeps `in_progress`. `job list` and
    `pipeline status` then test the job lock. If no process holds the lock, they
    show the job as `stopped`.
 
 Both commands only read. They do not change the state file in the second case.
+
+`pipeline start` warns about each other stopped job that has a TORCH job. The
+warning names the job, the TORCH job ID, and the commands to continue the job or
+to cancel the TORCH job. The warning does not stop the start. `aether job stop`
+removes the TORCH job ID from the state file after the cancel, thus the warning
+does not show that job again.
 
 A `stopped` job is not terminal. Continue it:
 
@@ -287,16 +296,18 @@ If the torch step waits for a TORCH job, Aether cancels that TORCH job with
 `POST /fhir/Task/{id}/$cancel`. The cancel sends one request and waits at most
 5 seconds, also for the OAuth2 token. After the process of the job ends, the
 command sends the cancel again, thus it knows the result. If TORCH answers
-`404`, `409` or `410`, the TORCH job does not run, and the cancel counts as
-done. If the cancel fails, the job stays `stopped` and the TORCH job runs until
+`404` or `410`, the TORCH job does not exist, and the cancel counts as done. If
+TORCH answers `409`, the TORCH job is completed, failed, or deleted. Then the
+cancel counts as done, but the TORCH handle stays, and `aether pipeline
+continue` re-attaches to the TORCH job. If the cancel fails, the job stays `stopped` and the TORCH job runs until
 it ends. The command then prints an error and exits with a non-zero code.
 
 A job that is `completed` or `failed` cannot be stopped. The command then prints
 an error and exits with a non-zero code. This also applies when the job ends on
 its own while the command waits.
 
-`aether pipeline continue` starts the stopped job again. TORCH answers `410 Gone`
-for the cancelled TORCH job, thus `continue` submits a new extraction.
+`aether pipeline continue` starts the stopped job again. The cancel removed the
+TORCH handle from the state file, thus `continue` submits a new extraction.
 
 **Examples:**
 ```bash

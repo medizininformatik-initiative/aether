@@ -91,3 +91,39 @@ func TestStopIdleJob_FailedCancelIsReturnedAndStopStays(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, models.JobStatusStopped, reloaded.Status)
 }
+
+func TestStopIdleJob_ClearsHandleOnlyWhenNoTORCHJobRemains(t *testing.T) {
+	tests := []struct {
+		name         string
+		cancelStatus int
+		wantErr      bool
+		keepsHandle  bool
+	}{
+		{"cancel succeeds", http.StatusOK, false, false},
+		{"TORCH job is unknown", http.StatusNotFound, false, false},
+		// A completed TORCH job also answers 409. Its result must stay available
+		// to "pipeline continue".
+		{"TORCH job in a final state keeps the handle", http.StatusConflict, false, true},
+		{"TORCH job is gone", http.StatusGone, false, false},
+		{"cancel fails keeps the handle", http.StatusInternalServerError, true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			job, _ := idleJobWithStatus(t, models.JobStatusInProgress, tt.cancelStatus)
+
+			err := pipeline.StopIdleJob(context.Background(), job.Config.JobsDir, job.JobID, seamLogger())
+
+			assert.Equal(t, tt.wantErr, err != nil)
+			reloaded, err := pipeline.LoadJob(job.Config.JobsDir, job.JobID)
+			require.NoError(t, err)
+			assert.Equal(t, models.JobStatusStopped, reloaded.Status)
+			if tt.keepsHandle {
+				assert.Equal(t, cancelTestTORCHJobID, reloaded.TORCHJobID)
+				assert.NotEmpty(t, reloaded.TORCHExtractionURL)
+			} else {
+				assert.Empty(t, reloaded.TORCHJobID)
+				assert.Empty(t, reloaded.TORCHExtractionURL)
+			}
+		})
+	}
+}

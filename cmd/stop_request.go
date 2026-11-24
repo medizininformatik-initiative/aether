@@ -101,7 +101,7 @@ func stopOnRequest(jobsDir string, jobID string, logger *lib.Logger) bool {
 		logger.Warn("Failed to stop the job cleanly", "job_id", jobID, "error", err)
 	}
 
-	fmt.Printf("Continue it with: aether pipeline continue <config> %s\n", jobID)
+	reportStop(os.Stdout, jobsDir, jobID)
 	_ = logger.Close()
 	return true
 }

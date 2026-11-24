@@ -39,8 +39,9 @@ func (sendStep) Run(ctx *StepContext) (StepResult, error) {
 		TLS:    job.Config.TLS,
 		Files:  files,
 		State: send.State{
-			ManifestPath:      models.GetUploadManifestPath(layout.JobDir()),
-			FailedRequestsDir: layout.FailedRequestsDir(),
+			ManifestPath:         models.GetUploadManifestPath(layout.JobDir()),
+			TransferManifestPath: models.GetTransferManifestPath(layout.JobDir()),
+			FailedRequestsDir:    layout.FailedRequestsDir(),
 		},
 	}, ctx.Logger)
 	if err != nil {

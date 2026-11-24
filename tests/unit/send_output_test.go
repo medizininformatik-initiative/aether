@@ -35,6 +35,7 @@ func TestExecuteSendStep_TransferPrintsOneBasedBinaryProgress(t *testing.T) {
 
 	assert.Contains(t, out, "Uploading Binary 1/2...")
 	assert.Contains(t, out, "Uploading Binary 2/2...")
+	assert.Contains(t, out, "Transfer complete (2 files sent)\n")
 }
 
 func newSendOKServer(t *testing.T) *httptest.Server {

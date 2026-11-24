@@ -302,7 +302,7 @@ pipeline:
   #   Use 'send' as a final step to upload data to a destination server.
   #   Mode is determined by 'services.send.send_as':
   #   - direct_resource_load: Sends NDJSON directly to FHIR server using transaction bundles
-  #   - transfer_load: Zips files, wraps in Binary/DocumentReference, POSTs to transfer server
+  #   - transfer_load: Zips files, wraps in Binary/DocumentReference, PUTs to transfer server
   #   - s3_upload: Uploads files directly to S3 bucket
   #
   # Wait step:

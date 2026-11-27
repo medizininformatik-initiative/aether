@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 
@@ -254,6 +255,8 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	logger := lib.NewLogger(commandLogLevel())
 	defer func() { _ = logger.Close() }()
 
+	warnUnattendedExtractions(os.Stdout, config.JobsDir, args[0], logger)
+
 	lookupWarnings, err := preflightStart(config, crtdlPath, logger)
 	if err != nil {
 		return err
@@ -267,6 +270,22 @@ func runPipelineStart(cmd *cobra.Command, args []string) error {
 	// keeps the locations also without --verbose.
 	logLookupWarnings(lookupWarnings, logger)
 	return runStartJob(config, job, logger)
+}
+
+// warnUnattendedExtractions warns about each stopped job whose TORCH job can
+// still run. It never fails the start: a job list that cannot be read gives a log
+// warning only.
+func warnUnattendedExtractions(out io.Writer, jobsDir, cfgPath string, logger *lib.Logger) {
+	unattended, err := pipeline.UnattendedExtractions(jobsDir)
+	if err != nil {
+		logger.Warn("Could not check for stopped jobs with a TORCH job", "error", err)
+		return
+	}
+	for _, job := range unattended {
+		_, _ = fmt.Fprintf(out, "Warning: job %s is stopped, but its TORCH job %s can still run on the TORCH server.\n", job.JobID, job.TORCHJobID)
+		_, _ = fmt.Fprintf(out, "  Continue it with: aether pipeline continue %s %s\n", cfgPath, job.JobID)
+		_, _ = fmt.Fprintf(out, "  Cancel it with:   aether job stop %s %s\n", cfgPath, job.JobID)
+	}
 }
 
 func optionalArg(args []string, index int) string {

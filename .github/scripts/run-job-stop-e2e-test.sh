@@ -7,7 +7,8 @@ set -euo pipefail
 #
 # 1. Start a pipeline in the background and wait for its TORCH job handle.
 # 2. Stop the job from a second process with 'aether job stop'.
-# 3. Make sure that TORCH cancelled the extraction (status URL gives 410).
+# 3. Make sure that TORCH cancelled the extraction (status URL gives 410) and
+#    that the stop removed the TORCH job handle from the state file.
 # 4. Continue the job and make sure that it submits a new TORCH extraction.
 
 RUNNER=(docker compose exec -T aether-runner)
@@ -82,14 +83,15 @@ code=$(status_code "$OLD_STATUS_URL")
 [[ "$code" == "410" ]] || fail "TORCH status of the stopped job is HTTP $code, expected 410 (cancelled)"
 echo "✅ TORCH cancelled job $OLD_TORCH_JOB (HTTP 410)"
 
+HANDLE=$(state | jq -r '.torch_job_id // empty')
+[[ -z "$HANDLE" ]] || fail "The stopped job keeps the TORCH job handle '$HANDLE', expected none"
+echo "✅ The stop removed the TORCH job handle"
+
 docker compose unpause torch-hds
 
 echo "➡️ Continuing the stopped job..."
 CONTINUE_OUTPUT=$("${RUNNER[@]}" /app/aether pipeline continue aether.yaml "$JOB_ID" 2>&1) || true
 echo "$CONTINUE_OUTPUT"
-
-echo "$CONTINUE_OUTPUT" | grep -q "TORCH job handle is gone" \
-    || fail "pipeline continue did not detect the cancelled TORCH job"
 
 TORCH_STEP=$(state | jq -r '.steps[] | select(.name == "torch") | .status')
 [[ "$TORCH_STEP" == "completed" ]] || fail "torch step is '$TORCH_STEP' after continue, expected 'completed'"

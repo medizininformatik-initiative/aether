@@ -30,13 +30,24 @@ func installStopHandler(jobsDir string, jobID string, logger *lib.Logger) func()
 		if err := pipeline.MarkJobStopped(jobsDir, jobID); err != nil {
 			logger.Error("Failed to record stopped job state", "job_id", jobID, "error", err)
 		}
-		fmt.Printf("Continue it with: aether pipeline continue <config> %s\n", jobID)
+		reportStop(os.Stdout, jobsDir, jobID)
 		_ = logger.Close()
 		os.Exit(exitCodeForSignal(sig))
 	})
 	return func() {
 		signal.Stop(ch)
 		remove()
+	}
+}
+
+// reportStop tells the user how to go on after a stop. The process does not
+// know the config path, thus the commands keep the placeholder <config>. A TORCH
+// job that the stop did not cancel continues on the server, thus the report
+// names it.
+func reportStop(out io.Writer, jobsDir string, jobID string) {
+	_, _ = fmt.Fprintf(out, "Continue it with: aether pipeline continue <config> %s\n", jobID)
+	if torchJobID, err := pipeline.RunningTORCHJobID(jobsDir, jobID); err == nil && torchJobID != "" {
+		_, _ = fmt.Fprintf(out, "TORCH job %s still runs on the TORCH server. Cancel it with: aether job stop <config> %s\n", torchJobID, jobID)
 	}
 }
 

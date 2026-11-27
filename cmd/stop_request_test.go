@@ -148,15 +148,18 @@ func TestStopRequestWatcher_StopsJobAndExitsWhenTORCHCancelFails(t *testing.T) {
 		5*time.Millisecond, func(code int) { exits <- code })
 	defer stop()
 
-	require.NoError(t, services.RequestStop(job.Config.JobsDir, job.JobID))
+	out := captureStdout(t, func() {
+		require.NoError(t, services.RequestStop(job.Config.JobsDir, job.JobID))
+		select {
+		case code := <-exits:
+			assert.Equal(t, 143, code)
+		case <-time.After(5 * time.Second):
+			t.Fatal("the watcher did not exit")
+		}
+	})
 
-	select {
-	case code := <-exits:
-		assert.Equal(t, 143, code)
-	case <-time.After(5 * time.Second):
-		t.Fatal("the watcher did not exit")
-	}
 	stored, err := pipeline.LoadJob(job.Config.JobsDir, job.JobID)
 	require.NoError(t, err)
 	assert.Equal(t, models.JobStatusStopped, stored.Status)
+	assert.Contains(t, out, "TORCH job torch-job-1 still runs on the TORCH server. Cancel it with: aether job stop <config> "+job.JobID)
 }

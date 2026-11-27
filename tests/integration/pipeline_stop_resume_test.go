@@ -157,8 +157,33 @@ func TestStopAndResume_CancelledTORCHJobRestartsExtraction(t *testing.T) {
 // the submit to TORCH is in progress. The state file has no handle yet, thus
 // the stop must wait for the submit and cancel the new TORCH job. Otherwise the
 // TORCH job runs without a collector, and `pipeline continue` submits a second
-// one.
+// one. After the cancel, no TORCH job remains, thus the handle is removed.
 func TestStopAndResume_StopDuringSubmitCancelsTheNewTORCHJob(t *testing.T) {
+	stored, _, stopErr := stopDuringSubmit(t, http.StatusOK)
+
+	require.NoError(t, stopErr)
+	assert.Equal(t, models.JobStatusStopped, stored.Status)
+	assert.Empty(t, stored.TORCHJobID)
+	assert.Empty(t, stored.TORCHExtractionURL)
+}
+
+// TestStopAndResume_StopDuringSubmitKeepsHandleWhenCancelFails covers the same
+// stop with a failed cancel. The handle must stay in the state file for
+// `pipeline continue` and for the warning of `pipeline start`.
+func TestStopAndResume_StopDuringSubmitKeepsHandleWhenCancelFails(t *testing.T) {
+	stored, serverURL, stopErr := stopDuringSubmit(t, http.StatusInternalServerError)
+
+	require.Error(t, stopErr)
+	assert.Equal(t, models.JobStatusStopped, stored.Status)
+	assert.Equal(t, "new-job", stored.TORCHJobID)
+	assert.Equal(t, serverURL+"/fhir/__status/new-job", stored.TORCHExtractionURL)
+}
+
+// stopDuringSubmit stops a job while its TORCH submit is in progress. TORCH
+// answers the cancel of the new TORCH job with cancelStatus. It returns the
+// stored job, the URL of the TORCH server, and the error of the stop.
+func stopDuringSubmit(t *testing.T, cancelStatus int) (*models.PipelineJob, string, error) {
+	t.Helper()
 	submitStarted := make(chan struct{})
 	releaseSubmit := make(chan struct{})
 	cancelled := make(chan string, 1)
@@ -172,11 +197,12 @@ func TestStopAndResume_StopDuringSubmitCancelsTheNewTORCHJob(t *testing.T) {
 			w.WriteHeader(http.StatusAccepted)
 		case r.Method == http.MethodPost && r.URL.Path == "/fhir/Task/new-job/$cancel":
 			cancelled <- "new-job"
+			w.WriteHeader(cancelStatus)
 		default:
 			w.WriteHeader(http.StatusGone)
 		}
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	config, crtdlPath := newTORCHStopConfig(t, server.URL)
 	jobsDir := config.JobsDir
@@ -204,7 +230,7 @@ func TestStopAndResume_StopDuringSubmitCancelsTheNewTORCHJob(t *testing.T) {
 	}, 2*time.Second, 5*time.Millisecond)
 	close(releaseSubmit)
 
-	require.NoError(t, <-stopErr)
+	err = <-stopErr
 	select {
 	case id := <-cancelled:
 		assert.Equal(t, "new-job", id)
@@ -213,12 +239,9 @@ func TestStopAndResume_StopDuringSubmitCancelsTheNewTORCHJob(t *testing.T) {
 	}
 	require.ErrorIs(t, <-importErr, pipeline.ErrJobStopped)
 
-	stored, err := pipeline.LoadJob(jobsDir, job.JobID)
-	require.NoError(t, err)
-	assert.Equal(t, models.JobStatusStopped, stored.Status)
-	assert.Equal(t, "new-job", stored.TORCHJobID,
-		"the handle must be in the state file, in case the cancel fails")
-	assert.Equal(t, server.URL+"/fhir/__status/new-job", stored.TORCHExtractionURL)
+	stored, loadErr := pipeline.LoadJob(jobsDir, job.JobID)
+	require.NoError(t, loadErr)
+	return stored, server.URL, err
 }
 
 // startedTORCHStopJob persists a started job that has only the torch step.

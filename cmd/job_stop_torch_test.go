@@ -171,23 +171,48 @@ func TestStopJob_CancelsTORCHJobAndContinueSubmitsNewExtraction(t *testing.T) {
 	stopped, err := pipeline.LoadJob(jobsDir, job.JobID)
 	require.NoError(t, err)
 	assert.Equal(t, models.JobStatusStopped, stopped.Status)
+	assert.Empty(t, stopped.TORCHJobID, "the cancelled TORCH job must leave no handle")
 	require.ErrorIs(t, <-stepResult, pipeline.ErrJobStopped)
 	assert.EqualValues(t, 1, submits.Load(), "the stopped process must not submit again")
 
 	pipeline.ResetStoppedJobsForTesting()
 	resumed, err := pipeline.LoadJob(jobsDir, job.JobID)
 	require.NoError(t, err)
+	resumedLock, err := services.AcquireJobLock(jobsDir, job.JobID, logger)
+	require.NoError(t, err)
+	resumedExited := make(chan int, 1)
+	resumedWatcher := watchStopRequests(jobsDir, job.JobID, services.NewStopRequestCheck(jobsDir, job.JobID), logger, 10*time.Millisecond,
+		func(code int) {
+			_ = resumedLock.Release()
+			resumedExited <- code
+		})
+	defer resumedWatcher()
 	resumedResult := runTORCHStepInBackground(resumed, logger)
-	require.Eventually(t, func() bool { return submits.Load() == 2 },
-		5*time.Second, 5*time.Millisecond, "new extraction")
+	var newStatusURL string
+	require.Eventually(t, func() bool {
+		current, err := pipeline.LoadJob(jobsDir, job.JobID)
+		if err != nil || current.TORCHJobID == "" || current.TORCHExtractionURL == statusURL {
+			return false
+		}
+		newStatusURL = current.TORCHExtractionURL
+		return true
+	}, 5*time.Second, 5*time.Millisecond, "new extraction")
+	require.Equal(t, http.StatusAccepted, torchStatusCode(t, newStatusURL))
 
+	out.Reset()
 	require.NoError(t, stopJob(jobsDir, "aether.yaml", job.JobID, 5*time.Second, 10*time.Millisecond, &out, logger))
-	// This test process runs both the step and the second stop, so the step sees
-	// the cancelled handle before any stop flag.
+
+	assert.Equal(t, 143, <-resumedExited)
+	assert.Equal(t, http.StatusGone, torchStatusCode(t, newStatusURL), "the new TORCH job must be cancelled")
+	stoppedAgain, err := pipeline.LoadJob(jobsDir, job.JobID)
+	require.NoError(t, err)
+	assert.Equal(t, models.JobStatusStopped, stoppedAgain.Status)
+	assert.Empty(t, stoppedAgain.TORCHJobID, "the cancelled new TORCH job must leave no handle")
 	select {
 	case err := <-resumedResult:
-		require.ErrorContains(t, err, "TORCH job handle is gone")
+		require.ErrorIs(t, err, pipeline.ErrJobStopped)
 	case <-time.After(10 * time.Second):
 		t.Fatal("the resumed step did not end after the stop")
 	}
+	assert.EqualValues(t, 2, submits.Load(), "the stopped process must not submit again")
 }

@@ -347,7 +347,7 @@ func stopJob(
 		if errors.As(err, &ended) {
 			return err
 		}
-		return fmt.Errorf("job %s is stopped, but the TORCH cancel failed: %w", jobID, err)
+		return fmt.Errorf("job %s is stopped, but %w", jobID, err)
 	}
 	reportStopped(out, cfgPath, jobID)
 	return nil

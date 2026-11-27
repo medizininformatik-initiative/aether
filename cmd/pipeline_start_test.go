@@ -121,6 +121,36 @@ func TestRunPipelineStart_CompletesLocalImportFromDirFlag(t *testing.T) {
 	assert.Equal(t, "/etc/aether/anonymization.yaml", job.Config.Services.DIMP.AnonymizationConfig)
 }
 
+func TestRunPipelineStart_WarnsAboutStoppedJobWithTORCHJob(t *testing.T) {
+	startFlags(t, writeImportDir(t), "", false)
+	configPath, jobsDir := writeStartConfig(t, "pipeline:\n  enabled_steps:\n    - local_import\n")
+	const oldJobID = "aaaaaaaa-0000-0000-0000-000000000000"
+	saveTORCHWaitingJob(t, jobsDir, oldJobID, "torch-job-7")
+
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = runPipelineStart(pipelineStartCmd, []string{configPath, startCRTDLFixture})
+	})
+
+	require.NoError(t, runErr)
+	assert.Contains(t, out, "Warning: job "+oldJobID+" is stopped, but its TORCH job torch-job-7 can still run on the TORCH server.")
+	assert.Contains(t, out, "aether pipeline continue "+configPath+" "+oldJobID)
+	assert.Contains(t, out, "aether job stop "+configPath+" "+oldJobID)
+	ids, err := services.ListAllJobs(jobsDir)
+	require.NoError(t, err)
+	require.Len(t, ids, 2)
+	newJobID := ids[0]
+	if newJobID == oldJobID {
+		newJobID = ids[1]
+	}
+	oldJob, err := pipeline.LoadJob(jobsDir, oldJobID)
+	require.NoError(t, err)
+	assert.Equal(t, models.JobStatusStopped, oldJob.Status)
+	newJob, err := pipeline.LoadJob(jobsDir, newJobID)
+	require.NoError(t, err)
+	assert.Equal(t, models.JobStatusCompleted, newJob.Status)
+}
+
 func TestRunPipelineStart_PausesAtWaitStep(t *testing.T) {
 	startFlags(t, "", "", false)
 	configPath, jobsDir := writeStartConfig(t, "pipeline:\n  enabled_steps:\n    - local_import\n    - wait\n")
